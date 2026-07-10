@@ -1,0 +1,40 @@
+import type { Metadata, Viewport } from 'next'
+import { Analytics } from '@vercel/analytics/next'
+import { Sidebar } from '@/components/sidebar'
+import { QueryProvider } from '@/components/query-provider'
+import { getPiVersionLabel } from '@/lib/pi-version'
+import './globals.css'
+
+export const metadata: Metadata = {
+  title: 'Pi Studio — Control panel for pi',
+  description:
+    'A workbench for managing pi.dev global resources, Agent Profiles, and multi-session chat workflows.',
+  generator: 'v0.app',
+}
+
+export const viewport: Viewport = {
+  colorScheme: 'light',
+  themeColor: '#e9e7e1',
+}
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode
+}>) {
+  const piVersion = getPiVersionLabel()
+
+  return (
+    <html lang="en" className="bg-background">
+      <body className="antialiased">
+        <QueryProvider>
+          <div className="flex h-screen overflow-hidden">
+            <Sidebar piVersion={piVersion} />
+            <main className="flex-1 overflow-hidden">{children}</main>
+          </div>
+        </QueryProvider>
+        {process.env.NODE_ENV === 'production' && <Analytics />}
+      </body>
+    </html>
+  )
+}

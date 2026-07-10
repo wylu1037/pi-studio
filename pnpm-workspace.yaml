@@ -1,0 +1,11 @@
+allowBuilds:
+  better-sqlite3: true
+  es5-ext: true
+  esbuild: true
+
+onlyBuiltDependencies:
+  - msw
+  - sharp
+
+overrides:
+  hono: 4.12.25

@@ -1,0 +1,856 @@
+import { randomUUID } from 'node:crypto'
+import { eq, inArray } from 'drizzle-orm'
+import type {
+  AgentProfile,
+  AgentSessionSummary,
+  ChatMessage,
+  GlobalMcpConfig,
+  GlobalModel,
+  GlobalModelProvider,
+  GlobalPackage,
+  GlobalPromptTemplate,
+  GlobalSkill,
+  SessionTreeNode,
+} from '@/lib/types'
+import { db, sqlite } from './client'
+import {
+  agentMcpConfigs,
+  agentModelProviders,
+  agentModels,
+  agentPrompts,
+  agents,
+  agentSkills,
+  agentTags,
+  chatMessages,
+  chatRunEvents,
+  chatRuns,
+  globalPrompts,
+  globalSkills,
+  mcpConfigs,
+  mcpTags,
+  modelProviders,
+  models,
+  packages,
+  promptTags,
+  sessions,
+  sessionTreeNodes,
+  skillTags,
+} from './schema'
+
+type Row = Record<string, unknown>
+
+function parseJson<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback
+  try {
+    return JSON.parse(value) as T
+  } catch {
+    return fallback
+  }
+}
+
+function now() {
+  return new Date().toISOString()
+}
+
+function tags(table: string, idColumn: string, id: string) {
+  return sqlite
+    .prepare(`select tag from ${table} where ${idColumn} = ? order by tag`)
+    .all(id)
+    .map((row) => String((row as Row).tag))
+}
+
+function ids(table: string, idColumn: string, valueColumn: string, id: string) {
+  return sqlite
+    .prepare(`select ${valueColumn} from ${table} where ${idColumn} = ?`)
+    .all(id)
+    .map((row) => String((row as Row)[valueColumn]))
+}
+
+function count(table: string, column: string, value: string) {
+  const row = sqlite
+    .prepare(`select count(*) as value from ${table} where ${column} = ?`)
+    .get(value) as { value: number }
+  return row.value
+}
+
+export function listAgents(): AgentProfile[] {
+  const rows = db.select().from(agents).all()
+  return rows.map((agent) => ({
+    id: agent.id,
+    name: agent.name,
+    description: agent.description ?? undefined,
+    icon: agent.icon ?? undefined,
+    color: agent.color,
+    defaultCwd: agent.defaultCwd ?? undefined,
+    defaultProviderId: agent.defaultProviderId ?? undefined,
+    defaultModelId: agent.defaultModelId ?? undefined,
+    defaultThinkingLevel: agent.defaultThinkingLevel as AgentProfile['defaultThinkingLevel'],
+    tags: tags('agent_tags', 'agent_id', agent.id),
+    selectedSkillIds: ids('agent_skills', 'agent_id', 'skill_id', agent.id),
+    selectedPromptIds: ids('agent_prompts', 'agent_id', 'prompt_id', agent.id),
+    selectedMcpConfigIds: ids(
+      'agent_mcp_configs',
+      'agent_id',
+      'mcp_config_id',
+      agent.id,
+    ),
+    selectedProviderIds: ids(
+      'agent_model_providers',
+      'agent_id',
+      'provider_id',
+      agent.id,
+    ),
+    selectedModelIds: ids('agent_models', 'agent_id', 'model_id', agent.id),
+    sessionCount: count('sessions', 'agent_id', agent.id),
+    lastUsed: agent.lastUsed ?? agent.updatedAt,
+    createdAt: agent.createdAt,
+    updatedAt: agent.updatedAt,
+  }))
+}
+
+export function getAgent(id: string) {
+  return listAgents().find((agent) => agent.id === id) ?? null
+}
+
+export function createAgent(input: {
+  name: string
+  description?: string
+  tags?: string[]
+  defaultCwd?: string
+  defaultProviderId?: string
+  defaultModelId?: string
+  defaultThinkingLevel?: AgentProfile['defaultThinkingLevel']
+}) {
+  const id = `ag-${randomUUID()}`
+  const createdAt = now()
+  db.insert(agents)
+    .values({
+      id,
+      name: input.name,
+      description: input.description,
+      color: '#7c8cf8',
+      defaultCwd: input.defaultCwd,
+      defaultProviderId: input.defaultProviderId,
+      defaultModelId: input.defaultModelId,
+      defaultThinkingLevel: input.defaultThinkingLevel ?? 'medium',
+      lastUsed: createdAt,
+      createdAt,
+      updatedAt: createdAt,
+    })
+    .run()
+  for (const tag of input.tags ?? []) {
+    db.insert(agentTags).values({ agentId: id, tag }).run()
+  }
+  return getAgent(id)
+}
+
+export function updateAgent(id: string, input: Partial<AgentProfile>) {
+  db.update(agents)
+    .set({
+      name: input.name,
+      description: input.description,
+      defaultCwd: input.defaultCwd,
+      defaultProviderId: input.defaultProviderId,
+      defaultModelId: input.defaultModelId,
+      defaultThinkingLevel: input.defaultThinkingLevel,
+      updatedAt: now(),
+    })
+    .where(eq(agents.id, id))
+    .run()
+  if (input.tags) {
+    db.delete(agentTags).where(eq(agentTags.agentId, id)).run()
+    for (const tag of input.tags) db.insert(agentTags).values({ agentId: id, tag }).run()
+  }
+  return getAgent(id)
+}
+
+export function deleteAgent(id: string) {
+  db.delete(agents).where(eq(agents.id, id)).run()
+}
+
+export function updateAgentResources(
+  id: string,
+  input: {
+    selectedSkillIds?: string[]
+    selectedPromptIds?: string[]
+    selectedMcpConfigIds?: string[]
+    selectedProviderIds?: string[]
+    selectedModelIds?: string[]
+    defaultProviderId?: string
+    defaultModelId?: string
+    defaultThinkingLevel?: AgentProfile['defaultThinkingLevel']
+  },
+) {
+  const replace = (
+    table: typeof agentSkills,
+    column: 'skillId',
+    values: string[] | undefined,
+  ) => {
+    if (!values) return
+    db.delete(table).where(eq(table.agentId, id)).run()
+    for (const value of values) db.insert(table).values({ agentId: id, [column]: value }).run()
+  }
+  replace(agentSkills, 'skillId', input.selectedSkillIds)
+  if (input.selectedPromptIds) {
+    db.delete(agentPrompts).where(eq(agentPrompts.agentId, id)).run()
+    for (const promptId of input.selectedPromptIds) db.insert(agentPrompts).values({ agentId: id, promptId }).run()
+  }
+  if (input.selectedMcpConfigIds) {
+    db.delete(agentMcpConfigs).where(eq(agentMcpConfigs.agentId, id)).run()
+    for (const mcpConfigId of input.selectedMcpConfigIds) db.insert(agentMcpConfigs).values({ agentId: id, mcpConfigId }).run()
+  }
+  if (input.selectedProviderIds) {
+    db.delete(agentModelProviders).where(eq(agentModelProviders.agentId, id)).run()
+    for (const providerId of input.selectedProviderIds) db.insert(agentModelProviders).values({ agentId: id, providerId }).run()
+  }
+  if (input.selectedModelIds) {
+    db.delete(agentModels).where(eq(agentModels.agentId, id)).run()
+    for (const modelId of input.selectedModelIds) db.insert(agentModels).values({ agentId: id, modelId }).run()
+  }
+  db.update(agents)
+    .set({
+      defaultProviderId: input.defaultProviderId,
+      defaultModelId: input.defaultModelId,
+      defaultThinkingLevel: input.defaultThinkingLevel,
+      updatedAt: now(),
+    })
+    .where(eq(agents.id, id))
+    .run()
+  return getAgent(id)
+}
+
+export function duplicateAgent(id: string) {
+  const agent = getAgent(id)
+  if (!agent) return null
+  const copy = createAgent({
+    name: `${agent.name} Copy`,
+    description: agent.description,
+    tags: agent.tags,
+    defaultCwd: agent.defaultCwd,
+    defaultProviderId: agent.defaultProviderId,
+    defaultModelId: agent.defaultModelId,
+    defaultThinkingLevel: agent.defaultThinkingLevel,
+  })
+  if (!copy) return null
+  updateAgentResources(copy.id, {
+    selectedSkillIds: agent.selectedSkillIds,
+    selectedPromptIds: agent.selectedPromptIds,
+    selectedMcpConfigIds: agent.selectedMcpConfigIds,
+    selectedProviderIds: agent.selectedProviderIds,
+    selectedModelIds: agent.selectedModelIds,
+  })
+  return getAgent(copy.id)
+}
+
+export function listSkills(): GlobalSkill[] {
+  return db
+    .select()
+    .from(globalSkills)
+    .all()
+    .map((skill) => ({
+      id: skill.id,
+      name: skill.name,
+      description: skill.description,
+      source: skill.source as GlobalSkill['source'],
+      path: skill.path,
+      version: skill.version ?? undefined,
+      author: skill.author ?? undefined,
+      tags: tags('skill_tags', 'skill_id', skill.id),
+      installedAt: skill.installedAt,
+      updatedAt: skill.updatedAt,
+      usedByAgents: count('agent_skills', 'skill_id', skill.id),
+    }))
+}
+
+export function createSkill(input: Omit<GlobalSkill, 'id' | 'usedByAgents' | 'installedAt' | 'updatedAt'>) {
+  const id = `sk-${randomUUID()}`
+  const at = now()
+  db.insert(globalSkills)
+    .values({ ...input, id, installedAt: at, createdAt: at, updatedAt: at })
+    .run()
+  for (const tag of input.tags) db.insert(skillTags).values({ skillId: id, tag }).run()
+  return listSkills().find((skill) => skill.id === id) ?? null
+}
+
+export function upsertSkill(input: Partial<GlobalSkill> & {
+  id?: string
+  name: string
+  description?: string
+  source?: GlobalSkill['source']
+  path: string
+}) {
+  const id = input.id ?? `sk-${randomUUID()}`
+  const at = now()
+  const existing = db.select().from(globalSkills).where(eq(globalSkills.id, id)).get()
+  const values = {
+    name: input.name,
+    description: input.description ?? '',
+    source: input.source ?? 'manual',
+    path: input.path,
+    version: input.version,
+    author: input.author,
+    updatedAt: at,
+  }
+  if (existing) {
+    db.update(globalSkills).set(values).where(eq(globalSkills.id, id)).run()
+    db.delete(skillTags).where(eq(skillTags.skillId, id)).run()
+  } else {
+    db.insert(globalSkills)
+      .values({ ...values, id, installedAt: at, createdAt: at })
+      .run()
+  }
+  for (const tag of input.tags ?? []) db.insert(skillTags).values({ skillId: id, tag }).run()
+  return listSkills().find((skill) => skill.id === id) ?? null
+}
+
+export function deleteSkill(id: string) {
+  db.delete(globalSkills).where(eq(globalSkills.id, id)).run()
+}
+
+export function listPrompts(): GlobalPromptTemplate[] {
+  return db
+    .select()
+    .from(globalPrompts)
+    .all()
+    .map((prompt) => ({
+      id: prompt.id,
+      name: prompt.name,
+      description: prompt.description ?? undefined,
+      content: prompt.content,
+      path: prompt.path,
+      tags: tags('prompt_tags', 'prompt_id', prompt.id),
+      createdAt: prompt.createdAt,
+      updatedAt: prompt.updatedAt,
+      usedByAgents: count('agent_prompts', 'prompt_id', prompt.id),
+    }))
+}
+
+export function upsertPrompt(input: Partial<GlobalPromptTemplate> & { id?: string; name: string; content: string }) {
+  const at = now()
+  const id = input.id ?? `pr-${randomUUID()}`
+  const existing = db.select().from(globalPrompts).where(eq(globalPrompts.id, id)).get()
+  if (existing) {
+    db.update(globalPrompts)
+      .set({
+        name: input.name,
+        description: input.description,
+        content: input.content,
+        path: input.path ?? existing.path,
+        updatedAt: at,
+      })
+      .where(eq(globalPrompts.id, id))
+      .run()
+    db.delete(promptTags).where(eq(promptTags.promptId, id)).run()
+  } else {
+    db.insert(globalPrompts)
+      .values({
+        id,
+        name: input.name,
+        description: input.description,
+        content: input.content,
+        path: input.path ?? `~/.pi/prompts/${input.name}.md`,
+        createdAt: at,
+        updatedAt: at,
+      })
+      .run()
+  }
+  for (const tag of input.tags ?? []) db.insert(promptTags).values({ promptId: id, tag }).run()
+  return listPrompts().find((prompt) => prompt.id === id) ?? null
+}
+
+export function deletePrompt(id: string) {
+  db.delete(globalPrompts).where(eq(globalPrompts.id, id)).run()
+}
+
+export function listMcpConfigs(): GlobalMcpConfig[] {
+  return db
+    .select()
+    .from(mcpConfigs)
+    .all()
+    .map((mcp) => ({
+      id: mcp.id,
+      name: mcp.name,
+      description: mcp.description ?? undefined,
+      command: mcp.command,
+      args: parseJson<string[]>(mcp.argsJson, []),
+      env: parseJson<Record<string, string>>(mcp.envJson, {}),
+      tags: tags('mcp_tags', 'mcp_config_id', mcp.id),
+      enabledGlobally: mcp.enabledGlobally,
+      usedByAgents: count('agent_mcp_configs', 'mcp_config_id', mcp.id),
+      createdAt: mcp.createdAt,
+      updatedAt: mcp.updatedAt,
+    }))
+}
+
+export function upsertMcp(input: Partial<GlobalMcpConfig> & { id?: string; name: string; command: string }) {
+  const id = input.id ?? `mcp-${randomUUID()}`
+  const at = now()
+  const values = {
+    name: input.name,
+    description: input.description,
+    command: input.command,
+    argsJson: JSON.stringify(input.args ?? []),
+    envJson: JSON.stringify(input.env ?? {}),
+    enabledGlobally: input.enabledGlobally ?? false,
+    updatedAt: at,
+  }
+  const existing = db.select().from(mcpConfigs).where(eq(mcpConfigs.id, id)).get()
+  if (existing) {
+    db.update(mcpConfigs).set(values).where(eq(mcpConfigs.id, id)).run()
+    db.delete(mcpTags).where(eq(mcpTags.mcpConfigId, id)).run()
+  } else {
+    db.insert(mcpConfigs).values({ ...values, id, createdAt: at }).run()
+  }
+  for (const tag of input.tags ?? []) db.insert(mcpTags).values({ mcpConfigId: id, tag }).run()
+  return listMcpConfigs().find((mcp) => mcp.id === id) ?? null
+}
+
+export function deleteMcp(id: string) {
+  db.delete(mcpConfigs).where(eq(mcpConfigs.id, id)).run()
+}
+
+export function listProviders(): GlobalModelProvider[] {
+  return db
+    .select()
+    .from(modelProviders)
+    .all()
+    .map((provider) => ({
+      id: provider.id,
+      name: provider.name,
+      baseUrl: provider.baseUrl,
+      api: provider.api as GlobalModelProvider['api'],
+      apiKey: provider.apiKey ? maskSecret(provider.apiKey) : undefined,
+      headers: parseJson<Record<string, string>>(provider.headersJson, {}),
+      models: listModels(provider.id),
+      isDefault: provider.isDefault,
+      status: provider.status as GlobalModelProvider['status'],
+      createdAt: provider.createdAt,
+      updatedAt: provider.updatedAt,
+    }))
+}
+
+export function getProvider(id?: string | null) {
+  if (!id) return null
+  return db.select().from(modelProviders).where(eq(modelProviders.id, id)).get() ?? null
+}
+
+export function listModels(providerId: string): GlobalModel[] {
+  return db
+    .select()
+    .from(models)
+    .where(eq(models.providerId, providerId))
+    .all()
+    .map((model) => ({
+      id: model.id,
+      name: model.name ?? undefined,
+      reasoning: model.reasoning,
+      input: parseJson<Array<'text' | 'image'>>(model.inputJson, ['text']),
+      contextWindow: model.contextWindow ?? undefined,
+      maxTokens: model.maxTokens ?? undefined,
+    }))
+}
+
+export function upsertProvider(input: Partial<GlobalModelProvider> & { id?: string; name: string; baseUrl: string; api: string }) {
+  const id = input.id ?? `pv-${randomUUID()}`
+  const at = now()
+  const values = {
+    name: input.name,
+    baseUrl: input.baseUrl,
+    api: input.api,
+    apiKey: input.apiKey?.includes('•') ? undefined : input.apiKey,
+    headersJson: JSON.stringify(input.headers ?? {}),
+    isDefault: input.isDefault ?? false,
+    status: input.status ?? 'untested',
+    updatedAt: at,
+  }
+  const existing = db.select().from(modelProviders).where(eq(modelProviders.id, id)).get()
+  if (existing) db.update(modelProviders).set(values).where(eq(modelProviders.id, id)).run()
+  else db.insert(modelProviders).values({ ...values, id, createdAt: at }).run()
+  return listProviders().find((provider) => provider.id === id) ?? null
+}
+
+export function upsertModel(
+  providerId: string,
+  input: GlobalModel,
+) {
+  const provider = getProvider(providerId)
+  if (!provider) return null
+  const existing = db.select().from(models).where(eq(models.id, input.id)).get()
+  const values = {
+    providerId,
+    name: input.name,
+    reasoning: input.reasoning ?? false,
+    inputJson: JSON.stringify(input.input ?? ['text']),
+    contextWindow: input.contextWindow,
+    maxTokens: input.maxTokens,
+  }
+  if (existing) db.update(models).set(values).where(eq(models.id, input.id)).run()
+  else db.insert(models).values({ id: input.id, ...values }).run()
+  db.update(modelProviders).set({ updatedAt: now() }).where(eq(modelProviders.id, providerId)).run()
+  return listProviders().find((item) => item.id === providerId) ?? null
+}
+
+export function deleteModel(id: string) {
+  const existing = db.select().from(models).where(eq(models.id, id)).get()
+  if (!existing) return null
+  db.delete(models).where(eq(models.id, id)).run()
+  db.update(modelProviders)
+    .set({ updatedAt: now() })
+    .where(eq(modelProviders.id, existing.providerId))
+    .run()
+  return listProviders().find((provider) => provider.id === existing.providerId) ?? null
+}
+
+export function deleteProvider(id: string) {
+  db.delete(modelProviders).where(eq(modelProviders.id, id)).run()
+}
+
+export function setDefaultProvider(id: string) {
+  const provider = db.select().from(modelProviders).where(eq(modelProviders.id, id)).get()
+  if (!provider) return null
+  const nextDefault = !provider.isDefault
+  if (nextDefault) db.update(modelProviders).set({ isDefault: false }).run()
+  db.update(modelProviders)
+    .set({ isDefault: nextDefault, updatedAt: now() })
+    .where(eq(modelProviders.id, id))
+    .run()
+  return listProviders().find((provider) => provider.id === id) ?? null
+}
+
+function providerTestUrl(api: string, baseUrl: string, apiKey: string) {
+  const base = baseUrl.replace(/\/+$/, '')
+  if (api === 'google-generative-ai') {
+    const separator = base.includes('?') ? '&' : '?'
+    return `${base}/models${separator}key=${encodeURIComponent(apiKey)}`
+  }
+  return `${base}/models`
+}
+
+export async function testProviderConnection(id: string) {
+  const provider = db.select().from(modelProviders).where(eq(modelProviders.id, id)).get()
+  if (!provider) return null
+  if (!provider.apiKey) {
+    db.update(modelProviders).set({ status: 'untested', updatedAt: now() }).where(eq(modelProviders.id, id)).run()
+    return {
+      ok: false,
+      status: 'missing-api-key',
+      message: 'API key is required before testing the connection.',
+    }
+  }
+
+  const headers = parseJson<Record<string, string>>(provider.headersJson, {})
+  if (provider.api === 'anthropic-messages') {
+    headers['x-api-key'] = provider.apiKey
+    headers['anthropic-version'] ??= '2023-06-01'
+  } else if (provider.api !== 'google-generative-ai') {
+    headers.authorization ??= `Bearer ${provider.apiKey}`
+  }
+
+  let status = 'connected'
+  let message = 'Connection test succeeded.'
+  try {
+    const response = await fetch(
+      providerTestUrl(provider.api, provider.baseUrl, provider.apiKey),
+      {
+        method: 'GET',
+        headers,
+        signal: AbortSignal.timeout(10000),
+      },
+    )
+    if (!response.ok) {
+      status = 'error'
+      message = `Provider returned HTTP ${response.status}.`
+    }
+  } catch (error) {
+    status = 'error'
+    message = error instanceof Error ? error.message : 'Connection test failed.'
+  }
+  db.update(modelProviders).set({ status, updatedAt: now() }).where(eq(modelProviders.id, id)).run()
+  return { ok: status === 'connected', status, message }
+}
+
+export function listPackages() {
+  const rows = db.select().from(packages).all()
+  const mapped = rows.map<GlobalPackage>((pkg) => ({
+    id: pkg.id,
+    name: pkg.name,
+    source: pkg.source,
+    type: pkg.type as GlobalPackage['type'],
+    version: pkg.version,
+    scope: pkg.scope as GlobalPackage['scope'],
+    author: pkg.author,
+    description: pkg.description,
+    downloads: pkg.downloads,
+    resources: parseJson<GlobalPackage['resources']>(pkg.resourcesJson, {
+      extensions: 0,
+      skills: 0,
+      prompts: 0,
+      themes: 0,
+    }),
+    hasExtensions: pkg.hasExtensions,
+    status: pkg.status as GlobalPackage['status'],
+    updatedAt: pkg.updatedAt,
+  }))
+  return {
+    installed: mapped.filter((pkg) => !rows.find((row) => row.id === pkg.id)?.isGallery),
+    gallery: mapped.filter((pkg) => rows.find((row) => row.id === pkg.id)?.isGallery),
+  }
+}
+
+export function installPackage(id: string) {
+  const source = db.select().from(packages).where(eq(packages.id, id)).get()
+  if (!source) return null
+  const installedId = source.id.startsWith('pkg-gallery-')
+    ? source.id.replace('pkg-gallery-', 'pkg-installed-')
+    : source.id
+  const at = now()
+  db.insert(packages)
+    .values({
+      ...source,
+      id: installedId,
+      status: 'installed',
+      isGallery: false,
+      updatedAt: at,
+    })
+    .onConflictDoUpdate({
+      target: packages.id,
+      set: { status: 'installed', isGallery: false, updatedAt: at },
+    })
+    .run()
+  return listPackages()
+}
+
+export function updatePackage(id: string) {
+  db.update(packages).set({ status: 'installed', updatedAt: now() }).where(eq(packages.id, id)).run()
+  return listPackages()
+}
+
+export function deletePackage(id: string) {
+  db.delete(packages).where(eq(packages.id, id)).run()
+}
+
+export function listSessions(filter?: { agentId?: string }): AgentSessionSummary[] {
+  const rows = filter?.agentId
+    ? db.select().from(sessions).where(eq(sessions.agentId, filter.agentId)).all()
+    : db.select().from(sessions).all()
+  return rows.map((session) => {
+    const messages = db
+      .select()
+      .from(chatMessages)
+      .where(eq(chatMessages.sessionId, session.id))
+      .all()
+    const firstUser = messages.find((message) => message.type === 'user')
+    const last = messages.at(-1)
+    return {
+      id: session.id,
+      agentId: session.agentId,
+      name: session.name ?? undefined,
+      filePath: session.filePath,
+      cwd: session.cwd,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+      messageCount: messages.length,
+      firstUserMessage: firstUser?.content,
+      lastMessagePreview: last?.content,
+      totalTokens: session.totalTokens ?? undefined,
+      totalCost: session.totalCost ?? undefined,
+      branchCount: count('session_tree_nodes', 'session_id', session.id),
+      tags: tags('session_tags', 'session_id', session.id),
+    }
+  })
+}
+
+export function createSession(input: { agentId: string; name?: string; cwd?: string }) {
+  const agent = getAgent(input.agentId)
+  if (!agent) return null
+  const id = randomUUID()
+  const at = now()
+  const cwd = input.cwd ?? agent.defaultCwd ?? process.cwd()
+  db.insert(sessions)
+    .values({
+      id,
+      agentId: input.agentId,
+      name: input.name ?? 'Untitled session',
+      filePath: `data/pi-sessions/${id}.jsonl`,
+      cwd,
+      createdAt: at,
+      updatedAt: at,
+    })
+    .run()
+  return listSessions().find((session) => session.id === id) ?? null
+}
+
+export function getSession(id: string) {
+  return listSessions().find((session) => session.id === id) ?? null
+}
+
+export function listSessionMessages(sessionId: string): ChatMessage[] {
+  return db
+    .select()
+    .from(chatMessages)
+    .where(eq(chatMessages.sessionId, sessionId))
+    .all()
+    .map((message) => ({
+      id: message.id,
+      type: message.type as ChatMessage['type'],
+      title: message.title ?? undefined,
+      content: message.content,
+      timestamp: message.createdAt,
+      tokens: message.tokens ?? undefined,
+    }))
+}
+
+export function getSessionTree(sessionId: string): SessionTreeNode | null {
+  const rows = db
+    .select()
+    .from(sessionTreeNodes)
+    .where(eq(sessionTreeNodes.sessionId, sessionId))
+    .all()
+  if (rows.length === 0) return null
+  const byId = new Map<string, SessionTreeNode>()
+  for (const row of rows) {
+    byId.set(row.id, {
+      id: row.id,
+      parentId: row.parentId,
+      type: row.type as SessionTreeNode['type'],
+      role: (row.role ?? undefined) as SessionTreeNode['role'],
+      preview: row.preview,
+      timestamp: row.createdAt,
+      children: [],
+      label: row.label ?? undefined,
+      isCurrent: row.isCurrent,
+    })
+  }
+  let root: SessionTreeNode | null = null
+  for (const node of byId.values()) {
+    if (node.parentId && byId.has(node.parentId)) byId.get(node.parentId)?.children.push(node)
+    else root = node
+  }
+  return root
+}
+
+export function createRun(input: {
+  sessionId: string
+  agentId: string
+  prompt: string
+  providerId?: string
+  modelId?: string
+  thinkingLevel: string
+  cwd: string
+}) {
+  const id = randomUUID()
+  db.insert(chatRuns)
+    .values({
+      id,
+      sessionId: input.sessionId,
+      agentId: input.agentId,
+      status: 'queued',
+      prompt: input.prompt,
+      providerId: input.providerId,
+      modelId: input.modelId,
+      thinkingLevel: input.thinkingLevel,
+      cwd: input.cwd,
+      createdAt: now(),
+    })
+    .run()
+  return getRun(id)
+}
+
+export function getRun(id: string) {
+  return db.select().from(chatRuns).where(eq(chatRuns.id, id)).get() ?? null
+}
+
+export function markRun(id: string, status: 'running' | 'completed' | 'failed' | 'aborted', error?: string) {
+  db.update(chatRuns)
+    .set({
+      status,
+      error,
+      startedAt: status === 'running' ? now() : undefined,
+      completedAt: status !== 'running' ? now() : undefined,
+    })
+    .where(eq(chatRuns.id, id))
+    .run()
+}
+
+export function appendRunEvent(runId: string, type: string, payload: unknown) {
+  db.insert(chatRunEvents)
+    .values({ id: randomUUID(), runId, type, payloadJson: JSON.stringify(payload), createdAt: now() })
+    .run()
+}
+
+export function appendMessage(input: {
+  sessionId: string
+  type: ChatMessage['type']
+  content: string
+  title?: string
+  tokens?: number
+}) {
+  const id = randomUUID()
+  const createdAt = now()
+  db.insert(chatMessages)
+    .values({ id, sessionId: input.sessionId, type: input.type, title: input.title, content: input.content, tokens: input.tokens, createdAt })
+    .run()
+  db.insert(sessionTreeNodes)
+    .values({
+      id: `node-${id}`,
+      sessionId: input.sessionId,
+      parentId: null,
+      type: 'message',
+      role: input.type === 'user' ? 'user' : input.type === 'assistant' ? 'assistant' : 'custom',
+      preview: input.content.slice(0, 120),
+      isCurrent: true,
+      createdAt,
+    })
+    .run()
+  db.update(sessions).set({ updatedAt: createdAt, activeNodeId: `node-${id}` }).where(eq(sessions.id, input.sessionId)).run()
+  return id
+}
+
+export function resolveAgentRunConfig(agentId: string) {
+  const agent = getAgent(agentId)
+  if (!agent) return null
+  const selectedSkillSet = new Set(agent.selectedSkillIds)
+  const selectedPromptSet = new Set(agent.selectedPromptIds)
+  return {
+    agent,
+    skills: listSkills().filter((skill) => selectedSkillSet.has(skill.id)),
+    prompts: listPrompts().filter((prompt) => selectedPromptSet.has(prompt.id)),
+    provider: getProvider(agent.defaultProviderId),
+  }
+}
+
+export function deleteManySessions(sessionIds: string[]) {
+  if (sessionIds.length === 0) return
+  db.delete(sessions).where(inArray(sessions.id, sessionIds)).run()
+}
+
+export function deleteSession(id: string) {
+  db.delete(sessions).where(eq(sessions.id, id)).run()
+}
+
+export function duplicateSession(id: string) {
+  const source = db.select().from(sessions).where(eq(sessions.id, id)).get()
+  if (!source) return null
+  const copy = createSession({
+    agentId: source.agentId,
+    name: `${source.name ?? 'Untitled session'} Copy`,
+    cwd: source.cwd,
+  })
+  if (!copy) return null
+  const sourceMessages = listSessionMessages(id)
+  for (const message of sourceMessages) {
+    appendMessage({
+      sessionId: copy.id,
+      type: message.type,
+      title: message.title,
+      content: message.content,
+      tokens: message.tokens,
+    })
+  }
+  return getSession(copy.id)
+}
+
+function maskSecret(secret: string) {
+  if (secret.length <= 8) return '••••••••'
+  return `${secret.slice(0, 4)}••••••••${secret.slice(-4)}`
+}
