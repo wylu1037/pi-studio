@@ -419,7 +419,7 @@ export function listProviders(): GlobalModelProvider[] {
       name: provider.name,
       baseUrl: provider.baseUrl,
       api: provider.api as GlobalModelProvider['api'],
-      apiKey: provider.apiKey ? maskSecret(provider.apiKey) : undefined,
+      apiKey: provider.apiKey ?? undefined,
       headers: parseJson<Record<string, string>>(provider.headersJson, {}),
       models: listModels(provider.id),
       isDefault: provider.isDefault,
@@ -457,7 +457,7 @@ export function upsertProvider(input: Partial<GlobalModelProvider> & { id?: stri
     name: input.name,
     baseUrl: input.baseUrl,
     api: input.api,
-    apiKey: input.apiKey?.includes('•') ? undefined : input.apiKey,
+    apiKey: input.apiKey,
     headersJson: JSON.stringify(input.headers ?? {}),
     isDefault: input.isDefault ?? false,
     status: input.status ?? 'untested',
@@ -806,16 +806,22 @@ export function appendMessage(input: {
   return id
 }
 
-export function resolveAgentRunConfig(agentId: string) {
+export function resolveAgentRunConfig(agentId: string, providerId?: string | null) {
   const agent = getAgent(agentId)
   if (!agent) return null
   const selectedSkillSet = new Set(agent.selectedSkillIds)
   const selectedPromptSet = new Set(agent.selectedPromptIds)
+  const selectedMcpSet = new Set(agent.selectedMcpConfigIds)
+  const selectedProvider =
+    getProvider(providerId ?? agent.defaultProviderId) ??
+    getProvider(listProviders().find((provider) => provider.isDefault)?.id) ??
+    getProvider(listProviders()[0]?.id)
   return {
     agent,
     skills: listSkills().filter((skill) => selectedSkillSet.has(skill.id)),
     prompts: listPrompts().filter((prompt) => selectedPromptSet.has(prompt.id)),
-    provider: getProvider(agent.defaultProviderId),
+    mcpConfigs: listMcpConfigs().filter((mcp) => selectedMcpSet.has(mcp.id)),
+    provider: selectedProvider,
   }
 }
 
@@ -848,9 +854,4 @@ export function duplicateSession(id: string) {
     })
   }
   return getSession(copy.id)
-}
-
-function maskSecret(secret: string) {
-  if (secret.length <= 8) return '••••••••'
-  return `${secret.slice(0, 4)}••••••••${secret.slice(-4)}`
 }

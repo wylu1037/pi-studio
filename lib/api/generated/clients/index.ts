@@ -13,6 +13,7 @@ export { getApiMcp } from "./getApiMcp.ts";
 export { getApiModelProviders } from "./getApiModelProviders.ts";
 export { getApiPackages } from "./getApiPackages.ts";
 export { getApiPrompts } from "./getApiPrompts.ts";
+export { getApiRunsId } from "./getApiRunsId.ts";
 export { getApiSessions } from "./getApiSessions.ts";
 export { getApiSessionsIdMessages } from "./getApiSessionsIdMessages.ts";
 export { getApiSessionsIdTree } from "./getApiSessionsIdTree.ts";

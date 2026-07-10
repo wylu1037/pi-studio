@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
@@ -27,6 +27,8 @@ import {
   Panel,
   PanelHeader,
 } from '@/components/pi-ui'
+import { getApiRunsId } from '@/lib/api/generated/clients/getApiRunsId'
+import { postApiRunsIdAbort } from '@/lib/api/generated/clients/postApiRunsIdAbort'
 import { postApiSessionsIdRuns } from '@/lib/api/generated/clients/postApiSessionsIdRuns'
 import { postApiSessionsIdRunsMutationRequestSchema } from '@/lib/api/generated/zod/postApiSessionsIdRunsSchema'
 import type {
@@ -42,6 +44,12 @@ import type {
 import { cn } from '@/lib/utils'
 
 const thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+const EVENT_STREAM_CONNECT_TIMEOUT_MS = 5000
+const RUN_RECONCILE_INITIAL_DELAY_MS = 1000
+const RUN_RECONCILE_POLL_MS = 1200
+const RUN_RECONCILE_MAX_MS = 20000
+
+type StreamPhase = 'idle' | 'starting' | 'connecting' | 'thinking' | 'streaming'
 
 type ComposerValues = {
   message: string
@@ -71,8 +79,16 @@ export function ChatView({
 }) {
   const router = useRouter()
   const [streamingMessage, setStreamingMessage] = useState('')
+  const [streamBuffer, setStreamBuffer] = useState('')
+  const [streamDone, setStreamDone] = useState(false)
+  const [streamPhase, setStreamPhase] = useState<StreamPhase>('idle')
+  const [optimisticMessage, setOptimisticMessage] =
+    useState<ChatMessage | null>(null)
   const [runId, setRunId] = useState<string | null>(null)
   const [streamError, setStreamError] = useState<string | null>(null)
+  const eventSourceRef = useRef<EventSource | null>(null)
+  const activeRunIdRef = useRef<string | null>(null)
+  const reconcileTimerRef = useRef<number | null>(null)
 
   const activeProvider =
     providers.find((provider) => provider.id === activeAgent?.defaultProviderId) ??
@@ -103,9 +119,55 @@ export function ChatView({
     return mcpConfigs.filter((mcp) => selected.has(mcp.id)).map((mcp) => mcp.name)
   }, [activeAgent?.selectedMcpConfigIds, mcpConfigs])
 
+  useEffect(() => {
+    return () => {
+      eventSourceRef.current?.close()
+      if (reconcileTimerRef.current) {
+        window.clearTimeout(reconcileTimerRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (streamingMessage.length >= streamBuffer.length) return
+    const timer = window.setTimeout(() => {
+      setStreamingMessage((current) => {
+        const remaining = streamBuffer.length - current.length
+        const step = Math.min(4, Math.max(1, Math.ceil(remaining / 24)))
+        return streamBuffer.slice(0, current.length + step)
+      })
+    }, 18)
+
+    return () => window.clearTimeout(timer)
+  }, [streamBuffer, streamingMessage])
+
+  useEffect(() => {
+    if (!streamDone || streamingMessage.length < streamBuffer.length) return
+    const timer = window.setTimeout(() => {
+      setStreamingMessage('')
+      setStreamBuffer('')
+      setStreamDone(false)
+      setOptimisticMessage(null)
+      setStreamPhase('idle')
+      router.refresh()
+    }, 150)
+
+    return () => window.clearTimeout(timer)
+  }, [router, streamBuffer.length, streamDone, streamingMessage.length])
+
+  const baseMessages =
+    optimisticMessage &&
+    !messages.some(
+      (message) =>
+        message.type === 'user' &&
+        message.content === optimisticMessage.content,
+    )
+      ? [...messages, optimisticMessage]
+      : messages
+
   const displayMessages = streamingMessage
     ? [
-        ...messages,
+        ...baseMessages,
         {
           id: 'streaming-assistant',
           type: 'assistant' as const,
@@ -113,50 +175,173 @@ export function ChatView({
           timestamp: 'streaming',
         },
       ]
-    : messages
+    : baseMessages
+  const isWaiting =
+    !streamError &&
+    runId !== null &&
+    streamPhase !== 'idle' &&
+    streamingMessage.length === 0
+
+  const clearReconciliation = () => {
+    if (!reconcileTimerRef.current) return
+    window.clearTimeout(reconcileTimerRef.current)
+    reconcileTimerRef.current = null
+  }
+
+  const finishActiveStream = (currentRunId: string, source?: EventSource | null) => {
+    if (activeRunIdRef.current !== currentRunId) return false
+    clearReconciliation()
+    source?.close()
+    if (eventSourceRef.current === source) eventSourceRef.current = null
+    activeRunIdRef.current = null
+    setRunId(null)
+    setStreamPhase('idle')
+    setStreamDone(true)
+    return true
+  }
+
+  const failActiveStream = (
+    currentRunId: string,
+    message: string,
+    source?: EventSource | null,
+  ) => {
+    if (activeRunIdRef.current !== currentRunId) return false
+    clearReconciliation()
+    source?.close()
+    if (eventSourceRef.current === source) eventSourceRef.current = null
+    activeRunIdRef.current = null
+    setRunId(null)
+    setStreamPhase('idle')
+    setStreamDone(false)
+    setStreamError(message)
+    router.refresh()
+    return true
+  }
+
+  const scheduleRunReconciliation = (currentRunId: string, source: EventSource) => {
+    const startedAt = Date.now()
+    const poll = async () => {
+      if (activeRunIdRef.current !== currentRunId) return
+      if (Date.now() - startedAt > RUN_RECONCILE_MAX_MS) return
+      try {
+        const run = await getApiRunsId(currentRunId)
+        if (run.status === 'completed') {
+          finishActiveStream(currentRunId, source)
+          return
+        }
+        if (run.status === 'failed' || run.status === 'aborted') {
+          failActiveStream(
+            currentRunId,
+            run.error ?? (run.status === 'aborted' ? 'pi run was aborted.' : 'pi run failed.'),
+            source,
+          )
+          return
+        }
+      } catch {
+        // SSE is still the primary path; polling only recovers missed endings.
+      }
+      reconcileTimerRef.current = window.setTimeout(poll, RUN_RECONCILE_POLL_MS)
+    }
+    reconcileTimerRef.current = window.setTimeout(poll, RUN_RECONCILE_INITIAL_DELAY_MS)
+  }
 
   const submit = form.handleSubmit(async (values) => {
     if (!activeSession || !activeAgent) return
+    eventSourceRef.current?.close()
+    clearReconciliation()
+    activeRunIdRef.current = null
     setStreamingMessage('')
+    setStreamBuffer('')
+    setStreamDone(false)
+    setStreamPhase('starting')
     setStreamError(null)
-    const run = await postApiSessionsIdRuns(activeSession.id, values)
-    setRunId(run.id)
-    form.reset({
-      message: '',
-      providerId: values.providerId,
-      modelId: values.modelId,
-      thinkingLevel: values.thinkingLevel,
+    setOptimisticMessage({
+      id: `optimistic-user-${Date.now()}`,
+      type: 'user',
+      content: values.message,
+      timestamp: 'sending',
     })
+    try {
+      const run = await postApiSessionsIdRuns(activeSession.id, values)
+      activeRunIdRef.current = run.id
+      setRunId(run.id)
+      setStreamPhase('connecting')
+      form.reset({
+        message: '',
+        providerId: values.providerId,
+        modelId: values.modelId,
+        thinkingLevel: values.thinkingLevel,
+      })
 
-    const source = new EventSource(`/api/runs/${run.id}/events`)
-    source.addEventListener('message_delta', (event) => {
-      const payload = JSON.parse((event as MessageEvent).data) as { content?: string }
-      setStreamingMessage((current) => current + (payload.content ?? ''))
-    })
-    source.addEventListener('bash_output', (event) => {
-      const payload = JSON.parse((event as MessageEvent).data) as { content?: string }
-      setStreamingMessage((current) => current + (payload.content ?? ''))
-    })
-    source.addEventListener('error', (event) => {
-      if ('data' in event && event.data) {
-        const payload = JSON.parse(event.data as string) as { message?: string }
-        setStreamError(payload.message ?? 'pi run failed')
-      }
-      source.close()
+      const eventSource = new EventSource(`/api/runs/${run.id}/events`)
+      eventSourceRef.current = eventSource
+      const currentRunId = run.id
+      const connectionTimeout = window.setTimeout(() => {
+        failActiveStream(
+          currentRunId,
+          'Timed out connecting to the pi event stream. Please try again.',
+          eventSource,
+        )
+      }, EVENT_STREAM_CONNECT_TIMEOUT_MS)
+
+      eventSource.addEventListener('connected', () => {
+        if (activeRunIdRef.current !== currentRunId) return
+        window.clearTimeout(connectionTimeout)
+        setStreamPhase('thinking')
+      })
+      eventSource.addEventListener('started', () => {
+        if (activeRunIdRef.current !== currentRunId) return
+        window.clearTimeout(connectionTimeout)
+        setStreamPhase('thinking')
+      })
+      eventSource.addEventListener('message_delta', (event) => {
+        if (activeRunIdRef.current !== currentRunId) return
+        window.clearTimeout(connectionTimeout)
+        const payload = JSON.parse((event as MessageEvent).data) as { content?: string }
+        const content = payload.content ?? ''
+        if (!content) return
+        setStreamPhase('streaming')
+        setStreamBuffer((current) => current + content)
+      })
+      eventSource.addEventListener('error', (event) => {
+        if (activeRunIdRef.current !== currentRunId) return
+        const data = (event as MessageEvent).data
+        if (typeof data === 'string' && data) {
+          window.clearTimeout(connectionTimeout)
+          const payload = JSON.parse(data) as { message?: string }
+          failActiveStream(currentRunId, payload.message ?? 'pi run failed.', eventSource)
+          return
+        }
+        // Native EventSource errors can fire while the browser is still
+        // connecting. The connection timeout and run-status reconciliation
+        // decide whether this becomes a real failure.
+      })
+      eventSource.addEventListener('done', () => {
+        if (activeRunIdRef.current !== currentRunId) return
+        window.clearTimeout(connectionTimeout)
+        finishActiveStream(currentRunId, eventSource)
+      })
+      scheduleRunReconciliation(currentRunId, eventSource)
+    } catch (error) {
+      setStreamPhase('idle')
       setRunId(null)
-      router.refresh()
-    })
-    source.addEventListener('done', () => {
-      source.close()
-      setRunId(null)
-      router.refresh()
-    })
+      activeRunIdRef.current = null
+      setStreamError(
+        error instanceof Error ? error.message : 'Unable to start pi run.',
+      )
+      return
+    }
   })
 
   const abort = async () => {
     if (!runId) return
-    await fetch(`/api/runs/${runId}/abort`, { method: 'POST' })
+    await postApiRunsIdAbort(runId)
+    clearReconciliation()
+    eventSourceRef.current?.close()
+    eventSourceRef.current = null
+    activeRunIdRef.current = null
     setRunId(null)
+    setStreamPhase('idle')
     router.refresh()
   }
 
@@ -227,6 +412,9 @@ export function ChatView({
             {displayMessages.map((m) => (
               <MessageBubble key={m.id} message={m} agentName={activeAgent.name} />
             ))}
+            {isWaiting && (
+              <WaitingBubble agentName={activeAgent.name} />
+            )}
             {displayMessages.length === 0 && (
               <div className="border border-dashed border-border bg-panel/50 px-4 py-8 text-center font-mono text-xs text-muted-foreground">
                 Start a new pi conversation from the composer.
@@ -244,10 +432,10 @@ export function ChatView({
         {/* composer */}
         <div className="border-t border-border bg-panel px-5 py-3">
           <div className="mx-auto max-w-3xl">
-            <form onSubmit={submit} className="flex items-end gap-2 border border-border-strong bg-card p-2 focus-within:border-ring">
+            <form onSubmit={submit} className="flex items-center gap-2.5 border border-border-strong bg-card p-2.5 focus-within:border-ring">
               <button
                 type="button"
-                className="mb-0.5 text-muted-foreground hover:text-foreground"
+                className="flex size-9 items-center justify-center text-muted-foreground hover:text-foreground"
                 aria-label="Attach file"
               >
                 <Paperclip className="size-4" />
@@ -268,12 +456,12 @@ export function ChatView({
                 rows={1}
                 disabled={Boolean(runId)}
                 placeholder="Reply to the agent...  (Enter to send, Shift+Enter for newline)"
-                className="max-h-40 min-h-9 flex-1 resize-none bg-transparent py-1.5 font-mono text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60"
+                className="max-h-40 min-h-11 flex-1 resize-none bg-transparent py-2 font-mono text-[13px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/60"
               />
               <button
                 type={runId ? 'button' : 'submit'}
                 onClick={runId ? abort : undefined}
-                className="mb-0.5 flex size-8 items-center justify-center border border-accent bg-accent text-accent-foreground hover:opacity-90"
+                className="flex size-9 items-center justify-center border border-accent bg-accent text-accent-foreground hover:opacity-90"
                 aria-label={runId ? 'Abort run' : 'Send message'}
               >
                 <Send className="size-3.5" />
@@ -453,6 +641,25 @@ function TreeNode({ node, depth }: { node: SessionTreeNode; depth: number }) {
 }
 
 /* ---------- Message bubbles ---------- */
+
+function WaitingBubble({ agentName }: { agentName: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-1.5">
+        <Bot className="size-3 text-accent" />
+        <Label>{agentName}</Label>
+      </div>
+      <div className="flex items-center gap-2 border-l-2 border-accent/50 pl-3.5 font-mono text-xs text-muted-foreground">
+        <span>Thinking</span>
+        <span className="flex items-center gap-1">
+          <span className="size-1.5 animate-pulse bg-muted-foreground/60" />
+          <span className="size-1.5 animate-pulse bg-muted-foreground/60 [animation-delay:120ms]" />
+          <span className="size-1.5 animate-pulse bg-muted-foreground/60 [animation-delay:240ms]" />
+        </span>
+      </div>
+    </div>
+  )
+}
 
 function MessageBubble({
   message,

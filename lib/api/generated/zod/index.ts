@@ -13,6 +13,7 @@ export { getApiMcp200Schema, getApiMcpQueryResponseSchema } from "./getApiMcpSch
 export { getApiModelProviders200Schema, getApiModelProvidersQueryResponseSchema } from "./getApiModelProvidersSchema.ts";
 export { getApiPackages200Schema, getApiPackagesQueryResponseSchema } from "./getApiPackagesSchema.ts";
 export { getApiPrompts200Schema, getApiPromptsQueryResponseSchema } from "./getApiPromptsSchema.ts";
+export { getApiRunsId200Schema, getApiRunsId404Schema, getApiRunsIdPathParamsSchema, getApiRunsIdQueryResponseSchema } from "./getApiRunsIdSchema.ts";
 export { getApiSessionsIdMessages200Schema, getApiSessionsIdMessagesPathParamsSchema, getApiSessionsIdMessagesQueryResponseSchema } from "./getApiSessionsIdMessagesSchema.ts";
 export { getApiSessionsIdTree200Schema, getApiSessionsIdTreePathParamsSchema, getApiSessionsIdTreeQueryResponseSchema } from "./getApiSessionsIdTreeSchema.ts";
 export { getApiSessions200Schema, getApiSessionsQueryParamsSchema, getApiSessionsQueryResponseSchema } from "./getApiSessionsSchema.ts";

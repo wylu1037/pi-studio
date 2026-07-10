@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
-import { streamText } from 'hono/streaming'
+import { streamSSE } from 'hono/streaming'
 import {
   abortRun as abortRegisteredRun,
 } from '@/lib/chat/run-registry'
@@ -647,6 +647,21 @@ api.openapi(
 
 api.openapi(
   createRoute({
+    method: 'get',
+    path: '/runs/{id}',
+    tags: ['Chat'],
+    request: { params: z.object({ id: z.string() }) },
+    responses: { 200: json(RunSchema), 404: json(ErrorSchema) },
+  }),
+  (c) => {
+    const run = getRun(c.req.valid('param').id)
+    if (!run) return c.json({ error: 'Run not found' }, 404)
+    return c.json(run)
+  },
+)
+
+api.openapi(
+  createRoute({
     method: 'post',
     path: '/runs/{id}/abort',
     tags: ['Chat'],
@@ -665,34 +680,61 @@ api.get('/runs/:id/events', (c) => {
   const runId = c.req.param('id')
   const run = getRun(runId)
   if (!run) return c.json({ error: 'Run not found' }, 404)
-  const config = resolveAgentRunConfig(run.agentId)
+  const config = resolveAgentRunConfig(run.agentId, run.providerId)
   if (!config) return c.json({ error: 'Agent not found' }, 404)
-  const provider = config.provider?.name.toLowerCase()
+  const provider = piProviderName(config.provider?.api)
   let assistantContent = ''
 
-  return streamText(c, async (stream) => {
+  return streamSSE(c, async (stream) => {
+    const heartbeat = setInterval(() => {
+      void stream.write(`: heartbeat ${Date.now()}\n\n`)
+    }, 30000)
     const send = async (event: string, payload: unknown) => {
       appendRunEvent(runId, event, payload)
-      await stream.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`)
+      await stream.writeSSE({ event, data: JSON.stringify(payload) })
     }
 
-    markRun(runId, 'running')
-    await send('started', { runId })
-
     try {
+      await send('connected', { runId })
+      markRun(runId, 'running')
+      await send('started', { runId })
+
       for await (const event of runPiCli({
+        agentId: config.agent.id,
+        agentName: config.agent.name,
         runId,
         sessionId: run.sessionId,
         sessionDir: defaultPiSessionDir(),
         cwd: run.cwd,
         prompt: run.prompt,
         provider,
+        providerConfig: config.provider ?? undefined,
+        apiKey: config.provider?.apiKey ?? undefined,
+        baseUrl: config.provider?.baseUrl ?? undefined,
         model: run.modelId ?? config.agent.defaultModelId,
         thinkingLevel: run.thinkingLevel,
         skills: config.skills.map((skill) => skill.path),
         prompts: config.prompts.map((prompt) => prompt.path),
+        mcpConfigs: (config.mcpConfigs ?? []).map((mcp) => ({
+          id: mcp.id,
+          name: mcp.name,
+          description: mcp.description,
+          command: mcp.command,
+          args: mcp.args,
+          env: mcp.env,
+        })),
       })) {
         if (event.type === 'message_delta') assistantContent += event.content
+        if (event.type === 'error') {
+          throw new Error(event.message)
+        }
+        if (event.type === 'done') {
+          appendRunEvent(runId, 'process_done', event)
+          if (event.exitCode && event.exitCode !== 0) {
+            throw new Error(`pi exited with code ${event.exitCode}`)
+          }
+          continue
+        }
         await send(event.type, event)
       }
 
@@ -710,6 +752,16 @@ api.get('/runs/:id/events', (c) => {
       markRun(runId, 'failed', message)
       appendMessage({ sessionId: run.sessionId, type: 'error', content: message })
       await send('error', { message })
+    } finally {
+      clearInterval(heartbeat)
     }
   })
 })
+
+function piProviderName(api?: string | null) {
+  if (!api) return undefined
+  if (api.startsWith('anthropic')) return 'anthropic'
+  if (api.startsWith('google')) return 'google'
+  if (api.startsWith('openai')) return 'openai'
+  return undefined
+}

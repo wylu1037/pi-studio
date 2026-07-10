@@ -13,6 +13,7 @@ export type { GetApiMcp200, GetApiMcpQuery, GetApiMcpQueryResponse } from "./Get
 export type { GetApiModelProviders200, GetApiModelProviders200ApiEnumKey, GetApiModelProviders200StatusEnumKey, GetApiModelProvidersQuery, GetApiModelProvidersQueryResponse, ModelsInputEnumKey } from "./GetApiModelProviders.ts";
 export type { GalleryScopeEnumKey, GalleryStatusEnumKey, GalleryTypeEnumKey, GetApiPackages200, GetApiPackagesQuery, GetApiPackagesQueryResponse, InstalledScopeEnumKey, InstalledStatusEnumKey, InstalledTypeEnumKey } from "./GetApiPackages.ts";
 export type { GetApiPrompts200, GetApiPromptsQuery, GetApiPromptsQueryResponse } from "./GetApiPrompts.ts";
+export type { GetApiRunsId200, GetApiRunsId404, GetApiRunsIdPathParams, GetApiRunsIdQuery, GetApiRunsIdQueryResponse } from "./GetApiRunsId.ts";
 export type { GetApiSessions200, GetApiSessionsQuery, GetApiSessionsQueryParams, GetApiSessionsQueryResponse } from "./GetApiSessions.ts";
 export type { GetApiSessionsIdMessages200, GetApiSessionsIdMessages200TypeEnumKey, GetApiSessionsIdMessagesPathParams, GetApiSessionsIdMessagesQuery, GetApiSessionsIdMessagesQueryResponse } from "./GetApiSessionsIdMessages.ts";
 export type { GetApiSessionsIdTree200, GetApiSessionsIdTreePathParams, GetApiSessionsIdTreeQuery, GetApiSessionsIdTreeQueryResponse } from "./GetApiSessionsIdTree.ts";
