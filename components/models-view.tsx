@@ -11,6 +11,7 @@ import {
   Zap,
   Check,
   Circle,
+  Cpu,
   AlertTriangle,
   Save,
   Trash2,
@@ -160,6 +161,9 @@ export function ModelsView({
         </p>
       </div>
 
+      {providerList.length === 0 ? (
+        <ModelsEmptyState onAdd={addProvider} disabled={pending === 'new-provider'} />
+      ) : (
       <div className="grid flex-1 grid-cols-[300px_1fr] overflow-hidden">
         {/* Provider list */}
         <div className="flex flex-col border-r border-border">
@@ -220,6 +224,7 @@ export function ModelsView({
           </div>
         )}
       </div>
+      )}
     </div>
   )
 }
@@ -248,6 +253,35 @@ function StatusDot({
       <Circle className="size-2.5" />
       untested
     </span>
+  )
+}
+
+function ModelsEmptyState({
+  onAdd,
+  disabled,
+}: {
+  onAdd: () => void
+  disabled?: boolean
+}) {
+  return (
+    <div className="mx-auto flex max-w-md flex-1 flex-col items-center justify-center gap-4 py-24 text-center">
+      <div className="flex size-14 items-center justify-center border border-border-strong bg-card">
+        <Cpu className="size-6 text-muted-foreground" />
+      </div>
+      <div>
+        <h2 className="font-serif text-2xl italic text-foreground">
+          No model providers yet
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground text-pretty">
+          Add a provider with its base URL, API key, and model ids before agents
+          can use local Pi chat runs.
+        </p>
+      </div>
+      <ActionButton variant="accent" onClick={onAdd} disabled={disabled}>
+        <Plus className="size-3.5" />
+        Add Provider
+      </ActionButton>
+    </div>
   )
 }
 
@@ -614,6 +648,23 @@ function ProviderDetail({
           <span>Max out</span>
           <span className="text-right">Actions</span>
         </div>
+        {displayModels.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 px-4 py-12 text-center">
+            <Cpu className="size-6 text-muted-foreground/50" />
+            <div>
+              <p className="font-mono text-sm text-muted-foreground">
+                No models configured for this provider
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground/70">
+                Add a model id before assigning this provider to agents.
+              </p>
+            </div>
+            <ActionButton onClick={() => setShowAddModel(true)}>
+              <Plus className="size-3.5" />
+              Add model
+            </ActionButton>
+          </div>
+        ) : (
         <ul className="divide-y divide-border">
           {displayModels.map((m) => (
             <li
@@ -671,6 +722,7 @@ function ProviderDetail({
             </li>
           ))}
         </ul>
+        )}
       </Panel>
     </form>
     <ConfirmDialog

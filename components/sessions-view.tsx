@@ -194,84 +194,90 @@ export function SessionsView({
       {/* Table + drawer */}
       <div className="flex min-h-0 flex-1">
         <div className="min-w-0 flex-1 overflow-auto">
-          <table className="w-full border-collapse text-left">
-            <thead className="sticky top-0 z-10 bg-panel">
-              <tr className="border-b border-border">
-                {['Session', 'Agent', 'Messages', 'Tokens', 'Cost', 'Branches', 'Updated'].map(
-                  (h) => (
-                    <th
-                      key={h}
-                      className="whitespace-nowrap px-4 py-2.5 font-mono-label text-[11px] text-muted-foreground"
-                    >
-                      {h}
-                    </th>
-                  ),
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((s) => (
-                <tr
-                  key={s.id}
-                  onClick={() => setSelected(s)}
-                  className={cn(
-                    'cursor-pointer border-b border-border/70 transition-colors hover:bg-muted/60',
-                    selected?.id === s.id && 'bg-accent/8',
-                  )}
-                >
-                  <td className="max-w-sm px-4 py-3">
-                    <div className="truncate text-sm font-medium text-foreground">
-                      {s.name ?? s.firstUserMessage ?? 'Untitled session'}
-                    </div>
-                    <div className="mt-0.5 flex items-center gap-1.5">
-                      {s.tags.slice(0, 3).map((t) => (
-                        <Tag key={t} tone="outline">
-                          {t}
-                        </Tag>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3">
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {agentName(agents, s.agentId)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs text-foreground">
-                    {s.messageCount}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
-                    {formatTokens(s.totalTokens)}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
-                    {formatCost(s.totalCost)}
-                  </td>
-                  <td className="px-4 py-3">
-                    {s.branchCount > 0 ? (
-                      <span className="inline-flex items-center gap-1 font-mono text-xs text-accent">
-                        <GitBranch className="size-3" />
-                        {s.branchCount}
-                      </span>
-                    ) : (
-                      <span className="font-mono text-xs text-muted-foreground/50">
-                        —
-                      </span>
+          {sessions.length === 0 ? (
+            <SessionsEmptyState onCreate={createSession} disabled={pending === 'new'} />
+          ) : (
+            <>
+              <table className="w-full border-collapse text-left">
+                <thead className="sticky top-0 z-10 bg-panel">
+                  <tr className="border-b border-border">
+                    {['Session', 'Agent', 'Messages', 'Tokens', 'Cost', 'Branches', 'Updated'].map(
+                      (h) => (
+                        <th
+                          key={h}
+                          className="whitespace-nowrap px-4 py-2.5 font-mono-label text-[11px] text-muted-foreground"
+                        >
+                          {h}
+                        </th>
+                      ),
                     )}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-muted-foreground">
-                    {s.updatedAt}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((s) => (
+                    <tr
+                      key={s.id}
+                      onClick={() => setSelected(s)}
+                      className={cn(
+                        'cursor-pointer border-b border-border/70 transition-colors hover:bg-muted/60',
+                        selected?.id === s.id && 'bg-accent/8',
+                      )}
+                    >
+                      <td className="max-w-sm px-4 py-3">
+                        <div className="truncate text-sm font-medium text-foreground">
+                          {s.name ?? s.firstUserMessage ?? 'Untitled session'}
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-1.5">
+                          {s.tags.slice(0, 3).map((t) => (
+                            <Tag key={t} tone="outline">
+                              {t}
+                            </Tag>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3">
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {agentName(agents, s.agentId)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-foreground">
+                        {s.messageCount}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                        {formatTokens(s.totalTokens)}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                        {formatCost(s.totalCost)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {s.branchCount > 0 ? (
+                          <span className="inline-flex items-center gap-1 font-mono text-xs text-accent">
+                            <GitBranch className="size-3" />
+                            {s.branchCount}
+                          </span>
+                        ) : (
+                          <span className="font-mono text-xs text-muted-foreground/50">
+                            —
+                          </span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-muted-foreground">
+                        {s.updatedAt}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
 
-          {filtered.length === 0 && (
-            <div className="flex flex-col items-center justify-center gap-2 py-24 text-center">
-              <MessageSquare className="size-6 text-muted-foreground/50" />
-              <p className="font-mono text-sm text-muted-foreground">
-                No sessions match your filters.
-              </p>
-            </div>
+              {filtered.length === 0 && (
+                <div className="flex flex-col items-center justify-center gap-2 py-24 text-center">
+                  <MessageSquare className="size-6 text-muted-foreground/50" />
+                  <p className="font-mono text-sm text-muted-foreground">
+                    No sessions match your filters.
+                  </p>
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -431,6 +437,35 @@ function Field({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between gap-2">
       <Label>{label}</Label>
       <span className="truncate font-mono text-xs text-foreground">{value}</span>
+    </div>
+  )
+}
+
+function SessionsEmptyState({
+  onCreate,
+  disabled,
+}: {
+  onCreate: () => void
+  disabled?: boolean
+}) {
+  return (
+    <div className="mx-auto flex max-w-md flex-col items-center justify-center gap-4 py-24 text-center">
+      <div className="flex size-14 items-center justify-center border border-border-strong bg-card">
+        <MessageSquare className="size-6 text-muted-foreground" />
+      </div>
+      <div>
+        <h2 className="font-serif text-2xl italic text-foreground">
+          No sessions yet
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground text-pretty">
+          Start a conversation from an agent to create the first session, then
+          come back here to inspect history, tokens, branches, and files.
+        </p>
+      </div>
+      <ActionButton variant="accent" onClick={onCreate} disabled={disabled}>
+        <MessageSquare className="size-3.5" />
+        New session
+      </ActionButton>
     </div>
   )
 }

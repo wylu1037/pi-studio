@@ -129,16 +129,68 @@ export function PackagesView({
 
       {/* List */}
       <div className="flex-1 overflow-y-auto scrollbar-thin p-6">
-        <div className="grid gap-4 lg:grid-cols-2">
-          {filtered.map((p) => (
-            <PackageCard key={p.id} pkg={p} />
-          ))}
-        </div>
+        {installed.length === 0 ? (
+          <PackagesEmptyState
+            onBrowse={() => setShowGallery(true)}
+            onInstall={installFromPrompt}
+            disabled={pendingId?.startsWith('install:')}
+          />
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-24 text-center">
+            <PackageIcon className="size-6 text-muted-foreground/50" />
+            <p className="font-mono text-sm text-muted-foreground">
+              No packages match your filters.
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {filtered.map((p) => (
+              <PackageCard key={p.id} pkg={p} />
+            ))}
+          </div>
+        )}
       </div>
 
       {showGallery && (
         <GalleryDrawer gallery={gallery} onClose={() => setShowGallery(false)} />
       )}
+    </div>
+  )
+}
+
+function PackagesEmptyState({
+  onBrowse,
+  onInstall,
+  disabled,
+}: {
+  onBrowse: () => void
+  onInstall: () => void
+  disabled?: boolean
+}) {
+  return (
+    <div className="mx-auto flex max-w-md flex-col items-center justify-center gap-4 py-24 text-center">
+      <div className="flex size-14 items-center justify-center border border-border-strong bg-card">
+        <PackageIcon className="size-6 text-muted-foreground" />
+      </div>
+      <div>
+        <h2 className="font-serif text-2xl italic text-foreground">
+          No packages installed
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground text-pretty">
+          Install packages to bring in shared skills, prompts, extensions, and
+          themes for your local Pi workspace.
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <ActionButton onClick={onBrowse}>
+          <Search className="size-3.5" />
+          Browse pi.dev
+        </ActionButton>
+        <ActionButton variant="accent" onClick={onInstall} disabled={disabled}>
+          <Download className="size-3.5" />
+          Install
+        </ActionButton>
+      </div>
     </div>
   )
 }

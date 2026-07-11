@@ -12,6 +12,7 @@ import {
   Trash2,
   UserPlus,
   X,
+  Plug,
   Server,
 } from 'lucide-react'
 import type { AgentProfile, GlobalMcpConfig } from '@/lib/types'
@@ -131,92 +132,96 @@ export function McpView({
       </div>
 
       <div className="flex-1 overflow-y-auto scrollbar-thin p-6">
-        <Panel>
-          <div className="grid grid-cols-[1.4fr_1.2fr_70px_120px_90px] items-center gap-4 border-b border-border bg-panel px-4 py-2.5">
-            <Label>Server</Label>
-            <Label>Command</Label>
-            <Label>Env</Label>
-            <Label>Global</Label>
-            <Label className="text-right">Actions</Label>
-          </div>
-          <ul className="divide-y divide-border">
-            {configs.map((c) => (
-              <li
-                key={c.id}
-                className="grid grid-cols-[1.4fr_1.2fr_70px_120px_90px] items-center gap-4 px-4 py-3 hover:bg-panel"
-              >
-                <div className="flex items-start gap-2.5">
-                  <Server className="mt-0.5 size-4 shrink-0 text-accent" />
-                  <div className="min-w-0">
-                    <span className="font-mono text-[13px] text-foreground">
-                      {c.name}
-                    </span>
-                    <p className="line-clamp-1 text-[13px] text-muted-foreground">
-                      {c.description}
-                    </p>
-                    <div className="mt-1 flex gap-1.5">
-                      {c.tags.map((t) => (
-                        <Tag key={t} tone="outline">
-                          {t}
-                        </Tag>
-                      ))}
-                      <span className="font-mono text-[10px] text-muted-foreground">
-                        used by {c.usedByAgents}
+        {configs.length === 0 ? (
+          <McpEmptyState onCreate={() => setCreating(true)} />
+        ) : (
+          <Panel>
+            <div className="grid grid-cols-[1.4fr_1.2fr_70px_120px_90px] items-center gap-4 border-b border-border bg-panel px-4 py-2.5">
+              <Label>Server</Label>
+              <Label>Command</Label>
+              <Label>Env</Label>
+              <Label>Global</Label>
+              <Label className="text-right">Actions</Label>
+            </div>
+            <ul className="divide-y divide-border">
+              {configs.map((c) => (
+                <li
+                  key={c.id}
+                  className="grid grid-cols-[1.4fr_1.2fr_70px_120px_90px] items-center gap-4 px-4 py-3 hover:bg-panel"
+                >
+                  <div className="flex items-start gap-2.5">
+                    <Server className="mt-0.5 size-4 shrink-0 text-accent" />
+                    <div className="min-w-0">
+                      <span className="font-mono text-[13px] text-foreground">
+                        {c.name}
                       </span>
+                      <p className="line-clamp-1 text-[13px] text-muted-foreground">
+                        {c.description}
+                      </p>
+                      <div className="mt-1 flex gap-1.5">
+                        {c.tags.map((t) => (
+                          <Tag key={t} tone="outline">
+                            {t}
+                          </Tag>
+                        ))}
+                        <span className="font-mono text-[10px] text-muted-foreground">
+                          used by {c.usedByAgents}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
-                <code className="truncate font-mono text-[11px] text-muted-foreground">
-                  {c.command} {c.args.join(' ')}
-                </code>
-                <span className="font-mono text-[13px] text-foreground">
-                  {Object.keys(c.env).length}
-                </span>
-                <div>
-                  <Toggle
-                    checked={c.enabledGlobally}
-                    onChange={(enabledGlobally) =>
-                      saveConfig(c, { enabledGlobally })
-                    }
-                  />
-                </div>
-                <div className="flex items-center justify-end gap-0.5">
-                  <ActionButton
-                    variant="ghost"
-                    title="Edit"
-                    onClick={() => setEditing(c)}
-                  >
-                    <Pencil className="size-3.5" />
-                  </ActionButton>
-                  <ActionButton
-                    variant="ghost"
-                    title="Duplicate"
-                    onClick={() => duplicateConfig(c)}
-                    disabled={pendingId === `duplicate:${c.id}`}
-                  >
-                    <Copy className="size-3.5" />
-                  </ActionButton>
-                  <ActionButton
-                    variant="ghost"
-                    title="Assign"
-                    onClick={() => assignConfig(c)}
-                    disabled={pendingId === `assign:${c.id}`}
-                  >
-                    <UserPlus className="size-3.5" />
-                  </ActionButton>
-                  <ActionButton
-                    variant="ghost"
-                    title="Delete"
-                    onClick={() => setDeleteTarget(c)}
-                    disabled={pendingId === `delete:${c.id}`}
-                  >
-                    <Trash2 className="size-3.5" />
-                  </ActionButton>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </Panel>
+                  <code className="truncate font-mono text-[11px] text-muted-foreground">
+                    {c.command} {c.args.join(' ')}
+                  </code>
+                  <span className="font-mono text-[13px] text-foreground">
+                    {Object.keys(c.env).length}
+                  </span>
+                  <div>
+                    <Toggle
+                      checked={c.enabledGlobally}
+                      onChange={(enabledGlobally) =>
+                        saveConfig(c, { enabledGlobally })
+                      }
+                    />
+                  </div>
+                  <div className="flex items-center justify-end gap-0.5">
+                    <ActionButton
+                      variant="ghost"
+                      title="Edit"
+                      onClick={() => setEditing(c)}
+                    >
+                      <Pencil className="size-3.5" />
+                    </ActionButton>
+                    <ActionButton
+                      variant="ghost"
+                      title="Duplicate"
+                      onClick={() => duplicateConfig(c)}
+                      disabled={pendingId === `duplicate:${c.id}`}
+                    >
+                      <Copy className="size-3.5" />
+                    </ActionButton>
+                    <ActionButton
+                      variant="ghost"
+                      title="Assign"
+                      onClick={() => assignConfig(c)}
+                      disabled={pendingId === `assign:${c.id}`}
+                    >
+                      <UserPlus className="size-3.5" />
+                    </ActionButton>
+                    <ActionButton
+                      variant="ghost"
+                      title="Delete"
+                      onClick={() => setDeleteTarget(c)}
+                      disabled={pendingId === `delete:${c.id}`}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </ActionButton>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        )}
       </div>
 
       {(editing || creating) && (
@@ -371,6 +376,29 @@ function EditorField({
       {error && (
         <p className="mt-1 font-mono text-[11px] text-destructive">{error}</p>
       )}
+    </div>
+  )
+}
+
+function McpEmptyState({ onCreate }: { onCreate: () => void }) {
+  return (
+    <div className="mx-auto flex max-w-md flex-col items-center justify-center gap-4 py-24 text-center">
+      <div className="flex size-14 items-center justify-center border border-border-strong bg-card">
+        <Plug className="size-6 text-muted-foreground" />
+      </div>
+      <div>
+        <h2 className="font-serif text-2xl italic text-foreground">
+          No MCP configs yet
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground text-pretty">
+          Add an MCP server configuration, then assign it to agents that need
+          access to its tools.
+        </p>
+      </div>
+      <ActionButton variant="accent" onClick={onCreate}>
+        <Plus className="size-3.5" />
+        Add MCP
+      </ActionButton>
     </div>
   )
 }

@@ -7,6 +7,7 @@ import {
   Search,
   RefreshCw,
   Download,
+  Sparkles,
   Eye,
   Pencil,
   Trash2,
@@ -193,82 +194,95 @@ export function SkillsView({
 
       {/* Table */}
       <div className="flex-1 overflow-y-auto scrollbar-thin p-6">
-        <Panel>
-          <div className="grid grid-cols-[1.4fr_1fr_100px_90px] items-center gap-4 border-b border-border bg-panel px-4 py-2.5">
-            <Label>Skill</Label>
-            <Label>Path</Label>
-            <Label>Source</Label>
-            <Label className="text-right">Actions</Label>
-          </div>
-          <ul className="divide-y divide-border">
-            {filtered.map((s) => (
-              <li
-                key={s.id}
-                className="grid grid-cols-[1.4fr_1fr_100px_90px] items-center gap-4 px-4 py-3 hover:bg-panel"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-[13px] text-foreground">
-                      {s.name}
-                    </span>
-                    {s.version && (
-                      <span className="font-mono text-[11px] text-muted-foreground">
-                        v{s.version}
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-0.5 line-clamp-1 text-[13px] text-muted-foreground">
-                    {s.description}
-                  </p>
-                  <div className="mt-1 flex items-center gap-1.5">
-                    {s.tags.map((t) => (
-                      <Tag key={t} tone="outline">
-                        {t}
-                      </Tag>
-                    ))}
-                    <span className="font-mono text-[10px] text-muted-foreground">
-                      used by {s.usedByAgents} agents
-                    </span>
-                  </div>
-                </div>
-                <code className="truncate font-mono text-[11px] text-muted-foreground">
-                  {s.path}
-                </code>
-                <div>
-                  <Tag tone={sourceTone[s.source]}>{s.source}</Tag>
-                </div>
-                <div className="flex items-center justify-end gap-0.5">
-                  <ActionButton variant="ghost" title="View">
-                    <Eye className="size-3.5" />
-                  </ActionButton>
-                  <ActionButton
-                    variant="ghost"
-                    title="Assign to agent"
-                    onClick={() => assignSkill(s)}
-                    disabled={pendingId === `assign:${s.id}`}
+        {skills.length === 0 ? (
+          <SkillsEmptyState
+            onBrowse={() => setShowBrowser(true)}
+            onImport={importManualSkill}
+          />
+        ) : (
+          <Panel>
+            <div className="grid grid-cols-[1.4fr_1fr_100px_90px] items-center gap-4 border-b border-border bg-panel px-4 py-2.5">
+              <Label>Skill</Label>
+              <Label>Path</Label>
+              <Label>Source</Label>
+              <Label className="text-right">Actions</Label>
+            </div>
+            {filtered.length === 0 ? (
+              <p className="px-4 py-12 text-center font-mono text-xs text-muted-foreground">
+                No skills match the current filters
+              </p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {filtered.map((s) => (
+                  <li
+                    key={s.id}
+                    className="grid grid-cols-[1.4fr_1fr_100px_90px] items-center gap-4 px-4 py-3 hover:bg-panel"
                   >
-                    <UserPlus className="size-3.5" />
-                  </ActionButton>
-                  <ActionButton
-                    variant="ghost"
-                    title="Edit"
-                    onClick={() => setEditing(s)}
-                  >
-                    <Pencil className="size-3.5" />
-                  </ActionButton>
-                  <ActionButton
-                    variant="ghost"
-                    title="Delete"
-                    onClick={() => setDeleteTarget(s)}
-                    disabled={pendingId === `delete:${s.id}`}
-                  >
-                    <Trash2 className="size-3.5" />
-                  </ActionButton>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </Panel>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[13px] text-foreground">
+                          {s.name}
+                        </span>
+                        {s.version && (
+                          <span className="font-mono text-[11px] text-muted-foreground">
+                            v{s.version}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-0.5 line-clamp-1 text-[13px] text-muted-foreground">
+                        {s.description}
+                      </p>
+                      <div className="mt-1 flex items-center gap-1.5">
+                        {s.tags.map((t) => (
+                          <Tag key={t} tone="outline">
+                            {t}
+                          </Tag>
+                        ))}
+                        <span className="font-mono text-[10px] text-muted-foreground">
+                          used by {s.usedByAgents} agents
+                        </span>
+                      </div>
+                    </div>
+                    <code className="truncate font-mono text-[11px] text-muted-foreground">
+                      {s.path}
+                    </code>
+                    <div>
+                      <Tag tone={sourceTone[s.source]}>{s.source}</Tag>
+                    </div>
+                    <div className="flex items-center justify-end gap-0.5">
+                      <ActionButton variant="ghost" title="View">
+                        <Eye className="size-3.5" />
+                      </ActionButton>
+                      <ActionButton
+                        variant="ghost"
+                        title="Assign to agent"
+                        onClick={() => assignSkill(s)}
+                        disabled={pendingId === `assign:${s.id}`}
+                      >
+                        <UserPlus className="size-3.5" />
+                      </ActionButton>
+                      <ActionButton
+                        variant="ghost"
+                        title="Edit"
+                        onClick={() => setEditing(s)}
+                      >
+                        <Pencil className="size-3.5" />
+                      </ActionButton>
+                      <ActionButton
+                        variant="ghost"
+                        title="Delete"
+                        onClick={() => setDeleteTarget(s)}
+                        disabled={pendingId === `delete:${s.id}`}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </ActionButton>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+        )}
       </div>
 
       {showBrowser && (
@@ -491,6 +505,41 @@ function EditorField({
       {error && (
         <p className="mt-1 font-mono text-[11px] text-destructive">{error}</p>
       )}
+    </div>
+  )
+}
+
+function SkillsEmptyState({
+  onBrowse,
+  onImport,
+}: {
+  onBrowse: () => void
+  onImport: () => void
+}) {
+  return (
+    <div className="mx-auto flex max-w-md flex-col items-center justify-center gap-4 py-24 text-center">
+      <div className="flex size-14 items-center justify-center border border-border-strong bg-card">
+        <Sparkles className="size-6 text-muted-foreground" />
+      </div>
+      <div>
+        <h2 className="font-serif text-2xl italic text-foreground">
+          No skills yet
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground text-pretty">
+          Import a local skill or browse skills.sh to build a reusable global
+          skill pool for your agents.
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <ActionButton onClick={onBrowse}>
+          <Search className="size-3.5" />
+          Browse skills.sh
+        </ActionButton>
+        <ActionButton variant="accent" onClick={onImport}>
+          <Download className="size-3.5" />
+          Import
+        </ActionButton>
+      </div>
     </div>
   )
 }

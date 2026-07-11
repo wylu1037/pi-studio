@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
-import { Search, Plus, Save, Trash2, Eye, Pencil } from 'lucide-react'
+import { Search, Plus, Save, Trash2, Eye, Pencil, FileText } from 'lucide-react'
 import type { GlobalPromptTemplate } from '@/lib/types'
 import { deleteApiPromptsId } from '@/lib/api/generated/clients/deleteApiPromptsId'
 import { postApiPrompts } from '@/lib/api/generated/clients/postApiPrompts'
@@ -99,6 +99,10 @@ export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
         </div>
       </div>
 
+      {prompts.length === 0 ? (
+        <PromptsEmptyState onCreate={createPrompt} disabled={pending === 'new'} />
+      ) : (
+
       <div className="grid flex-1 grid-cols-[280px_1fr] overflow-hidden">
         {/* List */}
         <div className="flex flex-col border-r border-border">
@@ -120,7 +124,11 @@ export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
             </ActionButton>
           </div>
           <ul className="flex-1 overflow-y-auto scrollbar-thin">
-            {filtered.map((p) => (
+            {filtered.length === 0 ? (
+              <li className="px-4 py-12 text-center font-mono text-xs text-muted-foreground">
+                No prompts match your filters
+              </li>
+            ) : filtered.map((p) => (
               <li key={p.id}>
                 <button
                   type="button"
@@ -268,6 +276,7 @@ export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
           </div>
         )}
       </div>
+      )}
       <ConfirmDialog
         open={confirmDelete}
         title="Delete prompt"
@@ -277,6 +286,35 @@ export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
         onCancel={() => setConfirmDelete(false)}
         onConfirm={() => void deletePrompt()}
       />
+    </div>
+  )
+}
+
+function PromptsEmptyState({
+  onCreate,
+  disabled,
+}: {
+  onCreate: () => void
+  disabled?: boolean
+}) {
+  return (
+    <div className="mx-auto flex max-w-md flex-1 flex-col items-center justify-center gap-4 py-24 text-center">
+      <div className="flex size-14 items-center justify-center border border-border-strong bg-card">
+        <FileText className="size-6 text-muted-foreground" />
+      </div>
+      <div>
+        <h2 className="font-serif text-2xl italic text-foreground">
+          No prompts yet
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground text-pretty">
+          Create a reusable prompt template, then enable it on agents that need
+          the same instruction pattern.
+        </p>
+      </div>
+      <ActionButton variant="accent" onClick={onCreate} disabled={disabled}>
+        <Plus className="size-3.5" />
+        New prompt
+      </ActionButton>
     </div>
   )
 }
