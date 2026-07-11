@@ -6,6 +6,8 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import {
   Send,
+  Square,
+  LoaderCircle,
   Paperclip,
   GitBranch,
   Terminal,
@@ -28,6 +30,7 @@ import {
   PanelHeader,
 } from '@/components/pi-ui'
 import { MarkdownContent } from '@/components/markdown-content'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { getApiRunsId } from '@/lib/api/generated/clients/getApiRunsId'
 import { postApiRunsIdAbort } from '@/lib/api/generated/clients/postApiRunsIdAbort'
 import { postApiSessionsIdRuns } from '@/lib/api/generated/clients/postApiSessionsIdRuns'
@@ -86,6 +89,7 @@ export function ChatView({
   const [optimisticMessage, setOptimisticMessage] =
     useState<ChatMessage | null>(null)
   const [runId, setRunId] = useState<string | null>(null)
+  const [abortingRun, setAbortingRun] = useState(false)
   const [streamError, setStreamError] = useState<string | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
   const activeRunIdRef = useRef<string | null>(null)
@@ -215,6 +219,7 @@ export function ChatView({
     if (eventSourceRef.current === source) eventSourceRef.current = null
     activeRunIdRef.current = null
     setRunId(null)
+    setAbortingRun(false)
     setStreamPhase('idle')
     setStreamDone(true)
     return true
@@ -231,6 +236,7 @@ export function ChatView({
     if (eventSourceRef.current === source) eventSourceRef.current = null
     activeRunIdRef.current = null
     setRunId(null)
+    setAbortingRun(false)
     setStreamPhase('idle')
     setStreamDone(false)
     setStreamError(message)
@@ -274,6 +280,7 @@ export function ChatView({
     setStreamBuffer('')
     setStreamDone(false)
     setStreamPhase('starting')
+    setAbortingRun(false)
     setStreamError(null)
     setOptimisticMessage({
       id: `optimistic-user-${Date.now()}`,
@@ -345,6 +352,7 @@ export function ChatView({
     } catch (error) {
       setStreamPhase('idle')
       setRunId(null)
+      setAbortingRun(false)
       activeRunIdRef.current = null
       setStreamError(
         error instanceof Error ? error.message : 'Unable to start pi run.',
@@ -354,15 +362,24 @@ export function ChatView({
   })
 
   const abort = async () => {
-    if (!runId) return
-    await postApiRunsIdAbort(runId)
-    clearReconciliation()
-    eventSourceRef.current?.close()
-    eventSourceRef.current = null
-    activeRunIdRef.current = null
-    setRunId(null)
-    setStreamPhase('idle')
-    router.refresh()
+    if (!runId || abortingRun) return
+    setAbortingRun(true)
+    try {
+      await postApiRunsIdAbort(runId)
+      clearReconciliation()
+      eventSourceRef.current?.close()
+      eventSourceRef.current = null
+      activeRunIdRef.current = null
+      setRunId(null)
+      setStreamPhase('idle')
+      router.refresh()
+    } catch (error) {
+      setStreamError(
+        error instanceof Error ? error.message : 'Unable to abort pi run.',
+      )
+    } finally {
+      setAbortingRun(false)
+    }
   }
 
   if (!activeAgent || !activeSession) {
@@ -372,6 +389,16 @@ export function ChatView({
       </div>
     )
   }
+
+  const isStartingRun = streamPhase === 'starting' && !runId
+  const isRunningRun = Boolean(runId)
+  const sendButtonLabel = abortingRun
+    ? 'Stopping'
+    : isRunningRun
+      ? 'Stop'
+      : isStartingRun
+        ? 'Sending'
+        : 'Send'
 
   return (
     <div className="flex h-full min-h-0">
@@ -427,8 +454,8 @@ export function ChatView({
         </div>
 
         {/* messages */}
-        <div className="flex-1 overflow-auto px-5 py-6">
-          <div className="mx-auto flex max-w-3xl flex-col gap-4">
+        <ScrollArea className="min-h-0 flex-1" viewportClassName="px-5 py-6">
+          <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-4 overflow-x-hidden">
             {displayMessages.map((m) => (
               <MessageBubble key={m.id} message={m} agentName={activeAgent.name} />
             ))}
@@ -447,7 +474,7 @@ export function ChatView({
               />
             )}
           </div>
-        </div>
+        </ScrollArea>
 
         {/* composer */}
         <div className="border-t border-border bg-panel px-5 py-3">
@@ -479,12 +506,25 @@ export function ChatView({
                 className="max-h-40 min-h-11 flex-1 resize-none bg-transparent py-2 font-mono text-[13px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/60"
               />
               <button
-                type={runId ? 'button' : 'submit'}
-                onClick={runId ? abort : undefined}
-                className="flex size-9 items-center justify-center border border-accent bg-accent text-accent-foreground hover:opacity-90"
-                aria-label={runId ? 'Abort run' : 'Send message'}
+                type={isRunningRun ? 'button' : 'submit'}
+                onClick={isRunningRun ? abort : undefined}
+                disabled={isStartingRun || abortingRun}
+                className={cn(
+                  'flex h-9 items-center justify-center gap-1.5 border font-mono text-[11px] uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-70',
+                  isRunningRun
+                    ? 'border-destructive/70 bg-destructive/10 px-3 text-destructive hover:bg-destructive hover:text-destructive-foreground'
+                    : 'border-accent bg-accent px-2.5 text-accent-foreground hover:opacity-90',
+                )}
+                aria-label={isRunningRun ? 'Abort run' : 'Send message'}
               >
-                <Send className="size-3.5" />
+                {abortingRun || isStartingRun ? (
+                  <LoaderCircle className="size-3.5 animate-spin" />
+                ) : isRunningRun ? (
+                  <Square className="size-3 fill-current" />
+                ) : (
+                  <Send className="size-3.5" />
+                )}
+                <span>{sendButtonLabel}</span>
               </button>
             </form>
             {form.formState.errors.message && (
@@ -698,7 +738,7 @@ function MessageBubble({
               {message.timestamp}
             </span>
           </div>
-          <div className="max-w-[85%] border border-border-strong bg-card px-3.5 py-2.5 text-sm leading-relaxed text-foreground">
+          <div className="max-w-[85%] break-words border border-border-strong bg-card px-3.5 py-2.5 text-sm leading-relaxed text-foreground">
             {message.content}
           </div>
         </div>
@@ -737,7 +777,7 @@ function MessageBubble({
       return (
         <div className="flex items-center gap-2 border border-border bg-panel px-3 py-1.5">
           <Wrench className="size-3 shrink-0 text-accent" />
-          <code className="truncate font-mono text-[11px] text-muted-foreground">
+          <code className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
             {message.content}
           </code>
           <Tag tone="accent" className="ml-auto">
@@ -757,7 +797,7 @@ function MessageBubble({
               {message.timestamp}
             </span>
           </PanelHeader>
-          <pre className="overflow-auto bg-code p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
+          <pre className="max-w-full overflow-hidden whitespace-pre-wrap break-words bg-code p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
             {message.content}
           </pre>
         </Panel>
@@ -771,7 +811,7 @@ function MessageBubble({
               {message.title ?? 'bash'}
             </span>
           </div>
-          <pre className="overflow-auto p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
+          <pre className="max-w-full overflow-hidden whitespace-pre-wrap break-words p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
             {message.content}
           </pre>
         </div>

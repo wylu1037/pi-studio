@@ -15,10 +15,10 @@ const inlinePattern = /(\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^
 export function MarkdownContent({ content }: { content: string }) {
   const blocks = parseMarkdown(content)
   return (
-    <div className="space-y-3 border-l-2 border-accent/50 pl-3.5 text-sm leading-relaxed text-foreground">
+    <div className="min-w-0 max-w-full space-y-3 overflow-hidden border-l-2 border-accent/50 pl-3.5 text-sm leading-relaxed text-foreground wrap-break-word">
       {blocks.map((block, index) => renderBlock(block, index))}
     </div>
-  )
+  );
 }
 
 function parseMarkdown(content: string) {
@@ -111,17 +111,20 @@ function renderBlock(block: MarkdownBlock, key: number) {
         return <MermaidDiagram key={key} chart={block.content} />
       }
       return (
-        <div key={key} className="overflow-hidden border border-border bg-code">
+        <div
+          key={key}
+          className="max-w-full overflow-hidden border border-border bg-code"
+        >
           {block.language && (
             <div className="border-b border-border px-3 py-1 font-mono text-[10px] uppercase text-muted-foreground">
               {block.language}
             </div>
           )}
-          <pre className="overflow-auto p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
+          <pre className="max-w-full overflow-hidden whitespace-pre-wrap wrap-break-word p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
             <code>{block.content}</code>
           </pre>
         </div>
-      )
+      );
     case 'heading': {
       const level = Math.min(6, Math.max(1, block.level))
       return (

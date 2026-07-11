@@ -33,7 +33,7 @@ export function Sidebar({ piVersion }: { piVersion: string }) {
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
       {/* Brand */}
-      <div className="flex items-center gap-2.5 border-b border-sidebar-border px-4 py-4">
+      <div className="flex items-center gap-2.5 px-4 py-4">
         <div className="flex size-8 items-center justify-center bg-primary text-primary-foreground">
           <svg
             viewBox="0 0 800 800"
@@ -93,7 +93,7 @@ export function Sidebar({ piVersion }: { piVersion: string }) {
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-sidebar-border px-4 py-3">
+      <div className="px-4 py-3">
         <div className="flex items-center justify-between">
           <span className="font-mono text-[11px] text-muted-foreground">
             {piVersion}
