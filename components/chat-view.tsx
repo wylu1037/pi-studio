@@ -145,16 +145,27 @@ export function ChatView({
   useEffect(() => {
     if (!streamDone || streamingMessage.length < streamBuffer.length) return
     const timer = window.setTimeout(() => {
-      setStreamingMessage('')
-      setStreamBuffer('')
-      setStreamDone(false)
-      setOptimisticMessage(null)
-      setStreamPhase('idle')
       router.refresh()
     }, 150)
 
     return () => window.clearTimeout(timer)
   }, [router, streamBuffer.length, streamDone, streamingMessage.length])
+
+  useEffect(() => {
+    if (!streamDone || !streamingMessage.trim()) return
+    const persisted = messages.some(
+      (message) =>
+        message.type === 'assistant' &&
+        message.content.trim() === streamingMessage.trim(),
+    )
+    if (!persisted) return
+
+    setStreamingMessage('')
+    setStreamBuffer('')
+    setStreamDone(false)
+    setOptimisticMessage(null)
+    setStreamPhase('idle')
+  }, [messages, streamDone, streamingMessage])
 
   const baseMessages =
     optimisticMessage &&
@@ -166,7 +177,15 @@ export function ChatView({
       ? [...messages, optimisticMessage]
       : messages
 
-  const displayMessages = streamingMessage
+  const hasPersistedStreamingAssistant =
+    streamingMessage.trim().length > 0 &&
+    messages.some(
+      (message) =>
+        message.type === 'assistant' &&
+        message.content.trim() === streamingMessage.trim(),
+    )
+
+  const displayMessages = streamingMessage && !hasPersistedStreamingAssistant
     ? [
         ...baseMessages,
         {
