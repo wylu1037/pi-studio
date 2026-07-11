@@ -27,6 +27,7 @@ import {
   Panel,
   PanelHeader,
 } from '@/components/pi-ui'
+import { MarkdownContent } from '@/components/markdown-content'
 import { getApiRunsId } from '@/lib/api/generated/clients/getApiRunsId'
 import { postApiRunsIdAbort } from '@/lib/api/generated/clients/postApiRunsIdAbort'
 import { postApiSessionsIdRuns } from '@/lib/api/generated/clients/postApiSessionsIdRuns'
@@ -695,14 +696,12 @@ function MessageBubble({
               </span>
             )}
           </div>
-          <div className="prose-pi max-w-none whitespace-pre-wrap border-l-2 border-accent/50 pl-3.5 text-sm leading-relaxed text-foreground">
-            {message.content}
-          </div>
+          <MarkdownContent content={message.content} />
         </div>
       )
     case 'thinking':
       return (
-        <details className="group border border-dashed border-border bg-panel/60">
+        <details className="group border border-dashed border-border bg-panel/40">
           <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-1.5">
             <Brain className="size-3 text-muted-foreground" />
             <span className="font-mono text-[11px] text-muted-foreground">

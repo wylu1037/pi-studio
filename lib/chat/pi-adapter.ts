@@ -51,6 +51,7 @@ export interface PiRunInput {
 
 export type PiRunEvent =
   | { type: 'message_delta'; content: string }
+  | { type: 'thinking_delta'; content: string }
   | { type: 'tool_call_delta'; content: string }
   | { type: 'bash_output'; stream: 'stdout' | 'stderr'; content: string }
   | { type: 'error'; message: string }
@@ -102,6 +103,7 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
   let done = false
   let wake: (() => void) | null = null
   let assistantSnapshot = ''
+  let thinkingSnapshot = ''
   const notify = () => {
     wake?.()
     wake = null
@@ -119,6 +121,15 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
       const parsed = parsePiJsonLine(line)
       if (parsed === null) continue
       const event = parsed ?? { type: 'message_delta' as const, content: `${line}\n` }
+      if (event.type === 'thinking_delta') {
+        const delta = assistantDelta(thinkingSnapshot, event.content)
+        if (!delta) continue
+        thinkingSnapshot = event.content.startsWith(thinkingSnapshot)
+          ? event.content
+          : thinkingSnapshot + event.content
+        push({ type: 'thinking_delta', content: delta })
+        continue
+      }
       if (event.type !== 'message_delta') {
         push(event)
         continue
@@ -291,6 +302,9 @@ function parsePiJsonLine(line: string): PiRunEvent | null | undefined {
     }
     if (message && message.role !== 'assistant') return null
 
+    const thinkingContent = extractThinkingContent(payload)
+    if (thinkingContent) return { type: 'thinking_delta', content: thinkingContent }
+
     const content = extractContent(payload)
     if (type.includes('tool')) return { type: 'tool_call_delta', content: content || line }
     if (type.includes('error')) return { type: 'error', message: content || line }
@@ -333,6 +347,31 @@ function extractContent(value: unknown): string {
     return record.parts.map(extractContent).filter(Boolean).join('')
   }
   return ''
+}
+
+function extractThinkingContent(value: unknown): string {
+  if (!value || typeof value !== 'object') return ''
+
+  if (Array.isArray(value)) {
+    return value.map(extractThinkingContent).filter(Boolean).join('')
+  }
+
+  const record = value as Record<string, unknown>
+  if (record.type === 'thinking' && typeof record.thinking === 'string') {
+    return record.thinking
+  }
+
+  for (const key of ['thinking', 'reasoning', 'reasoningContent', 'reasoning_content']) {
+    if (typeof record[key] === 'string') return record[key]
+  }
+
+  if (Array.isArray(record.content)) {
+    return record.content.map(extractThinkingContent).filter(Boolean).join('')
+  }
+  if (Array.isArray(record.parts)) {
+    return record.parts.map(extractThinkingContent).filter(Boolean).join('')
+  }
+  return extractThinkingContent(record.message)
 }
 
 function asRecord(value: unknown) {

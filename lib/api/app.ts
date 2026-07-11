@@ -684,6 +684,7 @@ api.get('/runs/:id/events', (c) => {
   if (!config) return c.json({ error: 'Agent not found' }, 404)
   const provider = piProviderName(config.provider?.api)
   let assistantContent = ''
+  let thinkingContent = ''
 
   return streamSSE(c, async (stream) => {
     const heartbeat = setInterval(() => {
@@ -725,6 +726,7 @@ api.get('/runs/:id/events', (c) => {
         })),
       })) {
         if (event.type === 'message_delta') assistantContent += event.content
+        if (event.type === 'thinking_delta') thinkingContent += event.content
         if (event.type === 'error') {
           throw new Error(event.message)
         }
@@ -738,6 +740,14 @@ api.get('/runs/:id/events', (c) => {
         await send(event.type, event)
       }
 
+      if (thinkingContent.trim()) {
+        appendMessage({
+          sessionId: run.sessionId,
+          type: 'thinking',
+          title: 'Thinking',
+          content: thinkingContent.trim(),
+        })
+      }
       if (assistantContent.trim()) {
         appendMessage({
           sessionId: run.sessionId,

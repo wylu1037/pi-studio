@@ -25,7 +25,7 @@ export default function RootLayout({
   const piVersion = getPiVersionLabel()
 
   return (
-    <html lang="en" className="bg-background">
+    <html lang="en" className="bg-background" suppressHydrationWarning>
       <body className="antialiased">
         <QueryProvider>
           <div className="flex h-screen overflow-hidden">

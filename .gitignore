@@ -15,5 +15,4 @@ node_modules
 .DS_Store
 .pnpm-store/
 tsconfig.tsbuildinfo
-data/*.sqlite-shm
-data/*.sqlite-wal
+data/
