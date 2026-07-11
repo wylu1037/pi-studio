@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { syncPiSkillLinks } from '@/lib/skills/store'
 import { registerRun } from './run-registry'
 
 interface PiModelProviderConfig {
@@ -40,11 +41,12 @@ export interface PiRunInput {
   prompt: string
   provider?: string
   providerConfig?: PiModelProviderConfig
+  providerConfigs?: PiModelProviderConfig[]
   apiKey?: string
   baseUrl?: string
   model?: string
   thinkingLevel?: string
-  skills: string[]
+  skills: Array<{ name: string; path: string }>
   prompts: string[]
   mcpConfigs?: PiMcpConfig[]
 }
@@ -79,7 +81,7 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
   }
   if (input.model) args.push('--model', input.model)
   if (input.thinkingLevel) args.push('--thinking', input.thinkingLevel)
-  for (const skill of input.skills) args.push('--skill', skill)
+  for (const skill of input.skills) args.push('--skill', skill.name)
   for (const prompt of input.prompts) args.push('--prompt-template', prompt)
   args.push(input.prompt)
 
@@ -171,17 +173,10 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
 function syncUserAgentDir(input: PiRunInput) {
   const agentDir = join(homedir(), '.pi', 'agent')
   mkdirSync(agentDir, { recursive: true })
+  syncPiSkillLinks(input.skills)
   syncSettingsJson(agentDir, input)
   syncMcpConfig(agentDir, input)
-  if (!input.providerConfig) return agentDir
 
-  const providerName = studioProviderName(input.providerConfig.id)
-  const sourceModels = input.providerConfig.models ?? []
-  const modelIds = new Set(sourceModels.map((model) => model.id))
-  const models = [...sourceModels]
-  if (input.model && !modelIds.has(input.model)) {
-    models.push({ id: input.model, name: input.model, input: ['text'] })
-  }
   const modelsJson = readJsonObject(join(agentDir, 'models.json'))
   const existingProviders = asRecord(modelsJson.providers) ?? {}
   const providers = Object.fromEntries(
@@ -189,12 +184,32 @@ function syncUserAgentDir(input: PiRunInput) {
       ([name]) => !name.startsWith('pi-studio-'),
     ),
   )
-  providers[providerName] = {
-    name: input.providerConfig.name,
-    baseUrl: input.providerConfig.baseUrl,
-    apiKey: input.providerConfig.apiKey,
-    api: input.providerConfig.api,
-    headers: input.providerConfig.headers,
+
+  for (const providerConfig of input.providerConfigs ?? []) {
+    providers[studioProviderName(providerConfig.id)] = serializeProvider(
+      providerConfig,
+      providerConfig.id === input.providerConfig?.id ? input.model : undefined,
+    )
+  }
+
+  writeJson(join(agentDir, 'models.json'), { ...modelsJson, providers }, 0o600)
+  return agentDir
+}
+
+function serializeProvider(providerConfig: PiModelProviderConfig, modelId?: string) {
+  const sourceModels = providerConfig.models ?? []
+  const modelIds = new Set(sourceModels.map((model) => model.id))
+  const models = [...sourceModels]
+  if (modelId && !modelIds.has(modelId)) {
+    models.push({ id: modelId, name: modelId, input: ['text'] })
+  }
+
+  return {
+    name: providerConfig.name,
+    baseUrl: providerConfig.baseUrl,
+    apiKey: providerConfig.apiKey,
+    api: providerConfig.api,
+    headers: providerConfig.headers,
     models: models.map((model) => ({
       id: model.id,
       name: model.name,
@@ -204,8 +219,6 @@ function syncUserAgentDir(input: PiRunInput) {
       maxTokens: model.maxTokens,
     })),
   }
-  writeJson(join(agentDir, 'models.json'), { ...modelsJson, providers }, 0o600)
-  return agentDir
 }
 
 function studioProviderName(providerId: string) {
@@ -228,7 +241,7 @@ function syncSettingsJson(agentDir: string, input: PiRunInput) {
       defaultModel: model ?? settings.defaultModel,
       defaultThinkingLevel:
         input.thinkingLevel ?? settings.defaultThinkingLevel,
-      skills: input.skills,
+      skills: input.skills.map((skill) => skill.name),
       prompts: input.prompts,
       piStudioActiveAgent: {
         id: input.agentId,

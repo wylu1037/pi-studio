@@ -112,6 +112,15 @@ export function ChatView({
 
   const thinking = form.watch('thinkingLevel') ?? 'medium'
   const model = form.watch('modelId') ?? activeAgent?.defaultModelId ?? 'model'
+  const message = form.watch('message') ?? ''
+  const composerValues = {
+    message: message.trim(),
+    providerId: form.watch('providerId'),
+    modelId: form.watch('modelId'),
+    thinkingLevel: thinking,
+  }
+  const canSend =
+    postApiSessionsIdRunsMutationRequestSchema.safeParse(composerValues).success
   const activeModelName =
     availableModels.find((candidate) => candidate.id === model)?.name ?? model
 
@@ -273,6 +282,13 @@ export function ChatView({
 
   const submit = form.handleSubmit(async (values) => {
     if (!activeSession || !activeAgent) return
+    const payload = {
+      ...values,
+      message: values.message.trim(),
+    }
+    if (!postApiSessionsIdRunsMutationRequestSchema.safeParse(payload).success) {
+      return
+    }
     eventSourceRef.current?.close()
     clearReconciliation()
     activeRunIdRef.current = null
@@ -285,11 +301,11 @@ export function ChatView({
     setOptimisticMessage({
       id: `optimistic-user-${Date.now()}`,
       type: 'user',
-      content: values.message,
+      content: payload.message,
       timestamp: 'sending',
     })
     try {
-      const run = await postApiSessionsIdRuns(activeSession.id, values)
+      const run = await postApiSessionsIdRuns(activeSession.id, payload)
       activeRunIdRef.current = run.id
       setRunId(run.id)
       setStreamPhase('connecting')
@@ -497,7 +513,9 @@ export function ChatView({
                     e.keyCode !== 229
                   ) {
                     e.preventDefault()
-                    void submit()
+                    if (canSend && !isStartingRun && !isRunningRun && !abortingRun) {
+                      void submit()
+                    }
                   }
                 }}
                 rows={1}
@@ -508,7 +526,7 @@ export function ChatView({
               <button
                 type={isRunningRun ? 'button' : 'submit'}
                 onClick={isRunningRun ? abort : undefined}
-                disabled={isStartingRun || abortingRun}
+                disabled={isRunningRun ? abortingRun : isStartingRun || !canSend}
                 className={cn(
                   'flex h-9 items-center justify-center gap-1.5 border font-mono text-[11px] uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-70',
                   isRunningRun
@@ -527,11 +545,6 @@ export function ChatView({
                 <span>{sendButtonLabel}</span>
               </button>
             </form>
-            {form.formState.errors.message && (
-              <p className="mt-1 font-mono text-[11px] text-destructive">
-                {form.formState.errors.message.message}
-              </p>
-            )}
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
               <label className="flex items-center gap-1.5">
                 <Cpu className="size-3 text-muted-foreground" />
@@ -738,11 +751,11 @@ function MessageBubble({
               {message.timestamp}
             </span>
           </div>
-          <div className="max-w-[85%] break-words border border-border-strong bg-card px-3.5 py-2.5 text-sm leading-relaxed text-foreground">
+          <div className="max-w-[85%] wrap-break-word border border-border-strong bg-card px-3.5 py-2.5 text-sm leading-relaxed text-foreground">
             {message.content}
           </div>
         </div>
-      )
+      );
     case 'assistant':
       return (
         <div className="flex flex-col gap-1">
@@ -791,31 +804,31 @@ function MessageBubble({
           <PanelHeader className="py-1.5">
             <div className="flex items-center gap-1.5">
               <Wrench className="size-3 text-muted-foreground" />
-              <Label>{message.title ?? 'tool result'}</Label>
+              <Label>{message.title ?? "tool result"}</Label>
             </div>
             <span className="font-mono text-[10px] text-muted-foreground/50">
               {message.timestamp}
             </span>
           </PanelHeader>
-          <pre className="max-w-full overflow-hidden whitespace-pre-wrap break-words bg-code p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
+          <pre className="max-w-full overflow-hidden whitespace-pre-wrap wrap-break-word bg-code p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
             {message.content}
           </pre>
         </Panel>
-      )
+      );
     case 'bash':
       return (
         <div className="border border-border bg-code">
           <div className="flex items-center gap-1.5 border-b border-border px-3 py-1.5">
             <Terminal className="size-3 text-success" />
             <span className="font-mono text-[11px] text-muted-foreground">
-              {message.title ?? 'bash'}
+              {message.title ?? "bash"}
             </span>
           </div>
-          <pre className="max-w-full overflow-hidden whitespace-pre-wrap break-words p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
+          <pre className="max-w-full overflow-hidden whitespace-pre-wrap wrap-break-word p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
             {message.content}
           </pre>
         </div>
-      )
+      );
     case 'error':
       return (
         <div className="flex items-start gap-2 border border-destructive/40 bg-destructive/8 px-3 py-2">

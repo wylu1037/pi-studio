@@ -3,7 +3,7 @@
 * Do not edit manually.
 */
 
-import type { GetApiSkillsRegistrySearchQueryResponse, GetApiSkillsRegistrySearchQueryParams } from "../types/GetApiSkillsRegistrySearch.ts";
+import type { GetApiSkillsRegistrySearchQueryResponse, GetApiSkillsRegistrySearchQueryParams, GetApiSkillsRegistrySearch502 } from "../types/GetApiSkillsRegistrySearch.ts";
 import type { Client, RequestConfig, ResponseErrorConfig } from "@kubb/plugin-client/clients/axios";
 import type { QueryKey, QueryClient, UseSuspenseQueryOptions, UseSuspenseQueryResult } from "@tanstack/react-query";
 import { getApiSkillsRegistrySearch } from "../clients/getApiSkillsRegistrySearch.ts";
@@ -16,7 +16,7 @@ export type GetApiSkillsRegistrySearchSuspenseQueryKey = ReturnType<typeof getAp
 export function getApiSkillsRegistrySearchSuspenseQueryOptions(params?: GetApiSkillsRegistrySearchQueryParams, config: Partial<RequestConfig> & { client?: Client } = {}) {
 
         const queryKey = getApiSkillsRegistrySearchSuspenseQueryKey(params)
-        return queryOptions<GetApiSkillsRegistrySearchQueryResponse, ResponseErrorConfig<Error>, GetApiSkillsRegistrySearchQueryResponse, typeof queryKey>({
+        return queryOptions<GetApiSkillsRegistrySearchQueryResponse, ResponseErrorConfig<GetApiSkillsRegistrySearch502>, GetApiSkillsRegistrySearchQueryResponse, typeof queryKey>({
          
          queryKey,
          queryFn: async ({ signal }) => {
@@ -31,7 +31,7 @@ export function getApiSkillsRegistrySearchSuspenseQueryOptions(params?: GetApiSk
  */
 export function useGetApiSkillsRegistrySearchSuspense<TData = GetApiSkillsRegistrySearchQueryResponse, TQueryKey extends QueryKey = GetApiSkillsRegistrySearchSuspenseQueryKey>(params?: GetApiSkillsRegistrySearchQueryParams, options: 
 {
-  query?: Partial<UseSuspenseQueryOptions<GetApiSkillsRegistrySearchQueryResponse, ResponseErrorConfig<Error>, TData, TQueryKey>> & { client?: QueryClient },
+  query?: Partial<UseSuspenseQueryOptions<GetApiSkillsRegistrySearchQueryResponse, ResponseErrorConfig<GetApiSkillsRegistrySearch502>, TData, TQueryKey>> & { client?: QueryClient },
   client?: Partial<RequestConfig> & { client?: Client }
 }
  = {}) {
@@ -45,7 +45,7 @@ export function useGetApiSkillsRegistrySearchSuspense<TData = GetApiSkillsRegist
           ...getApiSkillsRegistrySearchSuspenseQueryOptions(params, config),
           ...resolvedOptions,
           queryKey,
-         } as unknown as UseSuspenseQueryOptions, queryClient) as UseSuspenseQueryResult<TData, ResponseErrorConfig<Error>> & { queryKey: TQueryKey }
+         } as unknown as UseSuspenseQueryOptions, queryClient) as UseSuspenseQueryResult<TData, ResponseErrorConfig<GetApiSkillsRegistrySearch502>> & { queryKey: TQueryKey }
 
          query.queryKey = queryKey as TQueryKey
 

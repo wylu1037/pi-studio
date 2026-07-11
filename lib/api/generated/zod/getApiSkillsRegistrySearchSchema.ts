@@ -13,11 +13,24 @@ export const getApiSkillsRegistrySearchQueryParamsSchema = z.object({
  * @description OK
  */
 export const getApiSkillsRegistrySearch200Schema = z.array(z.object({
-    "name": z.string(),
+    "id": z.string(),
+"name": z.string(),
 "description": z.string(),
 "tags": z.array(z.string()),
 "author": z.string(),
-"installed": z.boolean()
+"installed": z.boolean(),
+"source": z.string(),
+"sourceType": z.optional(z.string()),
+"installUrl": z.optional(z.string()),
+"url": z.optional(z.string()),
+"installs": z.optional(z.number())
     }))
+
+/**
+ * @description OK
+ */
+export const getApiSkillsRegistrySearch502Schema = z.object({
+    "error": z.string()
+    })
 
 export const getApiSkillsRegistrySearchQueryResponseSchema = z.lazy(() => getApiSkillsRegistrySearch200Schema)

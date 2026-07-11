@@ -82,6 +82,20 @@ export const SkillInputSchema = z.object({
   tags: z.array(z.string()).default([]),
 })
 
+export const SkillRegistryItemSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  tags: z.array(z.string()),
+  author: z.string(),
+  installed: z.boolean(),
+  source: z.string(),
+  sourceType: z.string().optional(),
+  installUrl: z.string().optional(),
+  url: z.string().optional(),
+  installs: z.number().optional(),
+})
+
 export const PromptSchema = z.object({
   id: z.string(),
   name: z.string(),

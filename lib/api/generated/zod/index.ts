@@ -17,7 +17,7 @@ export { getApiRunsId200Schema, getApiRunsId404Schema, getApiRunsIdPathParamsSch
 export { getApiSessionsIdMessages200Schema, getApiSessionsIdMessagesPathParamsSchema, getApiSessionsIdMessagesQueryResponseSchema } from "./getApiSessionsIdMessagesSchema.ts";
 export { getApiSessionsIdTree200Schema, getApiSessionsIdTreePathParamsSchema, getApiSessionsIdTreeQueryResponseSchema } from "./getApiSessionsIdTreeSchema.ts";
 export { getApiSessions200Schema, getApiSessionsQueryParamsSchema, getApiSessionsQueryResponseSchema } from "./getApiSessionsSchema.ts";
-export { getApiSkillsRegistrySearch200Schema, getApiSkillsRegistrySearchQueryParamsSchema, getApiSkillsRegistrySearchQueryResponseSchema } from "./getApiSkillsRegistrySearchSchema.ts";
+export { getApiSkillsRegistrySearch200Schema, getApiSkillsRegistrySearch502Schema, getApiSkillsRegistrySearchQueryParamsSchema, getApiSkillsRegistrySearchQueryResponseSchema } from "./getApiSkillsRegistrySearchSchema.ts";
 export { getApiSkills200Schema, getApiSkillsQueryResponseSchema } from "./getApiSkillsSchema.ts";
 export { patchApiAgentsIdResources200Schema, patchApiAgentsIdResources404Schema, patchApiAgentsIdResourcesMutationRequestSchema, patchApiAgentsIdResourcesMutationResponseSchema, patchApiAgentsIdResourcesPathParamsSchema } from "./patchApiAgentsIdResourcesSchema.ts";
 export { patchApiAgentsId200Schema, patchApiAgentsId404Schema, patchApiAgentsIdMutationRequestSchema, patchApiAgentsIdMutationResponseSchema, patchApiAgentsIdPathParamsSchema } from "./patchApiAgentsIdSchema.ts";

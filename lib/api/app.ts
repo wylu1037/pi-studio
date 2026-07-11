@@ -6,6 +6,11 @@ import {
   abortRun as abortRegisteredRun,
 } from '@/lib/chat/run-registry'
 import { defaultPiSessionDir, runPiCli } from '@/lib/chat/pi-adapter'
+import { runNpx } from '@/lib/npx'
+import {
+  materializeInstalledSkill,
+  removeStoredSkill,
+} from '@/lib/skills/store'
 import {
   appendMessage,
   appendRunEvent,
@@ -68,6 +73,7 @@ import {
   RunSchema,
   SessionSchema,
   SessionTreeNodeSchema,
+  SkillRegistryItemSchema,
   SkillInputSchema,
   SkillSchema,
   StartRunSchema,
@@ -83,6 +89,154 @@ const json = <T extends z.ZodTypeAny>(schema: T) => ({
 })
 
 export const api = new OpenAPIHono().basePath('/api')
+
+function normalizeRegistryKey(value: string) {
+  return value.trim().toLowerCase()
+}
+
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1B\[[0-9;]*m/g
+const SKILLS_SEARCH_API_BASE = process.env.SKILLS_API_URL || 'https://skills.sh'
+const SKILLS_SEARCH_LIMIT = 50
+
+const skillsShSearchSkillSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  skillId: z.string().optional(),
+  source: z.string().optional(),
+  installs: z.number().optional(),
+}).passthrough()
+
+const skillsShSearchResponseSchema = z.object({
+  skills: z.array(skillsShSearchSkillSchema).default([]),
+}).passthrough()
+
+function formatInstallCount(installs?: number) {
+  if (typeof installs !== 'number') return null
+  if (installs >= 1_000_000) {
+    return `${(installs / 1_000_000).toFixed(1).replace(/\.0$/, '')}M installs`
+  }
+  if (installs >= 1_000) {
+    return `${(installs / 1_000).toFixed(1).replace(/\.0$/, '')}K installs`
+  }
+  return `${installs} install${installs === 1 ? '' : 's'}`
+}
+
+function parseFormattedInstalls(value: string) {
+  const match = value.match(/^([\d.]+)([KMB])?\s+installs?$/)
+  if (!match) return undefined
+  const parsed = Number(match[1])
+  if (!Number.isFinite(parsed)) return undefined
+  const multiplier =
+    match[2] === 'B'
+      ? 1_000_000_000
+      : match[2] === 'M'
+        ? 1_000_000
+        : match[2] === 'K'
+          ? 1_000
+          : 1
+  return parsed * multiplier
+}
+
+function packageSpec(source: string | undefined, name: string, id: string) {
+  if (source) return `${source}@${name}`
+  if (id.includes('/')) {
+    const lastSlash = id.lastIndexOf('/')
+    return `${id.slice(0, lastSlash)}@${id.slice(lastSlash + 1)}`
+  }
+  return name
+}
+
+async function searchSkillsApi(query: string) {
+  const url = new URL('/api/search', SKILLS_SEARCH_API_BASE)
+  url.searchParams.set('q', query)
+  url.searchParams.set('limit', String(SKILLS_SEARCH_LIMIT))
+
+  const response = await fetch(url, { cache: 'no-store' })
+  if (!response.ok) throw new Error(`skills.sh search failed: HTTP ${response.status}`)
+
+  const payload = skillsShSearchResponseSchema.parse(await response.json())
+  return payload.skills.map((skill) => ({
+    id: skill.id,
+    name: skill.name,
+    author: skill.source?.split('/')[0] || 'skills.sh',
+    description: [
+      skill.source || skill.id,
+      formatInstallCount(skill.installs),
+    ].filter(Boolean).join(' · '),
+    tags: [],
+    source: skill.source || skill.id,
+    sourceType: 'skills.sh',
+    installUrl: packageSpec(skill.source, skill.name, skill.id),
+    url: `${SKILLS_SEARCH_API_BASE}/${skill.id}`,
+    installs: skill.installs,
+  }))
+}
+
+function parseSkillsFindOutput(raw: string) {
+  const clean = raw.replace(ANSI_RE, '')
+  const lines = clean.split(/\r?\n/)
+  const results = []
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].trim()
+    const match = line.match(/^([\w.-]+\/[\w.:-]+@[\w.:-]+)\s+([\d.,]+[KMB]?\s+installs?)$/)
+    if (!match) continue
+
+    const spec = match[1]
+    const installs = match[2].replace(',', '')
+    const [source = '', name = spec] = spec.split('@')
+    const urlLine = lines[index + 1]?.trim().replace(/^└\s*/, '')
+
+    results.push({
+      id: spec,
+      name,
+      author: source.split('/')[0] || 'skills.sh',
+      description: [source, installs].filter(Boolean).join(' · '),
+      tags: [],
+      source,
+      sourceType: 'skills.sh',
+      installUrl: spec,
+      url: urlLine?.startsWith('https://') ? urlLine : undefined,
+      installs: parseFormattedInstalls(installs),
+    })
+  }
+
+  return results
+}
+
+async function searchSkillsCli(query: string) {
+  const { stdout, stderr } = await runNpx(['skills', 'find', query], {
+    timeout: 20_000,
+    env: { ...process.env, FORCE_COLOR: '0' },
+  })
+  return parseSkillsFindOutput(stdout + stderr).slice(0, SKILLS_SEARCH_LIMIT)
+}
+
+async function fetchSkillsShRegistry(query: string) {
+  const trimmed = query.trim()
+  if (trimmed.length < 2) return []
+
+  try {
+    return await searchSkillsApi(trimmed)
+  } catch {
+    return searchSkillsCli(trimmed)
+  }
+}
+
+async function installSkillsShPackage(pkg: string) {
+  const { stdout, stderr } = await runNpx(
+    ['skills', 'add', pkg.trim(), '-y', '--agent', 'pi', '-g'],
+    {
+      timeout: 60_000,
+      env: { ...process.env, FORCE_COLOR: '0' },
+    },
+  )
+  const output = (stdout + stderr).replace(ANSI_RE, '')
+  if (!/Installation complete|Installed \d+ skill/.test(output)) {
+    throw new Error(output.slice(-300) || 'skills.sh install failed')
+  }
+}
 
 api.onError((error, c) => {
   console.error(error)
@@ -236,8 +390,27 @@ api.openapi(
     request: { body: json(SkillInputSchema) },
     responses: { 200: json(SkillSchema), 400: json(ErrorSchema) },
   }),
-  (c) => {
-    const skill = upsertSkill(c.req.valid('json'))
+  async (c) => {
+    const input = c.req.valid('json')
+    const skillInput = { ...input }
+    if (!input.id && input.source === 'skills.sh') {
+      try {
+        await installSkillsShPackage(input.path)
+        skillInput.path = materializeInstalledSkill(input.name)
+      } catch (error) {
+        return c.json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : 'Unable to install skills.sh package',
+          },
+          400,
+        )
+      }
+    }
+
+    const skill = upsertSkill(skillInput)
     if (!skill) return c.json({ error: 'Unable to create skill' }, 400)
     return c.json(skill)
   },
@@ -251,8 +424,12 @@ api.openapi(
     request: { params: z.object({ id: z.string() }) },
     responses: { 200: json(z.object({ ok: z.boolean() })) },
   }),
-  (c) => {
-    deleteSkill(c.req.valid('param').id)
+  async (c) => {
+    const id = c.req.valid('param').id
+    const skill = listSkills().find((item) => item.id === id)
+    if (!skill) return c.json({ error: 'Skill not found' }, 404)
+    removeStoredSkill(skill)
+    deleteSkill(id)
     return c.json({ ok: true })
   },
 )
@@ -263,11 +440,61 @@ api.openapi(
     path: '/skills/registry/search',
     tags: ['Skills'],
     request: { query: z.object({ q: z.string().optional() }) },
-    responses: { 200: json(z.array(SkillSchema.pick({ name: true, description: true, tags: true }).extend({ author: z.string(), installed: z.boolean() }))) },
+    responses: {
+      200: json(z.array(SkillRegistryItemSchema)),
+      502: json(ErrorSchema),
+    },
   }),
-  (c) => {
-    c.req.valid('query')
-    return c.json([])
+  async (c) => {
+    const query = c.req.valid('query').q ?? ''
+    const installedSkills = listSkills()
+    const installedKeys = new Set(
+      installedSkills
+        .filter((skill) => skill.source === 'skills.sh')
+        .flatMap((skill) => [
+          normalizeRegistryKey(skill.name),
+          normalizeRegistryKey(skill.path.replace(/^skills\.sh\//, '')),
+          normalizeRegistryKey(skill.path),
+        ]),
+    )
+    try {
+      const externalSkills = await fetchSkillsShRegistry(query)
+      const items = externalSkills.map((skill) => {
+        const source = skill.source || skill.id
+        const installed =
+          installedKeys.has(normalizeRegistryKey(skill.id)) ||
+          installedKeys.has(normalizeRegistryKey(skill.name)) ||
+          installedKeys.has(normalizeRegistryKey(source)) ||
+          installedKeys.has(normalizeRegistryKey(`skills.sh/${skill.id}`)) ||
+          installedKeys.has(normalizeRegistryKey(`skills.sh/${skill.name}`))
+
+        return {
+          id: skill.id,
+          name: skill.name,
+          author: skill.author,
+          description: skill.description,
+          tags: skill.tags,
+          installed,
+          source,
+          sourceType: skill.sourceType,
+          installUrl: skill.installUrl,
+          url: skill.url,
+          installs: skill.installs,
+        }
+      })
+
+      return c.json(items)
+    } catch (error) {
+      return c.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : 'Unable to load skills.sh registry',
+        },
+        502,
+      )
+    }
   },
 )
 
@@ -710,11 +937,15 @@ api.get('/runs/:id/events', (c) => {
         prompt: run.prompt,
         provider,
         providerConfig: config.provider ?? undefined,
+        providerConfigs: config.providers ?? [],
         apiKey: config.provider?.apiKey ?? undefined,
         baseUrl: config.provider?.baseUrl ?? undefined,
         model: run.modelId ?? config.agent.defaultModelId,
         thinkingLevel: run.thinkingLevel,
-        skills: config.skills.map((skill) => skill.path),
+        skills: config.skills.map((skill) => ({
+          name: skill.name,
+          path: skill.path,
+        })),
         prompts: config.prompts.map((prompt) => prompt.path),
         mcpConfigs: (config.mcpConfigs ?? []).map((mcp) => ({
           id: mcp.id,

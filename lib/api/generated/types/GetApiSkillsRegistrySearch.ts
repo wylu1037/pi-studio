@@ -18,6 +18,10 @@ export type GetApiSkillsRegistrySearch200 = {
     /**
      * @type string
     */
+    id: string;
+    /**
+     * @type string
+    */
     name: string;
     /**
      * @type string
@@ -35,12 +39,42 @@ export type GetApiSkillsRegistrySearch200 = {
      * @type boolean
     */
     installed: boolean;
+    /**
+     * @type string
+    */
+    source: string;
+    /**
+     * @type string | undefined
+    */
+    sourceType?: string;
+    /**
+     * @type string | undefined
+    */
+    installUrl?: string;
+    /**
+     * @type string | undefined
+    */
+    url?: string;
+    /**
+     * @type number | undefined
+    */
+    installs?: number;
 }[];
+
+/**
+ * @description OK
+*/
+export type GetApiSkillsRegistrySearch502 = {
+    /**
+     * @type string
+    */
+    error: string;
+};
 
 export type GetApiSkillsRegistrySearchQueryResponse = GetApiSkillsRegistrySearch200;
 
 export type GetApiSkillsRegistrySearchQuery = {
     Response: GetApiSkillsRegistrySearch200;
     QueryParams: GetApiSkillsRegistrySearchQueryParams;
-    Errors: any;
+    Errors: GetApiSkillsRegistrySearch502;
 };

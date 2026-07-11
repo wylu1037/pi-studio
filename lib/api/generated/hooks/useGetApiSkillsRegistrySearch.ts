@@ -3,7 +3,7 @@
 * Do not edit manually.
 */
 
-import type { GetApiSkillsRegistrySearchQueryResponse, GetApiSkillsRegistrySearchQueryParams } from "../types/GetApiSkillsRegistrySearch.ts";
+import type { GetApiSkillsRegistrySearchQueryResponse, GetApiSkillsRegistrySearchQueryParams, GetApiSkillsRegistrySearch502 } from "../types/GetApiSkillsRegistrySearch.ts";
 import type { Client, RequestConfig, ResponseErrorConfig } from "@kubb/plugin-client/clients/axios";
 import type { QueryKey, QueryClient, QueryObserverOptions, UseQueryResult } from "@tanstack/react-query";
 import { getApiSkillsRegistrySearch } from "../clients/getApiSkillsRegistrySearch.ts";
@@ -16,7 +16,7 @@ export type GetApiSkillsRegistrySearchQueryKey = ReturnType<typeof getApiSkillsR
 export function getApiSkillsRegistrySearchQueryOptions(params?: GetApiSkillsRegistrySearchQueryParams, config: Partial<RequestConfig> & { client?: Client } = {}) {
 
         const queryKey = getApiSkillsRegistrySearchQueryKey(params)
-        return queryOptions<GetApiSkillsRegistrySearchQueryResponse, ResponseErrorConfig<Error>, GetApiSkillsRegistrySearchQueryResponse, typeof queryKey>({
+        return queryOptions<GetApiSkillsRegistrySearchQueryResponse, ResponseErrorConfig<GetApiSkillsRegistrySearch502>, GetApiSkillsRegistrySearchQueryResponse, typeof queryKey>({
          
          queryKey,
          queryFn: async ({ signal }) => {
@@ -31,7 +31,7 @@ export function getApiSkillsRegistrySearchQueryOptions(params?: GetApiSkillsRegi
  */
 export function useGetApiSkillsRegistrySearch<TData = GetApiSkillsRegistrySearchQueryResponse, TQueryData = GetApiSkillsRegistrySearchQueryResponse, TQueryKey extends QueryKey = GetApiSkillsRegistrySearchQueryKey>(params?: GetApiSkillsRegistrySearchQueryParams, options: 
 {
-  query?: Partial<QueryObserverOptions<GetApiSkillsRegistrySearchQueryResponse, ResponseErrorConfig<Error>, TData, TQueryData, TQueryKey>> & { client?: QueryClient },
+  query?: Partial<QueryObserverOptions<GetApiSkillsRegistrySearchQueryResponse, ResponseErrorConfig<GetApiSkillsRegistrySearch502>, TData, TQueryData, TQueryKey>> & { client?: QueryClient },
   client?: Partial<RequestConfig> & { client?: Client }
 }
  = {}) {
@@ -45,7 +45,7 @@ export function useGetApiSkillsRegistrySearch<TData = GetApiSkillsRegistrySearch
           ...getApiSkillsRegistrySearchQueryOptions(params, config),
           ...resolvedOptions,
           queryKey,
-         } as unknown as QueryObserverOptions, queryClient) as UseQueryResult<TData, ResponseErrorConfig<Error>> & { queryKey: TQueryKey }
+         } as unknown as QueryObserverOptions, queryClient) as UseQueryResult<TData, ResponseErrorConfig<GetApiSkillsRegistrySearch502>> & { queryKey: TQueryKey }
 
          query.queryKey = queryKey as TQueryKey
 

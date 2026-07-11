@@ -4,7 +4,7 @@
 */
 
 import fetch from "@kubb/plugin-client/clients/axios";
-import type { GetApiSkillsRegistrySearchQueryResponse, GetApiSkillsRegistrySearchQueryParams } from "../types/GetApiSkillsRegistrySearch.ts";
+import type { GetApiSkillsRegistrySearchQueryResponse, GetApiSkillsRegistrySearchQueryParams, GetApiSkillsRegistrySearch502 } from "../types/GetApiSkillsRegistrySearch.ts";
 import type { Client, RequestConfig, ResponseErrorConfig } from "@kubb/plugin-client/clients/axios";
 
 function getGetApiSkillsRegistrySearchUrl() {
@@ -20,6 +20,6 @@ export async function getApiSkillsRegistrySearch(params?: GetApiSkillsRegistrySe
 
 
 
-  const res = await request<GetApiSkillsRegistrySearchQueryResponse, ResponseErrorConfig<Error>, unknown>({ method : "GET", url : getGetApiSkillsRegistrySearchUrl().url.toString(), params, ... requestConfig })
+  const res = await request<GetApiSkillsRegistrySearchQueryResponse, ResponseErrorConfig<GetApiSkillsRegistrySearch502>, unknown>({ method : "GET", url : getGetApiSkillsRegistrySearchUrl().url.toString(), params, ... requestConfig })
   return res.data
 }

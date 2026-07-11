@@ -812,15 +812,29 @@ export function resolveAgentRunConfig(agentId: string, providerId?: string | nul
   const selectedSkillSet = new Set(agent.selectedSkillIds)
   const selectedPromptSet = new Set(agent.selectedPromptIds)
   const selectedMcpSet = new Set(agent.selectedMcpConfigIds)
+  const selectedProviderSet = new Set(agent.selectedProviderIds)
+  const selectedModelSet = new Set(agent.selectedModelIds)
+  const agentProviders = listProviders()
+    .filter((provider) => selectedProviderSet.has(provider.id))
+    .map((provider) => ({
+      ...provider,
+      models:
+        selectedModelSet.size > 0
+          ? provider.models.filter((model) => selectedModelSet.has(model.id))
+          : provider.models,
+    }))
   const selectedProvider =
-    getProvider(providerId ?? agent.defaultProviderId) ??
-    getProvider(listProviders().find((provider) => provider.isDefault)?.id) ??
-    getProvider(listProviders()[0]?.id)
+    agentProviders.find((provider) => provider.id === providerId) ??
+    agentProviders.find((provider) => provider.id === agent.defaultProviderId) ??
+    agentProviders.find((provider) => provider.isDefault) ??
+    agentProviders[0] ??
+    null
   return {
     agent,
     skills: listSkills().filter((skill) => selectedSkillSet.has(skill.id)),
     prompts: listPrompts().filter((prompt) => selectedPromptSet.has(prompt.id)),
     mcpConfigs: listMcpConfigs().filter((mcp) => selectedMcpSet.has(mcp.id)),
+    providers: agentProviders,
     provider: selectedProvider,
   }
 }
