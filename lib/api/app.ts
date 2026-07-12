@@ -50,6 +50,7 @@ import {
   testProviderConnection,
   updateAgent,
   updateAgentResources,
+  updateSession,
   upsertSkill,
   upsertMcp,
   upsertModel,
@@ -82,6 +83,7 @@ import {
   ProviderTestResultSchema,
   RunSchema,
   SessionSchema,
+  UpdateSessionSchema,
   SessionBranchContextSchema,
   SessionEntryActionSchema,
   SessionTreeNodeSchema,
@@ -405,6 +407,24 @@ api.openapi(
     const agent = updateAgent(c.req.valid('param').id, c.req.valid('json'))
     if (!agent) return c.json({ error: 'Agent not found' }, 404)
     return c.json(agent)
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/sessions/{id}',
+    tags: ['Sessions'],
+    request: {
+      params: z.object({ id: z.string() }),
+      body: json(UpdateSessionSchema),
+    },
+    responses: { 200: json(SessionSchema), 404: json(ErrorSchema) },
+  }),
+  (c) => {
+    const session = updateSession(c.req.valid('param').id, c.req.valid('json'))
+    if (!session) return c.json({ error: 'Session not found' }, 404)
+    return c.json(session)
   },
 )
 

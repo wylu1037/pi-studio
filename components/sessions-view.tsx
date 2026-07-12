@@ -13,6 +13,7 @@ import {
   Copy,
   Trash2,
   ExternalLink,
+  Pencil,
 } from 'lucide-react'
 import {
   PageHeader,
@@ -62,6 +63,9 @@ export function SessionsView({
   const [deleteTarget, setDeleteTarget] = useState<AgentSessionSummary | null>(
     null,
   )
+  const [editTarget, setEditTarget] = useState<AgentSessionSummary | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editCwd, setEditCwd] = useState('')
 
   const allTags = useMemo(() => {
     const set = new Set<string>()
@@ -136,6 +140,29 @@ export function SessionsView({
     }
   }
 
+  const openEdit = (session: AgentSessionSummary) => {
+    setEditTarget(session)
+    setEditName(session.name ?? session.firstUserMessage ?? 'Untitled session')
+    setEditCwd(session.cwd)
+  }
+
+  const saveSession = async () => {
+    if (!editTarget || !editName.trim() || !editCwd.trim()) return
+    setPending(`edit:${editTarget.id}`)
+    try {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(editTarget.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: editName.trim(), cwd: editCwd.trim() }),
+      })
+      if (!response.ok) throw new Error('Failed to update session')
+      setEditTarget(null)
+      refreshAfterMutation()
+    } finally {
+      setPending(null)
+    }
+  }
+
   return (
     <div className="flex h-full flex-col">
       <PageHeader
@@ -191,7 +218,7 @@ export function SessionsView({
         </span>
       </div>
 
-      {/* Table + drawer */}
+      {/* Sessions table */}
       <div className="flex min-h-0 flex-1">
         <div className="min-w-0 flex-1 overflow-auto">
           {sessions.length === 0 ? (
@@ -201,7 +228,7 @@ export function SessionsView({
               <table className="w-full border-collapse text-left">
                 <thead className="sticky top-0 z-10 bg-panel">
                   <tr className="border-b border-border">
-                    {['Session', 'Agent', 'Messages', 'Tokens', 'Cost', 'Branches', 'Updated'].map(
+                    {['Session', 'Agent', 'Messages', 'Tokens', 'Cost', 'Branches', 'Updated', 'Actions'].map(
                       (h) => (
                         <th
                           key={h}
@@ -264,6 +291,28 @@ export function SessionsView({
                       <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-muted-foreground">
                         {s.updatedAt}
                       </td>
+                      <td
+                        className="whitespace-nowrap px-4 py-3"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <div className="flex items-center gap-0.5">
+                          <ActionButton
+                            variant="ghost"
+                            title="Edit session"
+                            onClick={() => openEdit(s)}
+                          >
+                            <Pencil className="size-3.5" />
+                          </ActionButton>
+                          <ActionButton
+                            variant="ghost"
+                            title="Delete session"
+                            onClick={() => setDeleteTarget(s)}
+                            disabled={pending === `delete:${s.id}`}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </ActionButton>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -283,7 +332,14 @@ export function SessionsView({
 
         {/* Preview drawer */}
         {selected && (
-          <aside className="flex w-96 shrink-0 flex-col border-l border-border bg-panel">
+          <div className="fixed inset-0 z-40 flex justify-end" role="dialog" aria-modal="true" aria-label="Session detail">
+            <button
+              type="button"
+              aria-label="Close session detail"
+              onClick={() => setSelected(null)}
+              className="absolute inset-0 bg-foreground/20 backdrop-blur-[1px]"
+            />
+          <aside className="relative flex h-full w-full max-w-[440px] flex-col border-l border-border bg-panel shadow-[-24px_0_64px_-36px_rgba(0,0,0,0.45)]">
             <div className="flex items-start justify-between gap-2 border-b border-border px-4 py-3">
               <div className="min-w-0">
                 <Label>Session detail</Label>
@@ -393,8 +449,36 @@ export function SessionsView({
               </ActionButton>
             </div>
           </aside>
+          </div>
         )}
       </div>
+      {editTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="edit-session-title">
+          <button type="button" aria-label="Close edit session" onClick={() => setEditTarget(null)} className="absolute inset-0 bg-foreground/25" />
+          <form
+            className="relative w-full max-w-md border border-border bg-card shadow-xl"
+            onSubmit={(event) => { event.preventDefault(); void saveSession() }}
+          >
+            <div className="border-b border-border bg-panel px-4 py-3">
+              <h2 id="edit-session-title" className="font-serif text-lg italic text-foreground">Edit session</h2>
+            </div>
+            <div className="space-y-4 px-4 py-4">
+              <label className="block space-y-1.5">
+                <Label>Name</Label>
+                <input value={editName} onChange={(event) => setEditName(event.target.value)} className="w-full border border-input bg-panel px-3 py-2 text-sm text-foreground outline-none focus:border-ring" autoFocus />
+              </label>
+              <label className="block space-y-1.5">
+                <Label>Working directory</Label>
+                <input value={editCwd} onChange={(event) => setEditCwd(event.target.value)} className="w-full border border-input bg-panel px-3 py-2 font-mono text-xs text-foreground outline-none focus:border-ring" />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-border bg-panel px-4 py-3">
+              <ActionButton onClick={() => setEditTarget(null)} disabled={pending === `edit:${editTarget.id}`}>Cancel</ActionButton>
+              <ActionButton type="submit" variant="accent" disabled={!editName.trim() || !editCwd.trim() || pending === `edit:${editTarget.id}`}>Save changes</ActionButton>
+            </div>
+          </form>
+        </div>
+      )}
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         title="Delete session"

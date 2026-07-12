@@ -21,6 +21,10 @@ import {
   Cpu,
   Coins,
   Circle,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
 } from 'lucide-react'
 import {
   Label,
@@ -110,6 +114,8 @@ export function ChatView({
   const [abortingRun, setAbortingRun] = useState(false)
   const [streamError, setStreamError] = useState<string | null>(null)
   const [queueingMessage, setQueueingMessage] = useState<'steer' | 'follow-up' | null>(null)
+  const [showSessionTree, setShowSessionTree] = useState(false)
+  const [showActiveContext, setShowActiveContext] = useState(false)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(() =>
     findCurrentTreeNodeId(tree),
   );
@@ -690,12 +696,24 @@ export function ChatView({
   return (
     <div className="flex h-full min-h-0">
       {/* LEFT: session tree */}
+      {showSessionTree && (
       <aside className="flex w-72 shrink-0 flex-col border-r border-border bg-panel">
-        <div className="flex h-18 shrink-0 flex-col justify-center border-b border-border px-4">
-          <Label>Session tree</Label>
-          <p className="mt-1 font-mono text-[11px] text-muted-foreground">
-            {countTreeNodes(tree)} nodes · {sessions.length} sessions
-          </p>
+        <div className="flex h-18 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
+          <div>
+            <Label>Session tree</Label>
+            <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+              {countTreeNodes(tree)} nodes · {sessions.length} sessions
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowSessionTree(false)}
+            className="flex size-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title="Hide session tree"
+            aria-label="Hide session tree"
+          >
+            <PanelLeftClose className="size-4" />
+          </button>
         </div>
         <div className="flex-1 overflow-auto p-2">
           {tree ? (
@@ -741,12 +759,24 @@ export function ChatView({
           </BracketButton>
         </div>
       </aside>
+      )}
 
       {/* CENTER: conversation */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* header */}
         <div className="flex h-18 shrink-0 items-center justify-between gap-3 border-b border-border px-5">
           <div className="flex min-w-0 items-center gap-2.5">
+            {!showSessionTree && (
+              <button
+                type="button"
+                onClick={() => setShowSessionTree(true)}
+                className="flex size-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                title="Show session tree"
+                aria-label="Show session tree"
+              >
+                <PanelLeftOpen className="size-4" />
+              </button>
+            )}
             <span className="flex size-7 items-center justify-center border border-border-strong bg-card">
               <Bot className="size-3.5 text-accent" />
             </span>
@@ -772,6 +802,17 @@ export function ChatView({
               {runId ? "running" : "ready"}
             </Tag>
             <Tag tone="outline">{activeSession.messageCount} msgs</Tag>
+            {!showActiveContext && (
+              <button
+                type="button"
+                onClick={() => setShowActiveContext(true)}
+                className="flex size-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                title="Show active context"
+                aria-label="Show active context"
+              >
+                <PanelRightOpen className="size-4" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -973,9 +1014,19 @@ export function ChatView({
       </div>
 
       {/* RIGHT: context inspector */}
+      {showActiveContext && (
       <aside className="hidden w-72 shrink-0 flex-col border-l border-border bg-panel xl:flex">
-        <div className="flex h-18 shrink-0 items-center border-b border-border px-4">
+        <div className="flex h-18 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
           <Label>Active context</Label>
+          <button
+            type="button"
+            onClick={() => setShowActiveContext(false)}
+            className="flex size-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title="Hide active context"
+            aria-label="Hide active context"
+          >
+            <PanelRightClose className="size-4" />
+          </button>
         </div>
         <div className="flex-1 space-y-4 overflow-auto p-4">
           <Panel>
@@ -1030,6 +1081,7 @@ export function ChatView({
           </Panel>
         </div>
       </aside>
+      )}
     </div>
   );
 }

@@ -282,6 +282,11 @@ export const CreateSessionSchema = z.object({
   cwd: z.string().optional(),
 })
 
+export const UpdateSessionSchema = z.object({
+  name: z.string().trim().min(1),
+  cwd: z.string().trim().min(1),
+})
+
 export const AssignToAgentSchema = z.object({
   agentId: z.string(),
   resourceId: z.string(),

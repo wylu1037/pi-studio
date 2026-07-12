@@ -683,6 +683,19 @@ export function updateSessionFilePath(id: string, filePath: string) {
   db.update(sessions).set({ filePath, updatedAt: now() }).where(eq(sessions.id, id)).run()
 }
 
+export function updateSession(
+  id: string,
+  input: { name: string; cwd: string },
+) {
+  const existing = db.select().from(sessions).where(eq(sessions.id, id)).get()
+  if (!existing) return null
+  db.update(sessions)
+    .set({ name: input.name, cwd: input.cwd, updatedAt: now() })
+    .where(eq(sessions.id, id))
+    .run()
+  return getSession(id)
+}
+
 export function createForkedSessionRecord(input: {
   sourceSessionId: string
   filePath: string
