@@ -3,7 +3,7 @@
 * Do not edit manually.
 */
 
-import type { PostApiModelProvidersIdModelsMutationRequest, PostApiModelProvidersIdModelsMutationResponse, PostApiModelProvidersIdModelsPathParams, PostApiModelProvidersIdModels404 } from "../types/PostApiModelProvidersIdModels.ts";
+import type { PostApiModelProvidersIdModelsMutationRequest, PostApiModelProvidersIdModelsMutationResponse, PostApiModelProvidersIdModelsPathParams, PostApiModelProvidersIdModels404, PostApiModelProvidersIdModels409 } from "../types/PostApiModelProvidersIdModels.ts";
 import type { Client, RequestConfig, ResponseErrorConfig } from "@kubb/plugin-client/clients/axios";
 import type { UseMutationOptions, UseMutationResult, QueryClient } from "@tanstack/react-query";
 import { postApiModelProvidersIdModels } from "../clients/postApiModelProvidersIdModels.ts";
@@ -16,7 +16,7 @@ export type PostApiModelProvidersIdModelsMutationKey = ReturnType<typeof postApi
 export function postApiModelProvidersIdModelsMutationOptions<TContext = unknown>(config: Partial<RequestConfig<PostApiModelProvidersIdModelsMutationRequest>> & { client?: Client } = {}) {
 
         const mutationKey = postApiModelProvidersIdModelsMutationKey()
-        return mutationOptions<PostApiModelProvidersIdModelsMutationResponse, ResponseErrorConfig<PostApiModelProvidersIdModels404>, {id: PostApiModelProvidersIdModelsPathParams["id"], data: PostApiModelProvidersIdModelsMutationRequest}, TContext>({
+        return mutationOptions<PostApiModelProvidersIdModelsMutationResponse, ResponseErrorConfig<PostApiModelProvidersIdModels404 | PostApiModelProvidersIdModels409>, {id: PostApiModelProvidersIdModelsPathParams["id"], data: PostApiModelProvidersIdModelsMutationRequest}, TContext>({
           mutationKey,
           mutationFn: async({ id, data }) => {
             return postApiModelProvidersIdModels(id, data, config)
@@ -30,7 +30,7 @@ export function postApiModelProvidersIdModelsMutationOptions<TContext = unknown>
  */
 export function usePostApiModelProvidersIdModels<TContext>(options: 
 {
-  mutation?: UseMutationOptions<PostApiModelProvidersIdModelsMutationResponse, ResponseErrorConfig<PostApiModelProvidersIdModels404>, {id: PostApiModelProvidersIdModelsPathParams["id"], data: PostApiModelProvidersIdModelsMutationRequest}, TContext> & { client?: QueryClient },
+  mutation?: UseMutationOptions<PostApiModelProvidersIdModelsMutationResponse, ResponseErrorConfig<PostApiModelProvidersIdModels404 | PostApiModelProvidersIdModels409>, {id: PostApiModelProvidersIdModelsPathParams["id"], data: PostApiModelProvidersIdModelsMutationRequest}, TContext> & { client?: QueryClient },
   client?: Partial<RequestConfig<PostApiModelProvidersIdModelsMutationRequest>> & { client?: Client },
 }
  = {}) {
@@ -39,13 +39,13 @@ export function usePostApiModelProvidersIdModels<TContext>(options:
           const { client: queryClient, ...mutationOptions } = mutation;
           const mutationKey = mutationOptions.mutationKey ?? postApiModelProvidersIdModelsMutationKey()
 
-          const baseOptions = postApiModelProvidersIdModelsMutationOptions(config) as UseMutationOptions<PostApiModelProvidersIdModelsMutationResponse, ResponseErrorConfig<PostApiModelProvidersIdModels404>, {id: PostApiModelProvidersIdModelsPathParams["id"], data: PostApiModelProvidersIdModelsMutationRequest}, TContext>
+          const baseOptions = postApiModelProvidersIdModelsMutationOptions(config) as UseMutationOptions<PostApiModelProvidersIdModelsMutationResponse, ResponseErrorConfig<PostApiModelProvidersIdModels404 | PostApiModelProvidersIdModels409>, {id: PostApiModelProvidersIdModelsPathParams["id"], data: PostApiModelProvidersIdModelsMutationRequest}, TContext>
           
 
-          return useMutation<PostApiModelProvidersIdModelsMutationResponse, ResponseErrorConfig<PostApiModelProvidersIdModels404>, {id: PostApiModelProvidersIdModelsPathParams["id"], data: PostApiModelProvidersIdModelsMutationRequest}, TContext>({
+          return useMutation<PostApiModelProvidersIdModelsMutationResponse, ResponseErrorConfig<PostApiModelProvidersIdModels404 | PostApiModelProvidersIdModels409>, {id: PostApiModelProvidersIdModelsPathParams["id"], data: PostApiModelProvidersIdModelsMutationRequest}, TContext>({
             ...baseOptions,
             mutationKey,
             ...mutationOptions,
-          }, queryClient) as UseMutationResult<PostApiModelProvidersIdModelsMutationResponse, ResponseErrorConfig<PostApiModelProvidersIdModels404>, {id: PostApiModelProvidersIdModelsPathParams["id"], data: PostApiModelProvidersIdModelsMutationRequest}, TContext>
+          }, queryClient) as UseMutationResult<PostApiModelProvidersIdModelsMutationResponse, ResponseErrorConfig<PostApiModelProvidersIdModels404 | PostApiModelProvidersIdModels409>, {id: PostApiModelProvidersIdModelsPathParams["id"], data: PostApiModelProvidersIdModelsMutationRequest}, TContext>
       
 }

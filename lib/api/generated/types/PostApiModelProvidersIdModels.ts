@@ -122,6 +122,16 @@ export type PostApiModelProvidersIdModels404 = {
     error: string;
 };
 
+/**
+ * @description OK
+*/
+export type PostApiModelProvidersIdModels409 = {
+    /**
+     * @type string
+    */
+    error: string;
+};
+
 export const postApiModelProvidersIdModelsMutationRequestInputEnum = {
     text: "text",
     image: "image"
@@ -138,6 +148,11 @@ export type PostApiModelProvidersIdModelsMutationRequest = {
      * @type string
     */
     id: string;
+    /**
+     * @minLength 1
+     * @type string | undefined
+    */
+    originalId?: string;
     /**
      * @type string | undefined
     */
@@ -167,5 +182,5 @@ export type PostApiModelProvidersIdModelsMutation = {
     Response: PostApiModelProvidersIdModels200;
     Request: PostApiModelProvidersIdModelsMutationRequest;
     PathParams: PostApiModelProvidersIdModelsPathParams;
-    Errors: PostApiModelProvidersIdModels404;
+    Errors: PostApiModelProvidersIdModels404 | PostApiModelProvidersIdModels409;
 };

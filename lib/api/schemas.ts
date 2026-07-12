@@ -153,6 +153,7 @@ export const ModelSchema = z.object({
 
 export const ModelInputSchema = z.object({
   id: z.string().min(1),
+  originalId: z.string().min(1).optional(),
   name: z.string().optional(),
   reasoning: z.boolean().default(false),
   input: z.array(z.enum(['text', 'image'])).default(['text']),
@@ -233,6 +234,23 @@ export const PackageSchema = z.object({
 export const PackageCollectionSchema = z.object({
   installed: z.array(PackageSchema),
   gallery: z.array(PackageSchema),
+})
+
+export const ExtensionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  path: z.string(),
+  source: z.string(),
+  scope: z.enum(['global', 'project']),
+  enabled: z.boolean(),
+  packageManaged: z.boolean(),
+})
+
+export const ToggleExtensionSchema = z.object({
+  source: z.string().min(1),
+  scope: z.enum(['global', 'project']),
+  enabled: z.boolean(),
+  cwd: z.string().optional(),
 })
 
 export const InstallPackageSchema = z.object({

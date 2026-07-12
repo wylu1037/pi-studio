@@ -471,11 +471,12 @@ export function upsertProvider(input: Partial<GlobalModelProvider> & { id?: stri
 
 export function upsertModel(
   providerId: string,
-  input: GlobalModel,
+  input: GlobalModel & { originalId?: string },
 ) {
   const provider = getProvider(providerId)
   if (!provider) return null
-  const existing = db.select().from(models).where(eq(models.id, input.id)).get()
+  const originalId = input.originalId ?? input.id
+  const existing = db.select().from(models).where(eq(models.id, originalId)).get()
   const values = {
     providerId,
     name: input.name,
@@ -484,8 +485,26 @@ export function upsertModel(
     contextWindow: input.contextWindow,
     maxTokens: input.maxTokens,
   }
-  if (existing) db.update(models).set(values).where(eq(models.id, input.id)).run()
-  else db.insert(models).values({ id: input.id, ...values }).run()
+  if (existing && originalId !== input.id) {
+    const conflict = db.select().from(models).where(eq(models.id, input.id)).get()
+    if (conflict) throw new Error(`Model ID "${input.id}" already exists.`)
+    sqlite.transaction(() => {
+      db.insert(models).values({ id: input.id, ...values }).run()
+      db.update(agentModels)
+        .set({ modelId: input.id })
+        .where(eq(agentModels.modelId, originalId))
+        .run()
+      db.update(agents)
+        .set({ defaultModelId: input.id })
+        .where(eq(agents.defaultModelId, originalId))
+        .run()
+      db.delete(models).where(eq(models.id, originalId)).run()
+    })()
+  } else if (existing) {
+    db.update(models).set(values).where(eq(models.id, input.id)).run()
+  } else {
+    db.insert(models).values({ id: input.id, ...values }).run()
+  }
   db.update(modelProviders).set({ updatedAt: now() }).where(eq(modelProviders.id, providerId)).run()
   return listProviders().find((item) => item.id === providerId) ?? null
 }

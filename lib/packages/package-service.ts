@@ -4,16 +4,27 @@ import {
   DefaultPackageManager,
   getAgentDir,
   SettingsManager,
+  type PackageSource,
   type ResolvedPaths,
   type ResolvedResource,
 } from '@earendil-works/pi-coding-agent'
-import type { GlobalPackage, PackageType } from '@/lib/types'
+import type { GlobalExtension, GlobalPackage, PackageType } from '@/lib/types'
 
 type PackageScope = GlobalPackage['scope']
 type GalleryPackage = GlobalPackage
 
 function packageId(source: string, scope: PackageScope) {
   return `pi-package:${scope}:${Buffer.from(source).toString('base64url')}`
+}
+
+function extensionId(resource: ResolvedResource) {
+  const scope: PackageScope = resource.metadata.scope === 'project' ? 'project' : 'global'
+  return `pi-extension:${scope}:${Buffer.from(resource.metadata.source).toString('base64url')}:${Buffer.from(resource.path).toString('base64url')}`
+}
+
+function extensionName(path: string) {
+  const file = path.split('/').at(-1) ?? path
+  return file.replace(/\.(?:m?[jt]s|c[jt]s)$/, '') || file
 }
 
 export function decodePackageId(id: string) {
@@ -141,6 +152,71 @@ export async function listRuntimePackages(
     installed,
     gallery: gallery.filter((pkg) => !installedSources.has(pkg.source)),
   }
+}
+
+export async function listRuntimeExtensions(cwd: string): Promise<GlobalExtension[]> {
+  const { packageManager } = createManager(cwd)
+  const resolved = await packageManager.resolve(async () => 'skip')
+  return resolved.extensions.map((resource) => ({
+    id: extensionId(resource),
+    name: extensionName(resource.path),
+    path: resource.path,
+    source: resource.metadata.source,
+    scope: resource.metadata.scope === 'project' ? 'project' : 'global',
+    enabled: resource.enabled,
+    packageManaged: resource.metadata.origin === 'package',
+  }))
+}
+
+function packageSourceValue(entry: PackageSource) {
+  return typeof entry === 'string' ? entry : entry.source
+}
+
+function setPackageExtensionsEnabled(
+  entries: PackageSource[],
+  source: string,
+  enabled: boolean,
+) {
+  return entries.map((entry): PackageSource => {
+    if (packageSourceValue(entry) !== source) return entry
+    if (!enabled) {
+      return {
+        ...(typeof entry === 'string' ? { source: entry } : entry),
+        extensions: [],
+      }
+    }
+    if (typeof entry === 'string') return entry
+    const { extensions: _extensions, ...rest } = entry
+    return rest
+  })
+}
+
+export async function setRuntimeExtensionEnabled(input: {
+  source: string
+  scope: PackageScope
+  enabled: boolean
+  cwd: string
+}) {
+  const { settingsManager } = createManager(input.cwd)
+  if (input.scope === 'project') {
+    settingsManager.setProjectPackages(
+      setPackageExtensionsEnabled(
+        settingsManager.getProjectSettings().packages ?? [],
+        input.source,
+        input.enabled,
+      ),
+    )
+  } else {
+    settingsManager.setPackages(
+      setPackageExtensionsEnabled(
+        settingsManager.getGlobalSettings().packages ?? [],
+        input.source,
+        input.enabled,
+      ),
+    )
+  }
+  await settingsManager.flush()
+  await refreshSessions()
 }
 
 async function refreshSessions() {

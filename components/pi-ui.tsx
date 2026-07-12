@@ -236,9 +236,11 @@ export function CommandBox({
 export function Toggle({
   checked,
   onChange,
+  disabled,
 }: {
   checked: boolean
   onChange?: (v: boolean) => void
+  disabled?: boolean
 }) {
   return (
     <button
@@ -246,8 +248,9 @@ export function Toggle({
       role="switch"
       aria-checked={checked}
       onClick={() => onChange?.(!checked)}
+      disabled={disabled}
       className={cn(
-        'relative h-4.5 w-8 shrink-0 border transition-colors',
+        'relative h-4.5 w-8 shrink-0 border transition-colors disabled:cursor-not-allowed disabled:opacity-40',
         checked
           ? 'border-accent bg-accent/80'
           : 'border-border-strong bg-muted',

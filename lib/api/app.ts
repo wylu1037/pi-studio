@@ -67,6 +67,7 @@ import {
   ChatMessageSchema,
   CreateSessionSchema,
   ErrorSchema,
+  ExtensionSchema,
   McpInputSchema,
   McpSchema,
   ModelCapabilitiesSchema,
@@ -85,6 +86,7 @@ import {
   SkillInputSchema,
   SkillSchema,
   StartRunSchema,
+  ToggleExtensionSchema,
 } from './schemas'
 
 const json = <T extends z.ZodTypeAny>(schema: T) => ({
@@ -701,12 +703,23 @@ api.openapi(
       params: z.object({ id: z.string() }),
       body: json(ModelInputSchema),
     },
-    responses: { 200: json(ProviderSchema), 404: json(ErrorSchema) },
+    responses: {
+      200: json(ProviderSchema),
+      404: json(ErrorSchema),
+      409: json(ErrorSchema),
+    },
   }),
   (c) => {
-    const provider = upsertModel(c.req.valid('param').id, c.req.valid('json'))
-    if (!provider) return c.json({ error: 'Provider not found' }, 404)
-    return c.json(provider)
+    try {
+      const provider = upsertModel(c.req.valid('param').id, c.req.valid('json'))
+      if (!provider) return c.json({ error: 'Provider not found' }, 404)
+      return c.json(provider)
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : 'Unable to update model.' },
+        409,
+      )
+    }
   },
 )
 
@@ -787,6 +800,36 @@ api.openapi(
   }),
   async (c) => {
     return c.json(await runtimePackageCollection(process.cwd()))
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'get',
+    path: '/extensions',
+    tags: ['Extensions'],
+    responses: { 200: json(z.array(ExtensionSchema)) },
+  }),
+  async (c) => {
+    const { listRuntimeExtensions } = await import('@/lib/packages/package-service')
+    return c.json(await listRuntimeExtensions(process.cwd()))
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'post',
+    path: '/extensions/toggle',
+    tags: ['Extensions'],
+    request: { body: json(ToggleExtensionSchema) },
+    responses: { 200: json(z.array(ExtensionSchema)) },
+  }),
+  async (c) => {
+    const input = c.req.valid('json')
+    const extensionService = await import('@/lib/packages/package-service')
+    const cwd = input.cwd ?? process.cwd()
+    await extensionService.setRuntimeExtensionEnabled({ ...input, cwd })
+    return c.json(await extensionService.listRuntimeExtensions(cwd))
   },
 )
 

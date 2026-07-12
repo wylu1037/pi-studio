@@ -45,8 +45,16 @@ export const postApiModelProvidersIdModels404Schema = z.object({
 /**
  * @description OK
  */
+export const postApiModelProvidersIdModels409Schema = z.object({
+    "error": z.string()
+    })
+
+/**
+ * @description OK
+ */
 export const postApiModelProvidersIdModelsMutationRequestSchema = z.object({
     "id": z.string().min(1),
+"originalId": z.optional(z.string().min(1)),
 "name": z.optional(z.string()),
 "reasoning": z.optional(z.boolean().default(false)),
 "input": z.optional(z.array(z.enum(["text", "image"]))),

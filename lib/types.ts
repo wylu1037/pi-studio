@@ -102,6 +102,16 @@ export interface GlobalPackage {
   updatedAt: string
 }
 
+export interface GlobalExtension {
+  id: string
+  name: string
+  path: string
+  source: string
+  scope: 'global' | 'project'
+  enabled: boolean
+  packageManaged: boolean
+}
+
 export interface AgentProfile {
   id: string
   name: string

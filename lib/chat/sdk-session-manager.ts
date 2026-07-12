@@ -109,6 +109,21 @@ export async function getOrCreateSdkSession(input: {
         ? { thinkingLevel: input.thinkingLevel as never }
         : {}),
     })
+    try {
+      await session.bindExtensions({
+        mode: 'rpc',
+        onError: (error) => {
+          console.error(
+            `[pi-studio] extension error in ${error.extensionPath} (${error.event}): ${error.error}`,
+          )
+        },
+      })
+    } catch (error) {
+      console.error(
+        '[pi-studio] unable to bind session extensions:',
+        error instanceof Error ? error.message : error,
+      )
+    }
     const wrapped = new StudioAgentSession(input.studioSessionId, session)
     sessions().set(input.studioSessionId, wrapped)
     return wrapped

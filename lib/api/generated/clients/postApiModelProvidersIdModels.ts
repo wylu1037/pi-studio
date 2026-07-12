@@ -4,7 +4,7 @@
 */
 
 import fetch from "@kubb/plugin-client/clients/axios";
-import type { PostApiModelProvidersIdModelsMutationRequest, PostApiModelProvidersIdModelsMutationResponse, PostApiModelProvidersIdModelsPathParams, PostApiModelProvidersIdModels404 } from "../types/PostApiModelProvidersIdModels.ts";
+import type { PostApiModelProvidersIdModelsMutationRequest, PostApiModelProvidersIdModelsMutationResponse, PostApiModelProvidersIdModelsPathParams, PostApiModelProvidersIdModels404, PostApiModelProvidersIdModels409 } from "../types/PostApiModelProvidersIdModels.ts";
 import type { Client, RequestConfig, ResponseErrorConfig } from "@kubb/plugin-client/clients/axios";
 
 function getPostApiModelProvidersIdModelsUrl(id: PostApiModelProvidersIdModelsPathParams["id"]) {
@@ -20,6 +20,6 @@ export async function postApiModelProvidersIdModels(id: PostApiModelProvidersIdM
 
   const requestData = data
 
-  const res = await request<PostApiModelProvidersIdModelsMutationResponse, ResponseErrorConfig<PostApiModelProvidersIdModels404>, PostApiModelProvidersIdModelsMutationRequest>({ method : "POST", url : getPostApiModelProvidersIdModelsUrl(id).url.toString(), data : requestData, ... requestConfig })
+  const res = await request<PostApiModelProvidersIdModelsMutationResponse, ResponseErrorConfig<PostApiModelProvidersIdModels404 | PostApiModelProvidersIdModels409>, PostApiModelProvidersIdModelsMutationRequest>({ method : "POST", url : getPostApiModelProvidersIdModelsUrl(id).url.toString(), data : requestData, ... requestConfig })
   return res.data
 }

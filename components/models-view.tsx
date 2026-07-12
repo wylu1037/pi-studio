@@ -467,7 +467,9 @@ function ProviderDetail({
     mode: 'add' | 'edit',
   ) => {
     setModelResult(null)
-    setPending(mode === 'add' ? 'model:add' : `model:edit:${model.id}`)
+    setPending(
+      mode === 'add' ? 'model:add' : `model:edit:${model.originalId ?? model.id}`,
+    )
     try {
       const updated = await postApiModelProvidersIdModels(provider.id, model)
       setDisplayModels(updated.models as GlobalModel[])
@@ -799,8 +801,9 @@ function ModelDialog({
   })
 
   const submit = (values: AddModelForm) => {
-    const model = postApiModelProvidersIdModelsMutationRequestSchema.parse({
+    const payload = postApiModelProvidersIdModelsMutationRequestSchema.parse({
       id: values.id,
+      originalId: mode === 'edit' ? model?.id : undefined,
       name: values.name || values.id,
       reasoning: values.reasoning,
       input: values.inputText
@@ -812,7 +815,7 @@ function ModelDialog({
         : undefined,
       maxTokens: values.maxTokens ? Number(values.maxTokens) : undefined,
     })
-    onSubmit(model)
+    onSubmit(payload)
   }
 
   if (!open) return null
@@ -846,11 +849,7 @@ function ModelDialog({
           <Config label="Model ID" error={errors.id?.message}>
             <input
               {...register('id')}
-              readOnly={mode === 'edit'}
-              className={cn(
-                'w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring',
-                mode === 'edit' && 'text-muted-foreground',
-              )}
+              className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
             />
           </Config>
           <Config label="Display name">
