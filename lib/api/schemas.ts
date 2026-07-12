@@ -201,6 +201,14 @@ export const ProviderTestResultSchema = z.object({
   message: z.string(),
 })
 
+export const ModelCapabilitiesSchema = z.object({
+  thinkingLevels: z.array(ThinkingLevelSchema),
+  reasoning: z.boolean(),
+  input: z.array(z.enum(['text', 'image'])),
+  contextWindow: z.number().optional(),
+  maxTokens: z.number().optional(),
+})
+
 export const PackageSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -321,4 +329,21 @@ export const RunSchema = z.object({
   startedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
   createdAt: z.string(),
+})
+
+export const AgentSessionStateSchema = z.object({
+  active: z.boolean(),
+  running: z.boolean(),
+  isStreaming: z.boolean(),
+  isCompacting: z.boolean(),
+  model: z
+    .object({ provider: z.string(), modelId: z.string() })
+    .nullable(),
+  thinkingLevel: z.string().nullable(),
+  sessionFile: z.string().nullable(),
+  sdkSessionId: z.string().nullable(),
+})
+
+export const AgentQueueMessageSchema = z.object({
+  message: z.string().min(1),
 })

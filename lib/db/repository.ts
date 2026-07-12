@@ -517,15 +517,6 @@ export function setDefaultProvider(id: string) {
   return listProviders().find((provider) => provider.id === id) ?? null
 }
 
-function providerTestUrl(api: string, baseUrl: string, apiKey: string) {
-  const base = baseUrl.replace(/\/+$/, '')
-  if (api === 'google-generative-ai') {
-    const separator = base.includes('?') ? '&' : '?'
-    return `${base}/models${separator}key=${encodeURIComponent(apiKey)}`
-  }
-  return `${base}/models`
-}
-
 export async function testProviderConnection(id: string) {
   const provider = db.select().from(modelProviders).where(eq(modelProviders.id, id)).get()
   if (!provider) return null
@@ -538,35 +529,42 @@ export async function testProviderConnection(id: string) {
     }
   }
 
-  const headers = parseJson<Record<string, string>>(provider.headersJson, {})
-  if (provider.api === 'anthropic-messages') {
-    headers['x-api-key'] = provider.apiKey
-    headers['anthropic-version'] ??= '2023-06-01'
-  } else if (provider.api !== 'google-generative-ai') {
-    headers.authorization ??= `Bearer ${provider.apiKey}`
-  }
-
   let status = 'connected'
   let message = 'Connection test succeeded.'
   try {
-    const response = await fetch(
-      providerTestUrl(provider.api, provider.baseUrl, provider.apiKey),
+    const { testPiModel } = await import('@/lib/models/pi-ai')
+    const model = listModels(provider.id)[0]
+    if (!model) throw new Error('Add at least one model before testing the provider.')
+    await testPiModel(
       {
-        method: 'GET',
-        headers,
-        signal: AbortSignal.timeout(10000),
+        id: provider.id,
+        baseUrl: provider.baseUrl,
+        api: provider.api as GlobalModelProvider['api'],
+        apiKey: provider.apiKey,
+        headers: parseJson<Record<string, string>>(provider.headersJson, {}),
       },
+      model,
     )
-    if (!response.ok) {
-      status = 'error'
-      message = `Provider returned HTTP ${response.status}.`
-    }
   } catch (error) {
     status = 'error'
     message = error instanceof Error ? error.message : 'Connection test failed.'
   }
   db.update(modelProviders).set({ status, updatedAt: now() }).where(eq(modelProviders.id, id)).run()
   return { ok: status === 'connected', status, message }
+}
+
+export async function getModelCapabilities(providerId: string, modelId: string) {
+  const provider = listProviders().find((item) => item.id === providerId)
+  const model = provider?.models.find((item) => item.id === modelId)
+  if (!provider || !model) return null
+  const { supportedThinkingLevels } = await import('@/lib/models/pi-ai')
+  return {
+    thinkingLevels: supportedThinkingLevels(provider, model),
+    reasoning: model.reasoning ?? false,
+    input: model.input,
+    contextWindow: model.contextWindow,
+    maxTokens: model.maxTokens,
+  }
 }
 
 export function listPackages() {
@@ -682,6 +680,10 @@ export function createSession(input: { agentId: string; name?: string; cwd?: str
 
 export function getSession(id: string) {
   return listSessions().find((session) => session.id === id) ?? null
+}
+
+export function updateSessionFilePath(id: string, filePath: string) {
+  db.update(sessions).set({ filePath, updatedAt: now() }).where(eq(sessions.id, id)).run()
 }
 
 export function listSessionMessages(sessionId: string): ChatMessage[] {

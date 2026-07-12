@@ -1,7 +1,9 @@
 allowBuilds:
+  '@google/genai': false
   better-sqlite3: true
   es5-ext: true
   esbuild: true
+  protobufjs: false
 
 onlyBuiltDependencies:
   - msw

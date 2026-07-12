@@ -33,6 +33,8 @@ import { MarkdownContent } from '@/components/markdown-content'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { getApiRunsId } from '@/lib/api/generated/clients/getApiRunsId'
 import { postApiRunsIdAbort } from '@/lib/api/generated/clients/postApiRunsIdAbort'
+import { postApiSessionsIdFollowUp } from '@/lib/api/generated/clients/postApiSessionsIdFollowUp'
+import { postApiSessionsIdSteer } from '@/lib/api/generated/clients/postApiSessionsIdSteer'
 import { postApiSessionsIdRuns } from '@/lib/api/generated/clients/postApiSessionsIdRuns'
 import { postApiSessionsIdRunsMutationRequestSchema } from '@/lib/api/generated/zod/postApiSessionsIdRunsSchema'
 import type {
@@ -107,6 +109,7 @@ export function ChatView({
   const [runId, setRunId] = useState<string | null>(null)
   const [abortingRun, setAbortingRun] = useState(false)
   const [streamError, setStreamError] = useState<string | null>(null)
+  const [queueingMessage, setQueueingMessage] = useState<'steer' | 'follow-up' | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
   const activeRunIdRef = useRef<string | null>(null)
   const reconcileTimerRef = useRef<number | null>(null)
@@ -520,6 +523,27 @@ export function ChatView({
     }
   }
 
+  const queueMessage = async (behavior: 'steer' | 'follow-up') => {
+    const content = form.getValues('message').trim()
+    if (!activeSession || !content || queueingMessage) return
+    setQueueingMessage(behavior)
+    setStreamError(null)
+    try {
+      if (behavior === 'steer') {
+        await postApiSessionsIdSteer(activeSession.id, { message: content })
+      } else {
+        await postApiSessionsIdFollowUp(activeSession.id, { message: content })
+      }
+      form.setValue('message', '')
+    } catch (error) {
+      setStreamError(
+        error instanceof Error ? error.message : `Unable to queue ${behavior} message.`,
+      )
+    } finally {
+      setQueueingMessage(null)
+    }
+  }
+
   if (!activeAgent || !activeSession) {
     return (
       <div className="flex h-full items-center justify-center font-mono text-sm text-muted-foreground">
@@ -655,8 +679,11 @@ export function ChatView({
                   }
                 }}
                 rows={1}
-                disabled={Boolean(runId)}
-                placeholder="Reply to the agent...  (Enter to send, Shift+Enter for newline)"
+                placeholder={
+                  runId
+                    ? 'Add guidance to the active run...'
+                    : 'Reply to the agent...  (Enter to send, Shift+Enter for newline)'
+                }
                 className="max-h-40 min-h-11 flex-1 resize-none bg-transparent py-2 font-mono text-[13px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/60"
               />
               <button
@@ -681,6 +708,26 @@ export function ChatView({
                 <span>{sendButtonLabel}</span>
               </button>
             </form>
+            {isRunningRun && (
+              <div className="mt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={!message.trim() || queueingMessage !== null}
+                  onClick={() => void queueMessage('steer')}
+                  className="border border-border-strong px-2.5 py-1 font-mono text-[10px] uppercase text-muted-foreground hover:border-accent hover:text-foreground disabled:opacity-50"
+                >
+                  {queueingMessage === 'steer' ? 'Queueing…' : 'Steer now'}
+                </button>
+                <button
+                  type="button"
+                  disabled={!message.trim() || queueingMessage !== null}
+                  onClick={() => void queueMessage('follow-up')}
+                  className="border border-border-strong px-2.5 py-1 font-mono text-[10px] uppercase text-muted-foreground hover:border-accent hover:text-foreground disabled:opacity-50"
+                >
+                  {queueingMessage === 'follow-up' ? 'Queueing…' : 'Follow up'}
+                </button>
+              </div>
+            )}
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
               <label className="flex items-center gap-1.5">
                 <Cpu className="size-3 text-muted-foreground" />

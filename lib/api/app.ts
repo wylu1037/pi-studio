@@ -30,6 +30,7 @@ import {
   duplicateAgent,
   duplicateSession,
   getAgent,
+  getModelCapabilities,
   getRun,
   getSession,
   getSessionTree,
@@ -59,6 +60,8 @@ import {
 } from '@/lib/db/repository'
 import {
   AssignToAgentSchema,
+  AgentQueueMessageSchema,
+  AgentSessionStateSchema,
   AgentInputSchema,
   AgentResourcesSchema,
   AgentSchema,
@@ -67,6 +70,7 @@ import {
   ErrorSchema,
   McpInputSchema,
   McpSchema,
+  ModelCapabilitiesSchema,
   ModelInputSchema,
   PackageCollectionSchema,
   PromptInputSchema,
@@ -270,6 +274,69 @@ api.openapi(
   }),
   (c) => c.json({ ok: true }),
 )
+
+api.openapi(
+  createRoute({
+    method: 'get',
+    path: '/sessions/{id}/agent-state',
+    tags: ['Chat'],
+    request: { params: z.object({ id: z.string() }) },
+    responses: { 200: json(AgentSessionStateSchema) },
+  }),
+  async (c) => {
+    const { getSdkSessionState } = await import('@/lib/chat/sdk-session-manager')
+    const state = getSdkSessionState(c.req.valid('param').id)
+    return c.json(
+      state
+        ? {
+            active: true,
+            ...state,
+            sdkSessionId: state.sessionId,
+          }
+        : {
+            active: false,
+            running: false,
+            isStreaming: false,
+            isCompacting: false,
+            model: null,
+            thinkingLevel: null,
+            sessionFile: null,
+            sdkSessionId: null,
+          },
+    )
+  },
+)
+
+for (const behavior of ['steer', 'follow-up'] as const) {
+  api.openapi(
+    createRoute({
+      method: 'post',
+      path: `/sessions/{id}/${behavior}`,
+      tags: ['Chat'],
+      request: {
+        params: z.object({ id: z.string() }),
+        body: json(AgentQueueMessageSchema),
+      },
+      responses: {
+        200: json(z.object({ ok: z.boolean() })),
+        409: json(ErrorSchema),
+      },
+    }),
+    async (c) => {
+      const { followUpSdkSession, steerSdkSession } = await import(
+        '@/lib/chat/sdk-session-manager'
+      )
+      const id = c.req.valid('param').id
+      const { message } = c.req.valid('json')
+      const ok =
+        behavior === 'steer'
+          ? await steerSdkSession(id, message)
+          : await followUpSdkSession(id, message)
+      if (!ok) return c.json({ error: 'Agent session is not active.' }, 409)
+      return c.json({ ok: true })
+    },
+  )
+}
 
 api.openapi(
   createRoute({
@@ -654,6 +721,27 @@ api.openapi(
 
 api.openapi(
   createRoute({
+    method: 'get',
+    path: '/model-providers/{providerId}/models/{modelId}/capabilities',
+    tags: ['Models'],
+    request: {
+      params: z.object({ providerId: z.string(), modelId: z.string() }),
+    },
+    responses: {
+      200: json(ModelCapabilitiesSchema),
+      404: json(ErrorSchema),
+    },
+  }),
+  async (c) => {
+    const { providerId, modelId } = c.req.valid('param')
+    const capabilities = await getModelCapabilities(providerId, modelId)
+    if (!capabilities) return c.json({ error: 'Model not found' }, 404)
+    return c.json(capabilities)
+  },
+)
+
+api.openapi(
+  createRoute({
     method: 'post',
     path: '/model-providers/{id}/default',
     tags: ['Models'],
@@ -944,6 +1032,7 @@ api.get('/runs/:id/events', (c) => {
         runId,
         sessionId: run.sessionId,
         sessionDir: defaultPiSessionDir(),
+        sessionFile: getSession(run.sessionId)?.filePath,
         cwd: run.cwd,
         prompt: run.prompt,
         provider,
@@ -1042,12 +1131,14 @@ api.get('/runs/:id/events', (c) => {
           usage: assistantUsage,
         })
       }
-      markRun(runId, 'completed')
+      if (getRun(runId)?.status !== 'aborted') markRun(runId, 'completed')
       await send('done', { runId })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown pi error'
-      markRun(runId, 'failed', message)
-      appendMessage({ sessionId: run.sessionId, type: 'error', content: message })
+      if (getRun(runId)?.status !== 'aborted') {
+        markRun(runId, 'failed', message)
+        appendMessage({ sessionId: run.sessionId, type: 'error', content: message })
+      }
       await send('error', { message })
     } finally {
       clearInterval(heartbeat)

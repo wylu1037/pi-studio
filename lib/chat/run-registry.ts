@@ -1,16 +1,19 @@
-import type { ChildProcessWithoutNullStreams } from 'node:child_process'
+type AbortHandler = () => void | Promise<void>
 
-const runs = new Map<string, ChildProcessWithoutNullStreams>()
+const runs = new Map<string, AbortHandler>()
 
-export function registerRun(id: string, child: ChildProcessWithoutNullStreams) {
-  runs.set(id, child)
-  child.once('close', () => runs.delete(id))
+export function registerRun(id: string, abort: AbortHandler) {
+  runs.set(id, abort)
+}
+
+export function unregisterRun(id: string) {
+  runs.delete(id)
 }
 
 export function abortRun(id: string) {
-  const child = runs.get(id)
-  if (!child) return false
-  child.kill('SIGTERM')
+  const abort = runs.get(id)
+  if (!abort) return false
   runs.delete(id)
+  void abort()
   return true
 }

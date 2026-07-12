@@ -1,9 +1,9 @@
-import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { syncPiSkillLinks } from '@/lib/skills/store'
-import { registerRun } from './run-registry'
+import { updateSessionFilePath } from '@/lib/db/repository'
+import { registerRun, unregisterRun } from './run-registry'
 
 interface PiModelProviderConfig {
   id: string
@@ -37,6 +37,7 @@ export interface PiRunInput {
   runId: string
   sessionId: string
   sessionDir: string
+  sessionFile?: string
   cwd: string
   prompt: string
   provider?: string
@@ -77,52 +78,32 @@ export type PiRunEvent =
   | { type: 'done'; exitCode: number | null }
 
 export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
+  const { getOrCreateSdkSession } = await import('./sdk-session-manager')
   mkdirSync(input.sessionDir, { recursive: true })
-  const runtimeAgentDir = syncUserAgentDir(input)
+  syncUserAgentDir(input)
   const provider = input.providerConfig
     ? studioProviderName(input.providerConfig.id)
     : input.provider
-  const args = [
-    '--mode',
-    'json',
-    '--print',
-    '--session-id',
-    input.sessionId,
-    '--session-dir',
-    input.sessionDir,
-  ]
-
-  if (provider) args.push('--provider', provider)
-  if (input.providerConfig?.apiKey ?? input.apiKey) {
-    args.push('--api-key', input.providerConfig?.apiKey ?? input.apiKey ?? '')
-  }
-  if (input.model) args.push('--model', input.model)
-  if (input.thinkingLevel) args.push('--thinking', input.thinkingLevel)
-  for (const skill of input.skills) args.push('--skill', skill.name)
-  for (const prompt of input.prompts) args.push('--prompt-template', prompt)
-  args.push(input.prompt)
-
-  const child = spawn('pi', args, {
+  const session = await getOrCreateSdkSession({
+    studioSessionId: input.sessionId,
+    sessionFile: input.sessionFile,
+    sessionDir: input.sessionDir,
     cwd: existsSync(input.cwd) ? input.cwd : process.cwd(),
-    env: {
-      ...process.env,
-      PI_CODING_AGENT_DIR: runtimeAgentDir,
-      PI_CODING_AGENT_SESSION_DIR: input.sessionDir,
-      ...providerEnv(
-        provider,
-        input.providerConfig?.apiKey ?? input.apiKey,
-        input.providerConfig?.baseUrl ?? input.baseUrl,
-      ),
-    },
+    modelProvider: provider,
+    modelId: input.model,
+    thinkingLevel: input.thinkingLevel,
   })
-  child.stdin.end()
-  registerRun(input.runId, child)
+  if (session.inner.sessionFile) {
+    updateSessionFilePath(input.sessionId, session.inner.sessionFile)
+  }
+  registerRun(input.runId, () => session.inner.abort())
 
   const queue: PiRunEvent[] = []
   let done = false
   let wake: (() => void) | null = null
   let assistantSnapshot = ''
   let thinkingSnapshot = ''
+  const emittedProcessEvents = new Set<string>()
   const notify = () => {
     wake?.()
     wake = null
@@ -132,15 +113,9 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
     notify()
   }
 
-  child.stdout.setEncoding('utf8')
-  child.stderr.setEncoding('utf8')
-
-  child.stdout.on('data', (chunk: string) => {
-    for (const line of chunk.split(/\r?\n/).filter(Boolean)) {
-      const parsed = parsePiJsonLine(line)
-      if (parsed === null) continue
-      const events = parsed ?? [{ type: 'message_delta' as const, content: `${line}\n` }]
-      for (const event of events) {
+  const unsubscribe = session.subscribe((sdkEvent) => {
+    const events = parseSdkEvent(sdkEvent)
+    for (const event of events) {
       if (event.type === 'thinking_delta') {
         const delta = assistantDelta(thinkingSnapshot, event.content)
         if (!delta) continue
@@ -151,6 +126,11 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
         continue
       }
       if (event.type !== 'message_delta') {
+        if (event.type === 'tool_call_delta' || event.type === 'tool_result_delta') {
+          const key = `${event.type}:${event.title ?? ''}:${event.content}`
+          if (emittedProcessEvents.has(key)) continue
+          emittedProcessEvents.add(key)
+        }
         push(event)
         continue
       }
@@ -164,20 +144,35 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
         ? event.content
         : assistantSnapshot + event.content
       push({ type: 'message_delta', content: delta, usage: event.usage })
-      }
     }
   })
-  child.stderr.on('data', (chunk: string) => {
-    push({ type: 'bash_output', stream: 'stderr', content: chunk })
-  })
-  child.on('error', (error) => {
-    push({ type: 'error', message: error.message })
-  })
-  child.on('close', (exitCode) => {
-    push({ type: 'done', exitCode })
-    done = true
-    notify()
-  })
+
+  if (provider && input.model) {
+    const model = session.inner.modelRegistry.find(provider, input.model)
+    if (model && session.inner.model?.id !== model.id) {
+      await session.inner.setModel(model)
+    }
+  }
+  if (input.thinkingLevel && input.thinkingLevel !== 'auto') {
+    session.inner.setThinkingLevel(input.thinkingLevel as never)
+  }
+
+  void session.inner
+    .prompt(input.prompt, { source: 'rpc' })
+    .then(() => push({ type: 'done', exitCode: 0 }))
+    .catch((error: unknown) => {
+      push({
+        type: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      })
+      push({ type: 'done', exitCode: 1 })
+    })
+    .finally(() => {
+      done = true
+      unregisterRun(input.runId)
+      unsubscribe()
+      notify()
+    })
 
   while (!done || queue.length > 0) {
     if (queue.length === 0) {
@@ -192,7 +187,38 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
   }
 }
 
-function syncUserAgentDir(input: PiRunInput) {
+function parseSdkEvent(event: unknown): PiRunEvent[] {
+  const payload = asRecord(event)
+  if (!payload) return []
+  const type = String(payload.type ?? '')
+  if (type === 'message_start' || type === 'message_update' || type === 'message_end') {
+    const message = asRecord(payload.message)
+    if (!message) return []
+    if (message.role === 'toolResult' || message.role === 'tool_result') {
+      const toolResult = extractToolResult({ message })
+      return toolResult ? [{ type: 'tool_result_delta', ...toolResult }] : []
+    }
+    if (message.role !== 'assistant') return []
+    const errorMessage = String(message.errorMessage ?? '')
+    if (errorMessage || message.stopReason === 'error') {
+      return [{ type: 'error', message: errorMessage || 'The model run failed.' }]
+    }
+    const events: PiRunEvent[] = []
+    const thinking = extractThinkingContent(message)
+    if (thinking) events.push({ type: 'thinking_delta', content: thinking })
+    for (const toolCall of extractToolCalls(message)) {
+      events.push({ type: 'tool_call_delta', ...toolCall })
+    }
+    const content = extractTextContent(message)
+    const usage = extractUsage(message)
+    if (content) events.push({ type: 'message_delta', content, usage })
+    else if (usage) events.push({ type: 'usage', usage })
+    return events
+  }
+  return []
+}
+
+export function syncUserAgentDir(input: PiRunInput) {
   const agentDir = join(homedir(), '.pi', 'agent')
   mkdirSync(agentDir, { recursive: true })
   syncPiSkillLinks(input.skills)
@@ -313,66 +339,6 @@ function readJsonObject(path: string) {
 
 function writeJson(path: string, value: unknown, mode?: number) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, { mode })
-}
-
-function parsePiJsonLine(line: string): PiRunEvent[] | null | undefined {
-  try {
-    const payload = JSON.parse(line) as Record<string, unknown>
-    const type = String(payload.type ?? payload.event ?? '')
-    const message = asRecord(payload.message)
-    const assistantMessage = message?.role === 'assistant' ? message : null
-    const agentMessages = Array.isArray(payload.messages)
-      ? payload.messages.map(asRecord).filter(Boolean)
-      : []
-    const lastAssistantMessage =
-      agentMessages.findLast((item) => item?.role === 'assistant') ?? null
-    const errorMessage =
-      String(assistantMessage?.errorMessage ?? lastAssistantMessage?.errorMessage ?? '')
-    if (
-      errorMessage ||
-      assistantMessage?.stopReason === 'error' ||
-      lastAssistantMessage?.stopReason === 'error'
-    ) {
-      return [{ type: 'error', message: errorMessage || line }]
-    }
-
-    const toolResult = extractToolResult(payload)
-    if (toolResult) return [{ type: 'tool_result_delta', ...toolResult }]
-
-    if (message && message.role !== 'assistant') return null
-
-    const events: PiRunEvent[] = []
-
-    const thinkingContent = extractThinkingContent(payload)
-    if (thinkingContent) events.push({ type: 'thinking_delta', content: thinkingContent })
-
-    for (const toolCall of extractToolCalls(payload)) {
-      events.push({ type: 'tool_call_delta', ...toolCall })
-    }
-
-    const content = extractTextContent(payload)
-    if (type.includes('tool') && events.length === 0) {
-      events.push({ type: 'tool_call_delta', content: content || line })
-    }
-    if (type.includes('error')) return [{ type: 'error', message: content || line }]
-    if (type === 'message_end') {
-      const assistantContent = extractTextContent(
-        assistantMessage ?? lastAssistantMessage,
-      )
-      const usage = extractUsage(assistantMessage ?? lastAssistantMessage ?? payload)
-      if (assistantContent) {
-        events.push({ type: 'message_delta', content: assistantContent, usage })
-      } else if (usage) {
-        events.push({ type: 'usage', usage })
-      }
-      return events.length > 0 ? events : null
-    }
-    if (type === 'turn_end' || type === 'agent_end') return null
-    if (content) events.push({ type: 'message_delta', content })
-    return events.length > 0 ? events : null
-  } catch {
-    return undefined
-  }
 }
 
 function assistantDelta(previous: string, next: string) {
@@ -544,25 +510,6 @@ function asRecord(value: unknown) {
   return value && typeof value === 'object'
     ? (value as Record<string, unknown>)
     : null
-}
-
-function providerEnv(provider?: string, apiKey?: string, baseUrl?: string) {
-  const env: Record<string, string> = {}
-  if (!apiKey && !baseUrl) return env
-
-  if (provider === 'anthropic') {
-    if (apiKey) env.ANTHROPIC_API_KEY = apiKey
-    if (baseUrl) env.ANTHROPIC_BASE_URL = baseUrl
-  } else if (provider === 'google') {
-    if (apiKey) env.GEMINI_API_KEY = apiKey
-    if (apiKey) env.GOOGLE_GENERATIVE_AI_API_KEY = apiKey
-    if (baseUrl) env.GOOGLE_GENERATIVE_AI_BASE_URL = baseUrl
-  } else if (provider === 'openai') {
-    if (apiKey) env.OPENAI_API_KEY = apiKey
-    if (baseUrl) env.OPENAI_BASE_URL = baseUrl
-  }
-
-  return env
 }
 
 export function defaultPiSessionDir() {
