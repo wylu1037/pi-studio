@@ -4,7 +4,7 @@
 */
 
 import fetch from "@kubb/plugin-client/clients/axios";
-import type { PostApiPackagesIdUpdateMutationResponse, PostApiPackagesIdUpdatePathParams } from "../types/PostApiPackagesIdUpdate.ts";
+import type { PostApiPackagesIdUpdateMutationResponse, PostApiPackagesIdUpdatePathParams, PostApiPackagesIdUpdate404 } from "../types/PostApiPackagesIdUpdate.ts";
 import type { Client, RequestConfig, ResponseErrorConfig } from "@kubb/plugin-client/clients/axios";
 
 function getPostApiPackagesIdUpdateUrl(id: PostApiPackagesIdUpdatePathParams["id"]) {
@@ -20,6 +20,6 @@ export async function postApiPackagesIdUpdate(id: PostApiPackagesIdUpdatePathPar
 
 
 
-  const res = await request<PostApiPackagesIdUpdateMutationResponse, ResponseErrorConfig<Error>, unknown>({ method : "POST", url : getPostApiPackagesIdUpdateUrl(id).url.toString(), ... requestConfig })
+  const res = await request<PostApiPackagesIdUpdateMutationResponse, ResponseErrorConfig<PostApiPackagesIdUpdate404>, unknown>({ method : "POST", url : getPostApiPackagesIdUpdateUrl(id).url.toString(), ... requestConfig })
   return res.data
 }

@@ -3,7 +3,7 @@
 * Do not edit manually.
 */
 
-import type { PostApiPackagesIdUpdateMutationResponse, PostApiPackagesIdUpdatePathParams } from "../types/PostApiPackagesIdUpdate.ts";
+import type { PostApiPackagesIdUpdateMutationResponse, PostApiPackagesIdUpdatePathParams, PostApiPackagesIdUpdate404 } from "../types/PostApiPackagesIdUpdate.ts";
 import type { Client, RequestConfig, ResponseErrorConfig } from "@kubb/plugin-client/clients/axios";
 import type { UseMutationOptions, UseMutationResult, QueryClient } from "@tanstack/react-query";
 import { postApiPackagesIdUpdate } from "../clients/postApiPackagesIdUpdate.ts";
@@ -16,7 +16,7 @@ export type PostApiPackagesIdUpdateMutationKey = ReturnType<typeof postApiPackag
 export function postApiPackagesIdUpdateMutationOptions<TContext = unknown>(config: Partial<RequestConfig> & { client?: Client } = {}) {
 
         const mutationKey = postApiPackagesIdUpdateMutationKey()
-        return mutationOptions<PostApiPackagesIdUpdateMutationResponse, ResponseErrorConfig<Error>, {id: PostApiPackagesIdUpdatePathParams["id"]}, TContext>({
+        return mutationOptions<PostApiPackagesIdUpdateMutationResponse, ResponseErrorConfig<PostApiPackagesIdUpdate404>, {id: PostApiPackagesIdUpdatePathParams["id"]}, TContext>({
           mutationKey,
           mutationFn: async({ id }) => {
             return postApiPackagesIdUpdate(id, config)
@@ -30,7 +30,7 @@ export function postApiPackagesIdUpdateMutationOptions<TContext = unknown>(confi
  */
 export function usePostApiPackagesIdUpdate<TContext>(options: 
 {
-  mutation?: UseMutationOptions<PostApiPackagesIdUpdateMutationResponse, ResponseErrorConfig<Error>, {id: PostApiPackagesIdUpdatePathParams["id"]}, TContext> & { client?: QueryClient },
+  mutation?: UseMutationOptions<PostApiPackagesIdUpdateMutationResponse, ResponseErrorConfig<PostApiPackagesIdUpdate404>, {id: PostApiPackagesIdUpdatePathParams["id"]}, TContext> & { client?: QueryClient },
   client?: Partial<RequestConfig> & { client?: Client },
 }
  = {}) {
@@ -39,13 +39,13 @@ export function usePostApiPackagesIdUpdate<TContext>(options:
           const { client: queryClient, ...mutationOptions } = mutation;
           const mutationKey = mutationOptions.mutationKey ?? postApiPackagesIdUpdateMutationKey()
 
-          const baseOptions = postApiPackagesIdUpdateMutationOptions(config) as UseMutationOptions<PostApiPackagesIdUpdateMutationResponse, ResponseErrorConfig<Error>, {id: PostApiPackagesIdUpdatePathParams["id"]}, TContext>
+          const baseOptions = postApiPackagesIdUpdateMutationOptions(config) as UseMutationOptions<PostApiPackagesIdUpdateMutationResponse, ResponseErrorConfig<PostApiPackagesIdUpdate404>, {id: PostApiPackagesIdUpdatePathParams["id"]}, TContext>
           
 
-          return useMutation<PostApiPackagesIdUpdateMutationResponse, ResponseErrorConfig<Error>, {id: PostApiPackagesIdUpdatePathParams["id"]}, TContext>({
+          return useMutation<PostApiPackagesIdUpdateMutationResponse, ResponseErrorConfig<PostApiPackagesIdUpdate404>, {id: PostApiPackagesIdUpdatePathParams["id"]}, TContext>({
             ...baseOptions,
             mutationKey,
             ...mutationOptions,
-          }, queryClient) as UseMutationResult<PostApiPackagesIdUpdateMutationResponse, ResponseErrorConfig<Error>, {id: PostApiPackagesIdUpdatePathParams["id"]}, TContext>
+          }, queryClient) as UseMutationResult<PostApiPackagesIdUpdateMutationResponse, ResponseErrorConfig<PostApiPackagesIdUpdate404>, {id: PostApiPackagesIdUpdatePathParams["id"]}, TContext>
       
 }

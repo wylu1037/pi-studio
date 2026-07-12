@@ -152,3 +152,7 @@ export async function followUpSdkSession(studioSessionId: string, message: strin
   await session.inner.followUp(message)
   return true
 }
+
+export function disposeAllSdkSessions() {
+  for (const session of [...sessions().values()]) session.destroy()
+}

@@ -46,6 +46,7 @@ export type { PostApiModelProvidersMutationKey } from "./usePostApiModelProvider
 export type { PostApiModelProvidersIdDefaultMutationKey } from "./usePostApiModelProvidersIdDefault.ts";
 export type { PostApiModelProvidersIdModelsMutationKey } from "./usePostApiModelProvidersIdModels.ts";
 export type { PostApiModelProvidersIdTestMutationKey } from "./usePostApiModelProvidersIdTest.ts";
+export type { PostApiPackagesMutationKey } from "./usePostApiPackages.ts";
 export type { PostApiPackagesIdInstallMutationKey } from "./usePostApiPackagesIdInstall.ts";
 export type { PostApiPackagesIdUpdateMutationKey } from "./usePostApiPackagesIdUpdate.ts";
 export type { PostApiPromptsMutationKey } from "./usePostApiPrompts.ts";
@@ -200,6 +201,9 @@ export { usePostApiModelProvidersIdModels } from "./usePostApiModelProvidersIdMo
 export { postApiModelProvidersIdTestMutationKey } from "./usePostApiModelProvidersIdTest.ts";
 export { postApiModelProvidersIdTestMutationOptions } from "./usePostApiModelProvidersIdTest.ts";
 export { usePostApiModelProvidersIdTest } from "./usePostApiModelProvidersIdTest.ts";
+export { postApiPackagesMutationKey } from "./usePostApiPackages.ts";
+export { postApiPackagesMutationOptions } from "./usePostApiPackages.ts";
+export { usePostApiPackages } from "./usePostApiPackages.ts";
 export { postApiPackagesIdInstallMutationKey } from "./usePostApiPackagesIdInstall.ts";
 export { postApiPackagesIdInstallMutationOptions } from "./usePostApiPackagesIdInstall.ts";
 export { usePostApiPackagesIdInstall } from "./usePostApiPackagesIdInstall.ts";

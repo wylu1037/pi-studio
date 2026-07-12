@@ -31,6 +31,7 @@ export { postApiModelProviders } from "./postApiModelProviders.ts";
 export { postApiModelProvidersIdDefault } from "./postApiModelProvidersIdDefault.ts";
 export { postApiModelProvidersIdModels } from "./postApiModelProvidersIdModels.ts";
 export { postApiModelProvidersIdTest } from "./postApiModelProvidersIdTest.ts";
+export { postApiPackages } from "./postApiPackages.ts";
 export { postApiPackagesIdInstall } from "./postApiPackagesIdInstall.ts";
 export { postApiPackagesIdUpdate } from "./postApiPackagesIdUpdate.ts";
 export { postApiPrompts } from "./postApiPrompts.ts";

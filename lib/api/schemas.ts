@@ -235,6 +235,12 @@ export const PackageCollectionSchema = z.object({
   gallery: z.array(PackageSchema),
 })
 
+export const InstallPackageSchema = z.object({
+  source: z.string().min(1),
+  scope: z.enum(['global', 'project']).default('global'),
+  cwd: z.string().optional(),
+})
+
 export const SessionSchema = z.object({
   id: z.string(),
   agentId: z.string(),

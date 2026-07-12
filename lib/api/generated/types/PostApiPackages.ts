@@ -4,65 +4,58 @@
 */
 
 
-export type PostApiPackagesIdInstallPathParams = {
-    /**
-     * @type string
-    */
-    id: string;
-};
-
-export const installedTypeEnum3 = {
+export const installedTypeEnum2 = {
     npm: "npm",
     git: "git",
     local: "local"
 } as const;
 
-export type InstalledTypeEnum3Key = (typeof installedTypeEnum3)[keyof typeof installedTypeEnum3];
+export type InstalledTypeEnum2Key = (typeof installedTypeEnum2)[keyof typeof installedTypeEnum2];
 
-export const installedScopeEnum3 = {
+export const installedScopeEnum2 = {
     global: "global",
     project: "project"
 } as const;
 
-export type InstalledScopeEnum3Key = (typeof installedScopeEnum3)[keyof typeof installedScopeEnum3];
+export type InstalledScopeEnum2Key = (typeof installedScopeEnum2)[keyof typeof installedScopeEnum2];
 
-export const installedStatusEnum3 = {
+export const installedStatusEnum2 = {
     installed: "installed",
     "update-available": "update-available",
     pinned: "pinned",
     error: "error"
 } as const;
 
-export type InstalledStatusEnum3Key = (typeof installedStatusEnum3)[keyof typeof installedStatusEnum3];
+export type InstalledStatusEnum2Key = (typeof installedStatusEnum2)[keyof typeof installedStatusEnum2];
 
-export const galleryTypeEnum3 = {
+export const galleryTypeEnum2 = {
     npm: "npm",
     git: "git",
     local: "local"
 } as const;
 
-export type GalleryTypeEnum3Key = (typeof galleryTypeEnum3)[keyof typeof galleryTypeEnum3];
+export type GalleryTypeEnum2Key = (typeof galleryTypeEnum2)[keyof typeof galleryTypeEnum2];
 
-export const galleryScopeEnum3 = {
+export const galleryScopeEnum2 = {
     global: "global",
     project: "project"
 } as const;
 
-export type GalleryScopeEnum3Key = (typeof galleryScopeEnum3)[keyof typeof galleryScopeEnum3];
+export type GalleryScopeEnum2Key = (typeof galleryScopeEnum2)[keyof typeof galleryScopeEnum2];
 
-export const galleryStatusEnum3 = {
+export const galleryStatusEnum2 = {
     installed: "installed",
     "update-available": "update-available",
     pinned: "pinned",
     error: "error"
 } as const;
 
-export type GalleryStatusEnum3Key = (typeof galleryStatusEnum3)[keyof typeof galleryStatusEnum3];
+export type GalleryStatusEnum2Key = (typeof galleryStatusEnum2)[keyof typeof galleryStatusEnum2];
 
 /**
  * @description OK
 */
-export type PostApiPackagesIdInstall200 = {
+export type PostApiPackages200 = {
     /**
      * @type array
     */
@@ -82,7 +75,7 @@ export type PostApiPackagesIdInstall200 = {
         /**
          * @type string
         */
-        type: InstalledTypeEnum3Key;
+        type: InstalledTypeEnum2Key;
         /**
          * @type string
         */
@@ -90,7 +83,7 @@ export type PostApiPackagesIdInstall200 = {
         /**
          * @type string
         */
-        scope: InstalledScopeEnum3Key;
+        scope: InstalledScopeEnum2Key;
         /**
          * @type string
         */
@@ -131,7 +124,7 @@ export type PostApiPackagesIdInstall200 = {
         /**
          * @type string
         */
-        status: InstalledStatusEnum3Key;
+        status: InstalledStatusEnum2Key;
         /**
          * @type string
         */
@@ -156,7 +149,7 @@ export type PostApiPackagesIdInstall200 = {
         /**
          * @type string
         */
-        type: GalleryTypeEnum3Key;
+        type: GalleryTypeEnum2Key;
         /**
          * @type string
         */
@@ -164,7 +157,7 @@ export type PostApiPackagesIdInstall200 = {
         /**
          * @type string
         */
-        scope: GalleryScopeEnum3Key;
+        scope: GalleryScopeEnum2Key;
         /**
          * @type string
         */
@@ -205,7 +198,7 @@ export type PostApiPackagesIdInstall200 = {
         /**
          * @type string
         */
-        status: GalleryStatusEnum3Key;
+        status: GalleryStatusEnum2Key;
         /**
          * @type string
         */
@@ -213,20 +206,37 @@ export type PostApiPackagesIdInstall200 = {
     }[];
 };
 
+export const postApiPackagesMutationRequestScopeEnum = {
+    global: "global",
+    project: "project"
+} as const;
+
+export type PostApiPackagesMutationRequestScopeEnumKey = (typeof postApiPackagesMutationRequestScopeEnum)[keyof typeof postApiPackagesMutationRequestScopeEnum];
+
 /**
  * @description OK
 */
-export type PostApiPackagesIdInstall404 = {
+export type PostApiPackagesMutationRequest = {
     /**
+     * @minLength 1
      * @type string
     */
-    error: string;
+    source: string;
+    /**
+     * @default "global"
+     * @type string | undefined
+    */
+    scope?: PostApiPackagesMutationRequestScopeEnumKey;
+    /**
+     * @type string | undefined
+    */
+    cwd?: string;
 };
 
-export type PostApiPackagesIdInstallMutationResponse = PostApiPackagesIdInstall200;
+export type PostApiPackagesMutationResponse = PostApiPackages200;
 
-export type PostApiPackagesIdInstallMutation = {
-    Response: PostApiPackagesIdInstall200;
-    PathParams: PostApiPackagesIdInstallPathParams;
-    Errors: PostApiPackagesIdInstall404;
+export type PostApiPackagesMutation = {
+    Response: PostApiPackages200;
+    Request: PostApiPackagesMutationRequest;
+    Errors: any;
 };

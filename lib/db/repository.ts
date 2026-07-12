@@ -595,36 +595,14 @@ export function listPackages() {
   }
 }
 
-export function installPackage(id: string) {
-  const source = db.select().from(packages).where(eq(packages.id, id)).get()
-  if (!source) return null
-  const installedId = source.id.startsWith('pkg-gallery-')
-    ? source.id.replace('pkg-gallery-', 'pkg-installed-')
-    : source.id
-  const at = now()
-  db.insert(packages)
-    .values({
-      ...source,
-      id: installedId,
-      status: 'installed',
-      isGallery: false,
-      updatedAt: at,
-    })
-    .onConflictDoUpdate({
-      target: packages.id,
-      set: { status: 'installed', isGallery: false, updatedAt: at },
-    })
-    .run()
-  return listPackages()
+export function listPackageGallery() {
+  return listPackages().gallery
 }
 
-export function updatePackage(id: string) {
-  db.update(packages).set({ status: 'installed', updatedAt: now() }).where(eq(packages.id, id)).run()
-  return listPackages()
-}
-
-export function deletePackage(id: string) {
-  db.delete(packages).where(eq(packages.id, id)).run()
+export function getPackageCatalogItem(id: string) {
+  const item = db.select().from(packages).where(eq(packages.id, id)).get()
+  if (!item) return null
+  return listPackages().gallery.find((pkg) => pkg.id === id) ?? null
 }
 
 export function listSessions(filter?: { agentId?: string }): AgentSessionSummary[] {

@@ -11,53 +11,53 @@ export type PostApiPackagesIdUpdatePathParams = {
     id: string;
 };
 
-export const installedTypeEnum3 = {
+export const installedTypeEnum4 = {
     npm: "npm",
     git: "git",
     local: "local"
 } as const;
 
-export type InstalledTypeEnum3Key = (typeof installedTypeEnum3)[keyof typeof installedTypeEnum3];
+export type InstalledTypeEnum4Key = (typeof installedTypeEnum4)[keyof typeof installedTypeEnum4];
 
-export const installedScopeEnum3 = {
+export const installedScopeEnum4 = {
     global: "global",
     project: "project"
 } as const;
 
-export type InstalledScopeEnum3Key = (typeof installedScopeEnum3)[keyof typeof installedScopeEnum3];
+export type InstalledScopeEnum4Key = (typeof installedScopeEnum4)[keyof typeof installedScopeEnum4];
 
-export const installedStatusEnum3 = {
+export const installedStatusEnum4 = {
     installed: "installed",
     "update-available": "update-available",
     pinned: "pinned",
     error: "error"
 } as const;
 
-export type InstalledStatusEnum3Key = (typeof installedStatusEnum3)[keyof typeof installedStatusEnum3];
+export type InstalledStatusEnum4Key = (typeof installedStatusEnum4)[keyof typeof installedStatusEnum4];
 
-export const galleryTypeEnum3 = {
+export const galleryTypeEnum4 = {
     npm: "npm",
     git: "git",
     local: "local"
 } as const;
 
-export type GalleryTypeEnum3Key = (typeof galleryTypeEnum3)[keyof typeof galleryTypeEnum3];
+export type GalleryTypeEnum4Key = (typeof galleryTypeEnum4)[keyof typeof galleryTypeEnum4];
 
-export const galleryScopeEnum3 = {
+export const galleryScopeEnum4 = {
     global: "global",
     project: "project"
 } as const;
 
-export type GalleryScopeEnum3Key = (typeof galleryScopeEnum3)[keyof typeof galleryScopeEnum3];
+export type GalleryScopeEnum4Key = (typeof galleryScopeEnum4)[keyof typeof galleryScopeEnum4];
 
-export const galleryStatusEnum3 = {
+export const galleryStatusEnum4 = {
     installed: "installed",
     "update-available": "update-available",
     pinned: "pinned",
     error: "error"
 } as const;
 
-export type GalleryStatusEnum3Key = (typeof galleryStatusEnum3)[keyof typeof galleryStatusEnum3];
+export type GalleryStatusEnum4Key = (typeof galleryStatusEnum4)[keyof typeof galleryStatusEnum4];
 
 /**
  * @description OK
@@ -82,7 +82,7 @@ export type PostApiPackagesIdUpdate200 = {
         /**
          * @type string
         */
-        type: InstalledTypeEnum3Key;
+        type: InstalledTypeEnum4Key;
         /**
          * @type string
         */
@@ -90,7 +90,7 @@ export type PostApiPackagesIdUpdate200 = {
         /**
          * @type string
         */
-        scope: InstalledScopeEnum3Key;
+        scope: InstalledScopeEnum4Key;
         /**
          * @type string
         */
@@ -131,7 +131,7 @@ export type PostApiPackagesIdUpdate200 = {
         /**
          * @type string
         */
-        status: InstalledStatusEnum3Key;
+        status: InstalledStatusEnum4Key;
         /**
          * @type string
         */
@@ -156,7 +156,7 @@ export type PostApiPackagesIdUpdate200 = {
         /**
          * @type string
         */
-        type: GalleryTypeEnum3Key;
+        type: GalleryTypeEnum4Key;
         /**
          * @type string
         */
@@ -164,7 +164,7 @@ export type PostApiPackagesIdUpdate200 = {
         /**
          * @type string
         */
-        scope: GalleryScopeEnum3Key;
+        scope: GalleryScopeEnum4Key;
         /**
          * @type string
         */
@@ -205,7 +205,7 @@ export type PostApiPackagesIdUpdate200 = {
         /**
          * @type string
         */
-        status: GalleryStatusEnum3Key;
+        status: GalleryStatusEnum4Key;
         /**
          * @type string
         */
@@ -213,10 +213,20 @@ export type PostApiPackagesIdUpdate200 = {
     }[];
 };
 
+/**
+ * @description OK
+*/
+export type PostApiPackagesIdUpdate404 = {
+    /**
+     * @type string
+    */
+    error: string;
+};
+
 export type PostApiPackagesIdUpdateMutationResponse = PostApiPackagesIdUpdate200;
 
 export type PostApiPackagesIdUpdateMutation = {
     Response: PostApiPackagesIdUpdate200;
     PathParams: PostApiPackagesIdUpdatePathParams;
-    Errors: any;
+    Errors: PostApiPackagesIdUpdate404;
 };

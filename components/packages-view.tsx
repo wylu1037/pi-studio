@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import type { GlobalPackage, PackageStatus } from '@/lib/types'
 import { deleteApiPackagesId } from '@/lib/api/generated/clients/deleteApiPackagesId'
-import { postApiPackagesIdInstall } from '@/lib/api/generated/clients/postApiPackagesIdInstall'
+import { postApiPackages } from '@/lib/api/generated/clients/postApiPackages'
 import { postApiPackagesIdUpdate } from '@/lib/api/generated/clients/postApiPackagesIdUpdate'
 import { refreshAfterMutation } from '@/lib/api/refresh'
 import {
@@ -55,32 +55,16 @@ export function PackagesView({
 }) {
   const [query, setQuery] = useState('')
   const [showGallery, setShowGallery] = useState(false)
-  const [pendingId, setPendingId] = useState<string | null>(null)
+  const [showInstall, setShowInstall] = useState(false)
+  const [scope, setScope] = useState<'global' | 'project'>('global')
 
   const filtered = installed.filter(
     (p) =>
-      !query ||
-      p.name.toLowerCase().includes(query.toLowerCase()) ||
-      p.description.toLowerCase().includes(query.toLowerCase()),
+      p.scope === scope &&
+      (!query ||
+        p.name.toLowerCase().includes(query.toLowerCase()) ||
+        p.description.toLowerCase().includes(query.toLowerCase())),
   )
-
-  const installFromPrompt = async () => {
-    const label = gallery.map((pkg) => `${pkg.name} (${pkg.id})`).join('\n')
-    const answer = window.prompt(`Install which package?\n${label}`)
-    if (!answer) {
-      setShowGallery(true)
-      return
-    }
-    const pkg = gallery.find((item) => item.id === answer || item.name === answer)
-    if (!pkg) return window.alert('Package not found')
-    setPendingId(`install:${pkg.id}`)
-    try {
-      await postApiPackagesIdInstall(pkg.id)
-      refreshAfterMutation()
-    } finally {
-      setPendingId(null)
-    }
-  }
 
   return (
     <div className="flex h-full flex-col">
@@ -94,8 +78,7 @@ export function PackagesView({
         </ActionButton>
         <ActionButton
           variant="accent"
-          onClick={installFromPrompt}
-          disabled={pendingId?.startsWith('install:')}
+          onClick={() => setShowInstall(true)}
         >
           <Plus className="size-3.5" />
           Install
@@ -120,8 +103,12 @@ export function PackagesView({
           icon={<Search className="size-3.5" />}
           className="w-64"
         />
-        <BracketButton active>Global</BracketButton>
-        <BracketButton>Project</BracketButton>
+        <BracketButton active={scope === 'global'} onClick={() => setScope('global')}>
+          Global
+        </BracketButton>
+        <BracketButton active={scope === 'project'} onClick={() => setScope('project')}>
+          Project
+        </BracketButton>
         <span className="ml-auto font-mono text-xs text-muted-foreground">
           {filtered.length} installed
         </span>
@@ -132,8 +119,7 @@ export function PackagesView({
         {installed.length === 0 ? (
           <PackagesEmptyState
             onBrowse={() => setShowGallery(true)}
-            onInstall={installFromPrompt}
-            disabled={pendingId?.startsWith('install:')}
+            onInstall={() => setShowInstall(true)}
           />
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-24 text-center">
@@ -152,8 +138,122 @@ export function PackagesView({
       </div>
 
       {showGallery && (
-        <GalleryDrawer gallery={gallery} onClose={() => setShowGallery(false)} />
+        <GalleryDrawer
+          gallery={gallery}
+          scope={scope}
+          onClose={() => setShowGallery(false)}
+        />
       )}
+      <InstallPackageDialog
+        key={`${showInstall}:${scope}`}
+        open={showInstall}
+        initialScope={scope}
+        onClose={() => setShowInstall(false)}
+      />
+    </div>
+  )
+}
+
+function InstallPackageDialog({
+  open,
+  initialScope,
+  onClose,
+}: {
+  open: boolean
+  initialScope: 'global' | 'project'
+  onClose: () => void
+}) {
+  const [source, setSource] = useState('')
+  const [scope, setScope] = useState<'global' | 'project'>(initialScope)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  if (!open) return null
+
+  const install = async () => {
+    const value = source.trim()
+    if (!value || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await postApiPackages({ source: value, scope })
+      refreshAfterMutation()
+      onClose()
+    } catch (installError) {
+      setError(
+        installError instanceof Error
+          ? installError.message
+          : 'Unable to install package.',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="install-package-title"
+    >
+      <button
+        type="button"
+        aria-label="Close install package dialog"
+        className="absolute inset-0 bg-foreground/25"
+        onClick={busy ? undefined : onClose}
+      />
+      <div className="relative w-full max-w-lg border border-border bg-card shadow-xl">
+        <div className="border-b border-border bg-panel px-4 py-3">
+          <h2 id="install-package-title" className="font-serif text-lg italic text-foreground">
+            Install Pi package
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Install from npm, git, URL, or a local path.
+          </p>
+        </div>
+        <div className="space-y-4 p-4">
+          <div className="space-y-1.5">
+            <Label>Package source</Label>
+            <TextInput
+              value={source}
+              onChange={setSource}
+              placeholder="npm:@scope/package"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Install scope</Label>
+            <div className="flex gap-2">
+              <BracketButton active={scope === 'global'} onClick={() => setScope('global')}>
+                Global
+              </BracketButton>
+              <BracketButton active={scope === 'project'} onClick={() => setScope('project')}>
+                Project
+              </BracketButton>
+            </div>
+          </div>
+          <div className="flex items-start gap-2 border border-warning/30 bg-warning/10 p-3 text-xs text-muted-foreground">
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning" />
+            Packages may execute arbitrary code through extensions. Review the source before installing.
+          </div>
+          {error && (
+            <p className="border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {error}
+            </p>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-border bg-panel px-4 py-3">
+          <ActionButton onClick={onClose} disabled={busy}>Cancel</ActionButton>
+          <ActionButton
+            variant="accent"
+            onClick={() => void install()}
+            disabled={!source.trim() || busy}
+          >
+            <Download className="size-3.5" />
+            {busy ? 'Installing' : 'Install'}
+          </ActionButton>
+        </div>
+      </div>
     </div>
   )
 }
@@ -318,9 +418,11 @@ function PackageCard({ pkg }: { pkg: GlobalPackage }) {
 
 function GalleryDrawer({
   gallery,
+  scope,
   onClose,
 }: {
   gallery: GlobalPackage[]
+  scope: 'global' | 'project'
   onClose: () => void
 }) {
   const [query, setQuery] = useState('')
@@ -332,7 +434,7 @@ function GalleryDrawer({
   const installPackage = async (pkg: GlobalPackage) => {
     setPendingId(pkg.id)
     try {
-      await postApiPackagesIdInstall(pkg.id)
+      await postApiPackages({ source: pkg.source, scope })
       refreshAfterMutation()
     } finally {
       setPendingId(null)
@@ -371,7 +473,14 @@ function GalleryDrawer({
           />
         </div>
         <div className="flex-1 space-y-4 overflow-y-auto scrollbar-thin p-4">
-          {filtered.map((p) => (
+          {filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-20 text-center">
+              <PackageIcon className="size-6 text-muted-foreground/50" />
+              <p className="font-mono text-sm text-muted-foreground">
+                No pi.dev packages match this search.
+              </p>
+            </div>
+          ) : filtered.map((p) => (
             <Panel key={p.id} className="p-4">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-mono text-sm text-foreground">

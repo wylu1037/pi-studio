@@ -32,7 +32,8 @@ export { postApiModelProvidersIdModels200Schema, postApiModelProvidersIdModels40
 export { postApiModelProvidersIdTest200Schema, postApiModelProvidersIdTest404Schema, postApiModelProvidersIdTestMutationResponseSchema, postApiModelProvidersIdTestPathParamsSchema } from "./postApiModelProvidersIdTestSchema.ts";
 export { postApiModelProviders200Schema, postApiModelProviders400Schema, postApiModelProvidersMutationRequestSchema, postApiModelProvidersMutationResponseSchema } from "./postApiModelProvidersSchema.ts";
 export { postApiPackagesIdInstall200Schema, postApiPackagesIdInstall404Schema, postApiPackagesIdInstallMutationResponseSchema, postApiPackagesIdInstallPathParamsSchema } from "./postApiPackagesIdInstallSchema.ts";
-export { postApiPackagesIdUpdate200Schema, postApiPackagesIdUpdateMutationResponseSchema, postApiPackagesIdUpdatePathParamsSchema } from "./postApiPackagesIdUpdateSchema.ts";
+export { postApiPackagesIdUpdate200Schema, postApiPackagesIdUpdate404Schema, postApiPackagesIdUpdateMutationResponseSchema, postApiPackagesIdUpdatePathParamsSchema } from "./postApiPackagesIdUpdateSchema.ts";
+export { postApiPackages200Schema, postApiPackagesMutationRequestSchema, postApiPackagesMutationResponseSchema } from "./postApiPackagesSchema.ts";
 export { postApiPrompts200Schema, postApiPrompts400Schema, postApiPromptsMutationRequestSchema, postApiPromptsMutationResponseSchema } from "./postApiPromptsSchema.ts";
 export { postApiRunsIdAbort200Schema, postApiRunsIdAbortMutationResponseSchema, postApiRunsIdAbortPathParamsSchema } from "./postApiRunsIdAbortSchema.ts";
 export { postApiSessionsIdDuplicate200Schema, postApiSessionsIdDuplicate404Schema, postApiSessionsIdDuplicateMutationResponseSchema, postApiSessionsIdDuplicatePathParamsSchema } from "./postApiSessionsIdDuplicateSchema.ts";

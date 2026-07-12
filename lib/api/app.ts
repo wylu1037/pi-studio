@@ -11,6 +11,7 @@ import {
   type PiUsage,
 } from '@/lib/chat/pi-adapter'
 import { runNpx } from '@/lib/npx'
+import { loadPackageGallery } from '@/lib/packages/pi-dev-gallery'
 import {
   materializeInstalledSkill,
   removeStoredSkill,
@@ -24,7 +25,6 @@ import {
   deleteAgent,
   deleteMcp,
   deleteModel,
-  deletePackage,
   deletePrompt,
   deleteProvider,
   duplicateAgent,
@@ -34,10 +34,10 @@ import {
   getRun,
   getSession,
   getSessionTree,
-  installPackage,
+  getPackageCatalogItem,
   listAgents,
   listMcpConfigs,
-  listPackages,
+  listPackageGallery,
   listPrompts,
   listProviders,
   listSessionMessages,
@@ -49,7 +49,6 @@ import {
   testProviderConnection,
   updateAgent,
   updateAgentResources,
-  updatePackage,
   upsertSkill,
   upsertMcp,
   upsertModel,
@@ -71,6 +70,7 @@ import {
   McpInputSchema,
   McpSchema,
   ModelCapabilitiesSchema,
+  InstallPackageSchema,
   ModelInputSchema,
   PackageCollectionSchema,
   PromptInputSchema,
@@ -97,6 +97,12 @@ const json = <T extends z.ZodTypeAny>(schema: T) => ({
 })
 
 export const api = new OpenAPIHono().basePath('/api')
+
+async function runtimePackageCollection(cwd: string) {
+  const { listRuntimePackages } = await import('@/lib/packages/package-service')
+  const gallery = await loadPackageGallery(listPackageGallery())
+  return listRuntimePackages(cwd, gallery)
+}
 
 function normalizeRegistryKey(value: string) {
   return value.trim().toLowerCase()
@@ -779,7 +785,30 @@ api.openapi(
       200: json(PackageCollectionSchema),
     },
   }),
-  (c) => c.json(listPackages()),
+  async (c) => {
+    return c.json(await runtimePackageCollection(process.cwd()))
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'post',
+    path: '/packages',
+    tags: ['Packages'],
+    request: { body: json(InstallPackageSchema) },
+    responses: { 200: json(PackageCollectionSchema) },
+  }),
+  async (c) => {
+    const input = c.req.valid('json')
+    const packageService = await import('@/lib/packages/package-service')
+    const cwd = input.cwd ?? process.cwd()
+    await packageService.installRuntimePackage({
+      source: input.source,
+      scope: input.scope,
+      cwd,
+    })
+    return c.json(await runtimePackageCollection(cwd))
+  },
 )
 
 api.openapi(
@@ -790,10 +819,15 @@ api.openapi(
     request: { params: z.object({ id: z.string() }) },
     responses: { 200: json(PackageCollectionSchema), 404: json(ErrorSchema) },
   }),
-  (c) => {
-    const collection = installPackage(c.req.valid('param').id)
-    if (!collection) return c.json({ error: 'Package not found' }, 404)
-    return c.json(collection)
+  async (c) => {
+    const id = c.req.valid('param').id
+    const packageService = await import('@/lib/packages/package-service')
+    const decoded = packageService.decodePackageId(id)
+    const catalog = decoded ? null : getPackageCatalogItem(id)
+    const target = decoded ?? (catalog ? { source: catalog.source, scope: catalog.scope } : null)
+    if (!target) return c.json({ error: 'Package not found' }, 404)
+    await packageService.installRuntimePackage({ ...target, cwd: process.cwd() })
+    return c.json(await runtimePackageCollection(process.cwd()))
   },
 )
 
@@ -803,9 +837,18 @@ api.openapi(
     path: '/packages/{id}/update',
     tags: ['Packages'],
     request: { params: z.object({ id: z.string() }) },
-    responses: { 200: json(PackageCollectionSchema) },
+    responses: { 200: json(PackageCollectionSchema), 404: json(ErrorSchema) },
   }),
-  (c) => c.json(updatePackage(c.req.valid('param').id)),
+  async (c) => {
+    const packageService = await import('@/lib/packages/package-service')
+    const target = packageService.decodePackageId(c.req.valid('param').id)
+    if (!target) return c.json({ error: 'Package not found' }, 404)
+    await packageService.updateRuntimePackage({
+      source: target.source,
+      cwd: process.cwd(),
+    })
+    return c.json(await runtimePackageCollection(process.cwd()))
+  },
 )
 
 api.openapi(
@@ -816,8 +859,12 @@ api.openapi(
     request: { params: z.object({ id: z.string() }) },
     responses: { 200: json(z.object({ ok: z.boolean() })) },
   }),
-  (c) => {
-    deletePackage(c.req.valid('param').id)
+  async (c) => {
+    const packageService = await import('@/lib/packages/package-service')
+    const target = packageService.decodePackageId(c.req.valid('param').id)
+    if (target) {
+      await packageService.removeRuntimePackage({ ...target, cwd: process.cwd() })
+    }
     return c.json({ ok: true })
   },
 )

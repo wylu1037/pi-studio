@@ -5,14 +5,10 @@
 
 import { z } from "zod/v4";
 
-export const postApiPackagesIdUpdatePathParamsSchema = z.object({
-    "id": z.string()
-    })
-
 /**
  * @description OK
  */
-export const postApiPackagesIdUpdate200Schema = z.object({
+export const postApiPackages200Schema = z.object({
     "installed": z.array(z.object({
     "id": z.string(),
 "name": z.string(),
@@ -58,8 +54,10 @@ export const postApiPackagesIdUpdate200Schema = z.object({
 /**
  * @description OK
  */
-export const postApiPackagesIdUpdate404Schema = z.object({
-    "error": z.string()
+export const postApiPackagesMutationRequestSchema = z.object({
+    "source": z.string().min(1),
+"scope": z.optional(z.enum(["global", "project"]).default("global")),
+"cwd": z.optional(z.string())
     })
 
-export const postApiPackagesIdUpdateMutationResponseSchema = z.lazy(() => postApiPackagesIdUpdate200Schema)
+export const postApiPackagesMutationResponseSchema = z.lazy(() => postApiPackages200Schema)
