@@ -43,9 +43,23 @@ export async function runNpx(
   const command = npxCli ? execPath : 'npx'
   const commandArgs = npxCli ? [npxCli, ...args] : args
 
-  return execFileAsync(command, commandArgs, {
-    timeout: options.timeout,
-    cwd: options.cwd,
-    env: options.env,
-  })
+  try {
+    return await execFileAsync(command, commandArgs, {
+      timeout: options.timeout,
+      cwd: options.cwd,
+      env: options.env,
+    })
+  } catch (error) {
+    const stderr =
+      typeof error === 'object' && error !== null && 'stderr' in error
+        ? String(error.stderr).trim()
+        : ''
+    const stdout =
+      typeof error === 'object' && error !== null && 'stdout' in error
+        ? String(error.stdout).trim()
+        : ''
+    const detail = stderr || stdout
+    if (detail) throw new Error(detail, { cause: error })
+    throw error
+  }
 }

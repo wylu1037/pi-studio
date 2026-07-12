@@ -1,9 +1,11 @@
 import {
+  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
   readdirSync,
   readlinkSync,
+  realpathSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -22,6 +24,10 @@ export function piSkillsDir() {
 
 export function studioSkillsDir() {
   return join(homedir(), '.pi-studio', 'skills')
+}
+
+export function studioRootDir() {
+  return join(homedir(), '.pi-studio')
 }
 
 export function safeSkillDirName(value?: string) {
@@ -88,19 +94,29 @@ export function materializeInstalledSkill(skillName: string) {
   if (!dirName) throw new Error(`Invalid skill name: ${skillName}`)
 
   const root = studioSkillsDir()
-  const source = join(piSkillsDir(), dirName)
   const target = join(root, dirName)
   mkdirSync(root, { recursive: true })
 
-  if (!existsSync(source)) {
-    throw new Error(`Installed skill not found in pi skills directory: ${source}`)
-  }
-  if (lstatSync(source).isSymbolicLink()) {
-    throw new Error(`Installed skill path is a link, not a downloaded directory: ${source}`)
-  }
+  const source = [
+    join(studioRootDir(), '.agents', 'skills', dirName),
+    join(studioRootDir(), '.pi', 'skills', dirName),
+    join(piSkillsDir(), dirName),
+  ].find((candidate) => existsSync(candidate))
 
+  if (!source) {
+    throw new Error(`Installed skill not found after install: ${dirName}`)
+  }
   rmSync(target, { recursive: true, force: true })
-  renameSync(source, target)
+  if (lstatSync(source).isSymbolicLink()) {
+    const resolvedSource = realpathSync(source)
+    if (!lstatSync(resolvedSource).isDirectory()) {
+      throw new Error(`Installed skill does not point to a directory: ${source}`)
+    }
+    cpSync(resolvedSource, target, { recursive: true })
+    rmSync(source, { force: true })
+  } else {
+    renameSync(source, target)
+  }
   return target
 }
 

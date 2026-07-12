@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
+import { mkdirSync } from 'node:fs'
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
 import { streamSSE } from 'hono/streaming'
 import {
@@ -15,6 +16,7 @@ import { loadPackageGallery } from '@/lib/packages/pi-dev-gallery'
 import {
   materializeInstalledSkill,
   removeStoredSkill,
+  studioRootDir,
 } from '@/lib/skills/store'
 import {
   appendMessage,
@@ -169,6 +171,21 @@ function packageSpec(source: string | undefined, name: string, id: string) {
   return name
 }
 
+function cleanSkillsCliError(value: string) {
+  const clean = value
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\))/g, '')
+    .replace(/\r/g, '\n')
+  const noMatch = clean.match(/No matching skills found:[\s\S]*/)?.[0]
+  const useful = noMatch ?? clean
+  return useful
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line, index, lines) => line && line !== lines[index - 1])
+    .join(' ')
+    .slice(0, 600)
+}
+
 async function searchSkillsApi(query: string) {
   const url = new URL('/api/search', SKILLS_SEARCH_API_BASE)
   url.searchParams.set('q', query)
@@ -178,9 +195,11 @@ async function searchSkillsApi(query: string) {
   if (!response.ok) throw new Error(`skills.sh search failed: HTTP ${response.status}`)
 
   const payload = skillsShSearchResponseSchema.parse(await response.json())
-  return payload.skills.map((skill) => ({
+  return payload.skills.map((skill) => {
+    const skillName = skill.skillId || skill.name
+    return {
     id: skill.id,
-    name: skill.name,
+    name: skillName,
     author: skill.source?.split('/')[0] || 'skills.sh',
     description: [
       skill.source || skill.id,
@@ -189,10 +208,11 @@ async function searchSkillsApi(query: string) {
     tags: [],
     source: skill.source || skill.id,
     sourceType: 'skills.sh',
-    installUrl: packageSpec(skill.source, skill.name, skill.id),
+    installUrl: packageSpec(skill.source, skillName, skill.id),
     url: `${SKILLS_SEARCH_API_BASE}/${skill.id}`,
     installs: skill.installs,
-  }))
+    }
+  })
 }
 
 function parseSkillsFindOutput(raw: string) {
@@ -247,16 +267,19 @@ async function fetchSkillsShRegistry(query: string) {
 }
 
 async function installSkillsShPackage(pkg: string) {
-  const { stdout, stderr } = await runNpx(
-    ['skills', 'add', pkg.trim(), '-y', '--agent', 'pi', '-g'],
-    {
-      timeout: 60_000,
-      env: { ...process.env, FORCE_COLOR: '0' },
-    },
-  )
-  const output = (stdout + stderr).replace(ANSI_RE, '')
-  if (!/Installation complete|Installed \d+ skill/.test(output)) {
-    throw new Error(output.slice(-300) || 'skills.sh install failed')
+  mkdirSync(studioRootDir(), { recursive: true })
+  try {
+    await runNpx(
+      ['skills', 'add', pkg.trim(), '-y', '--copy'],
+      {
+        timeout: 60_000,
+        cwd: studioRootDir(),
+        env: { ...process.env, FORCE_COLOR: '0' },
+      },
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(cleanSkillsCliError(message), { cause: error })
   }
 }
 
@@ -497,15 +520,22 @@ api.openapi(
     const input = c.req.valid('json')
     const skillInput = { ...input }
     if (!input.id && input.source === 'skills.sh') {
+      let installError: unknown = null
       try {
         await installSkillsShPackage(input.path)
-        skillInput.path = materializeInstalledSkill(input.name)
       } catch (error) {
+        installError = error
+      }
+      try {
+        skillInput.path = materializeInstalledSkill(input.name)
+      } catch (materializeError) {
         return c.json(
           {
             error:
-              error instanceof Error
-                ? error.message
+              installError instanceof Error
+                ? installError.message
+                : materializeError instanceof Error
+                  ? materializeError.message
                 : 'Unable to install skills.sh package',
           },
           400,
