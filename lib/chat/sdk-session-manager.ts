@@ -58,6 +58,7 @@ declare global {
   var __piStudioSdkSessionLocks:
     | Map<string, Promise<StudioAgentSession>>
     | undefined
+  var __piStudioPendingBranches: Map<string, string> | undefined
 }
 
 function sessions() {
@@ -68,6 +69,11 @@ function sessions() {
 function locks() {
   globalThis.__piStudioSdkSessionLocks ??= new Map()
   return globalThis.__piStudioSdkSessionLocks
+}
+
+function pendingBranches() {
+  globalThis.__piStudioPendingBranches ??= new Map()
+  return globalThis.__piStudioPendingBranches
 }
 
 export async function getOrCreateSdkSession(input: {
@@ -109,6 +115,11 @@ export async function getOrCreateSdkSession(input: {
         ? { thinkingLevel: input.thinkingLevel as never }
         : {}),
     })
+    const pendingBranch = pendingBranches().get(input.studioSessionId)
+    if (pendingBranch) {
+      await session.navigateTree(pendingBranch, {})
+      pendingBranches().delete(input.studioSessionId)
+    }
     try {
       await session.bindExtensions({
         mode: 'rpc',
@@ -170,4 +181,15 @@ export async function followUpSdkSession(studioSessionId: string, message: strin
 
 export function disposeAllSdkSessions() {
   for (const session of [...sessions().values()]) session.destroy()
+}
+
+export async function selectSdkBranch(studioSessionId: string, entryId: string) {
+  const session = getSdkSession(studioSessionId)
+  if (session) {
+    if (!session.inner.isIdle) return false
+    const result = await session.inner.navigateTree(entryId, {})
+    return !result.cancelled
+  }
+  pendingBranches().set(studioSessionId, entryId)
+  return true
 }

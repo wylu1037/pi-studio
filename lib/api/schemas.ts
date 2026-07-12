@@ -332,6 +332,22 @@ export const SessionTreeNodeSchema = z.object({
   isCurrent: z.boolean().optional(),
 })
 
+export const SdkSessionTreeSchema = z.object({
+  roots: z.array(SessionTreeNodeSchema),
+  leafId: z.string().nullable(),
+})
+
+export const SessionBranchContextSchema = z.object({
+  leafId: z.string().nullable(),
+  messages: z.array(ChatMessageSchema),
+  model: z.object({ provider: z.string(), modelId: z.string() }).nullable(),
+  thinkingLevel: z.string(),
+})
+
+export const SessionEntryActionSchema = z.object({
+  entryId: z.string().min(1),
+})
+
 export const StartRunSchema = z.object({
   message: z.string().min(1),
   providerId: z.string().optional(),

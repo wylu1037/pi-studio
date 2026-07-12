@@ -683,6 +683,28 @@ export function updateSessionFilePath(id: string, filePath: string) {
   db.update(sessions).set({ filePath, updatedAt: now() }).where(eq(sessions.id, id)).run()
 }
 
+export function createForkedSessionRecord(input: {
+  sourceSessionId: string
+  filePath: string
+}) {
+  const source = db.select().from(sessions).where(eq(sessions.id, input.sourceSessionId)).get()
+  if (!source) return null
+  const id = randomUUID()
+  const at = now()
+  db.insert(sessions)
+    .values({
+      id,
+      agentId: source.agentId,
+      name: `${source.name ?? 'Untitled session'} · Fork`,
+      filePath: input.filePath,
+      cwd: source.cwd,
+      createdAt: at,
+      updatedAt: at,
+    })
+    .run()
+  return listSessions().find((session) => session.id === id) ?? null
+}
+
 export function listSessionMessages(sessionId: string): ChatMessage[] {
   return db
     .select()

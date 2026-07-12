@@ -110,6 +110,16 @@ export function ChatView({
   const [abortingRun, setAbortingRun] = useState(false)
   const [streamError, setStreamError] = useState<string | null>(null)
   const [queueingMessage, setQueueingMessage] = useState<'steer' | 'follow-up' | null>(null)
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(() =>
+    findCurrentTreeNodeId(tree),
+  );
+  const [branchMessages, setBranchMessages] = useState<ChatMessage[] | null>(
+    null,
+  );
+  const [branchPending, setBranchPending] = useState<
+    "navigate" | "fork" | null
+  >(null);
+  const [branchError, setBranchError] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null)
   const activeRunIdRef = useRef<string | null>(null)
   const reconcileTimerRef = useRef<number | null>(null)
@@ -182,6 +192,7 @@ export function ChatView({
     const selected = new Set(activeAgent?.selectedMcpConfigIds ?? [])
     return mcpConfigs.filter((mcp) => selected.has(mcp.id)).map((mcp) => mcp.name)
   }, [activeAgent?.selectedMcpConfigIds, mcpConfigs])
+  const sourceMessages = branchMessages ?? messages;
 
   useEffect(() => {
     return () => {
@@ -191,6 +202,12 @@ export function ChatView({
       }
     }
   }, [])
+
+  useEffect(() => {
+    setSelectedNodeId(findCurrentTreeNodeId(tree))
+    setBranchMessages(null)
+    setBranchError(null)
+  }, [activeSession?.id, tree])
 
   useEffect(() => {
     if (streamingMessage.length >= streamBuffer.length) return
@@ -215,42 +232,43 @@ export function ChatView({
   }, [router, streamBuffer.length, streamDone, streamingMessage.length])
 
   useEffect(() => {
-    if (!streamDone || !streamingMessage.trim()) return
-    const persisted = messages.some(
+    if (!streamDone || !streamingMessage.trim()) return;
+    const persisted = sourceMessages.some(
       (message) =>
-        message.type === 'assistant' &&
+        message.type === "assistant" &&
         message.content.trim() === streamingMessage.trim(),
-    )
-    if (!persisted) return
+    );
+    if (!persisted) return;
 
-    setStreamingMessage('')
-    setStreamBuffer('')
-    setStreamProcessMessages([])
-    setStreamingTokens(null)
-    setStreamingUsage(null)
-    setStreamStartedAt(null)
-    setStreamDone(false)
-    setOptimisticMessage(null)
-    setStreamPhase('idle')
-  }, [messages, streamDone, streamingMessage])
+    setStreamingMessage("");
+    setStreamBuffer("");
+    setStreamProcessMessages([]);
+    setStreamingTokens(null);
+    setStreamingUsage(null);
+    setStreamStartedAt(null);
+    setStreamDone(false);
+    setOptimisticMessage(null);
+    setStreamPhase("idle");
+    setBranchMessages(null);
+  }, [sourceMessages, streamDone, streamingMessage]);
 
   const baseMessages =
     optimisticMessage &&
-    !messages.some(
+    !sourceMessages.some(
       (message) =>
-        message.type === 'user' &&
+        message.type === "user" &&
         message.content === optimisticMessage.content,
     )
-      ? [...messages, optimisticMessage]
-      : messages
+      ? [...sourceMessages, optimisticMessage]
+      : sourceMessages;
 
   const hasPersistedStreamingAssistant =
     streamingMessage.trim().length > 0 &&
-    messages.some(
+    sourceMessages.some(
       (message) =>
-        message.type === 'assistant' &&
+        message.type === "assistant" &&
         message.content.trim() === streamingMessage.trim(),
-    )
+    );
 
   const displayMessages = streamingMessage && !hasPersistedStreamingAssistant
     ? [
@@ -289,6 +307,7 @@ export function ChatView({
     setAbortingRun(false)
     setStreamPhase('idle')
     setStreamDone(true)
+    setBranchMessages(null)
     return true
   }
 
@@ -575,6 +594,81 @@ export function ChatView({
     }
   }
 
+  const selectTreeNode = async (entryId: string) => {
+    if (!activeSession || isRunningRun) return;
+    setSelectedNodeId(entryId);
+    setBranchError(null);
+    try {
+      const response = await fetch(
+        `/api/sessions/${encodeURIComponent(activeSession.id)}/context?leafId=${encodeURIComponent(entryId)}`,
+      );
+      const body = (await response.json()) as {
+        messages?: ChatMessage[];
+        error?: string;
+      };
+      if (!response.ok || !body.messages)
+        throw new Error(body.error ?? "Unable to load branch context.");
+      setBranchMessages(body.messages);
+    } catch (error) {
+      setBranchError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load branch context.",
+      );
+    }
+  };
+
+  const startBranch = async () => {
+    if (!activeSession || !selectedNodeId || isRunningRun) return;
+    setBranchPending("navigate");
+    setBranchError(null);
+    try {
+      const response = await fetch(
+        `/api/sessions/${activeSession.id}/navigate`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ entryId: selectedNodeId }),
+        },
+      );
+      const body = (await response.json()) as { error?: string };
+      if (!response.ok)
+        throw new Error(body.error ?? "Unable to create branch.");
+      form.setFocus("message");
+    } catch (error) {
+      setBranchError(
+        error instanceof Error ? error.message : "Unable to create branch.",
+      );
+    } finally {
+      setBranchPending(null);
+    }
+  };
+
+  const forkSession = async () => {
+    if (!activeAgent || !activeSession || !selectedNodeId || isRunningRun)
+      return;
+    setBranchPending("fork");
+    setBranchError(null);
+    try {
+      const response = await fetch(`/api/sessions/${activeSession.id}/fork`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ entryId: selectedNodeId }),
+      });
+      const body = (await response.json()) as { id?: string; error?: string };
+      if (!response.ok || !body.id)
+        throw new Error(body.error ?? "Unable to fork session.");
+      router.push(`/chat?agent=${activeAgent.id}&session=${body.id}`);
+      router.refresh();
+    } catch (error) {
+      setBranchError(
+        error instanceof Error ? error.message : "Unable to fork session.",
+      );
+    } finally {
+      setBranchPending(null);
+    }
+  };
+
   if (!activeAgent || !activeSession) {
     return (
       <div className="flex h-full items-center justify-center font-mono text-sm text-muted-foreground">
@@ -600,22 +694,48 @@ export function ChatView({
         <div className="border-b border-border px-4 py-3">
           <Label>Session tree</Label>
           <p className="mt-1 font-mono text-[11px] text-muted-foreground">
-            {activeSession.branchCount} nodes · {sessions.length} sessions
+            {countTreeNodes(tree)} nodes · {sessions.length} sessions
           </p>
         </div>
         <div className="flex-1 overflow-auto p-2">
           {tree ? (
-            <TreeNode node={tree} depth={0} />
+            <TreeNode
+              node={tree}
+              depth={0}
+              selectedId={selectedNodeId}
+              onSelect={selectTreeNode}
+            />
           ) : (
             <p className="px-2 py-6 text-center font-mono text-[11px] text-muted-foreground">
               No tree nodes yet
             </p>
           )}
         </div>
-        <div className="border-t border-border p-2">
-          <BracketButton className="w-full justify-center">
-            <GitBranch className="size-3" />
-            New branch
+        {branchError && (
+          <p className="border-t border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
+            {branchError}
+          </p>
+        )}
+        <div className="grid grid-cols-2 gap-2 border-border p-2">
+          <BracketButton
+            className="justify-center whitespace-nowrap"
+            disabled={!selectedNodeId || isRunningRun || branchPending !== null}
+            onClick={() => void startBranch()}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <GitBranch className="size-3 shrink-0" />
+              <span>{branchPending === "navigate" ? "Branching" : "New branch"}</span>
+            </span>
+          </BracketButton>
+          <BracketButton
+            className="justify-center whitespace-nowrap"
+            disabled={!selectedNodeId || isRunningRun || branchPending !== null}
+            onClick={() => void forkSession()}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <GitBranch className="size-3 shrink-0" />
+              <span>{branchPending === "fork" ? "Forking" : "Fork"}</span>
+            </span>
           </BracketButton>
         </div>
       </aside>
@@ -633,14 +753,21 @@ export function ChatView({
                 {activeAgent.name}
               </div>
               <div className="truncate font-mono text-[11px] text-muted-foreground">
-                {activeSession.name ?? activeSession.firstUserMessage ?? 'New conversation'}
+                {activeSession.name ??
+                  activeSession.firstUserMessage ??
+                  "New conversation"}
               </div>
             </div>
           </div>
           <div className="flex items-center gap-1.5">
             <Tag tone="outline">
-              <Circle className={cn('size-2', runId ? 'fill-success text-success' : 'text-muted-foreground')} />
-              {runId ? 'running' : 'ready'}
+              <Circle
+                className={cn(
+                  "size-2",
+                  runId ? "fill-success text-success" : "text-muted-foreground",
+                )}
+              />
+              {runId ? "running" : "ready"}
             </Tag>
             <Tag tone="outline">{activeSession.messageCount} msgs</Tag>
           </div>
@@ -649,26 +776,37 @@ export function ChatView({
         {/* messages */}
         <ScrollArea className="min-h-0 flex-1" viewportClassName="px-5 py-6">
           <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-4 overflow-x-hidden">
-            {displayItems.map((item) => (
-              item.type === 'process' ? (
+            {displayItems.map((item) =>
+              item.type === "process" ? (
                 <ProcessDetailsGroup
                   key={item.id}
                   messages={item.messages}
-                  isStreaming={Boolean(runId && item.messages.some((message) => message.timestamp === 'streaming'))}
+                  isStreaming={Boolean(
+                    runId &&
+                    item.messages.some(
+                      (message) => message.timestamp === "streaming",
+                    ),
+                  )}
                 />
               ) : (
                 <MessageBubble
                   key={item.message.id}
                   message={item.message}
                   agentName={activeAgent.name}
-                  streamStartedAt={item.message.id === 'streaming-assistant' ? streamStartedAt : null}
-                  usageSummary={item.message.id === 'streaming-assistant' ? formatUsageSummary(streamingUsage) : undefined}
+                  streamStartedAt={
+                    item.message.id === "streaming-assistant"
+                      ? streamStartedAt
+                      : null
+                  }
+                  usageSummary={
+                    item.message.id === "streaming-assistant"
+                      ? formatUsageSummary(streamingUsage)
+                      : undefined
+                  }
                 />
-              )
-            ))}
-            {isWaiting && (
-              <WaitingBubble agentName={activeAgent.name} />
+              ),
             )}
+            {isWaiting && <WaitingBubble agentName={activeAgent.name} />}
             {displayMessages.length === 0 && (
               <div className="border border-dashed border-border bg-panel/50 px-4 py-8 text-center font-mono text-xs text-muted-foreground">
                 Start a new pi conversation from the composer.
@@ -677,7 +815,12 @@ export function ChatView({
             {streamError && (
               <MessageBubble
                 agentName={activeAgent.name}
-                message={{ id: 'stream-error', type: 'error', content: streamError, timestamp: 'now' }}
+                message={{
+                  id: "stream-error",
+                  type: "error",
+                  content: streamError,
+                  timestamp: "now",
+                }}
               />
             )}
           </div>
@@ -686,7 +829,10 @@ export function ChatView({
         {/* composer */}
         <div className="border-t border-border bg-panel px-5 py-3">
           <div className="mx-auto max-w-3xl">
-            <form onSubmit={submit} className="flex items-center gap-2.5 border border-border-strong bg-card p-2.5 focus-within:border-ring">
+            <form
+              onSubmit={submit}
+              className="flex items-center gap-2.5 border border-border-strong bg-card p-2.5 focus-within:border-ring"
+            >
               <button
                 type="button"
                 className="flex size-9 items-center justify-center text-muted-foreground hover:text-foreground"
@@ -695,39 +841,46 @@ export function ChatView({
                 <Paperclip className="size-4" />
               </button>
               <textarea
-                {...form.register('message')}
+                {...form.register("message")}
                 onKeyDown={(e) => {
                   if (
-                    e.key === 'Enter' &&
+                    e.key === "Enter" &&
                     !e.shiftKey &&
                     !e.nativeEvent.isComposing &&
                     e.keyCode !== 229
                   ) {
-                    e.preventDefault()
-                    if (canSend && !isStartingRun && !isRunningRun && !abortingRun) {
-                      void submit()
+                    e.preventDefault();
+                    if (
+                      canSend &&
+                      !isStartingRun &&
+                      !isRunningRun &&
+                      !abortingRun
+                    ) {
+                      void submit();
                     }
                   }
                 }}
                 rows={1}
                 placeholder={
                   runId
-                    ? 'Add guidance to the active run...'
-                    : 'Reply to the agent...  (Enter to send, Shift+Enter for newline)'
+                    ? "Add guidance to the active run..."
+                    : "Reply to the agent...  (Enter to send, Shift+Enter for newline)"
                 }
                 className="max-h-40 min-h-11 flex-1 resize-none bg-transparent py-2 font-mono text-[13px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/60"
               />
               <button
-                type={isRunningRun ? 'button' : 'submit'}
+                type={isRunningRun ? "button" : "submit"}
                 onClick={isRunningRun ? abort : undefined}
-                disabled={isRunningRun ? abortingRun : isStartingRun || !canSend}
+                disabled={
+                  isRunningRun ? abortingRun : isStartingRun || !canSend
+                }
                 className={cn(
-                  'flex h-9 items-center justify-center gap-1.5 border font-mono text-[11px] uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-70',
+                  "flex h-9 items-center justify-center gap-1.5 border font-mono text-[11px] uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-70",
                   isRunningRun
-                    ? 'border-destructive/70 bg-destructive/10 px-3 text-destructive hover:bg-destructive hover:text-destructive-foreground'
-                    : 'border-accent bg-accent px-2.5 text-accent-foreground hover:opacity-90',
+                    ? "border-destructive/70 bg-destructive/10 px-3 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                    : "border-accent bg-accent px-2.5 text-accent-foreground hover:opacity-90",
                 )}
-                aria-label={isRunningRun ? 'Abort run' : 'Send message'}
+                aria-label={isRunningRun ? "Abort run" : "Send message"}
               >
                 {abortingRun || isStartingRun ? (
                   <LoaderCircle className="size-3.5 animate-spin" />
@@ -744,18 +897,18 @@ export function ChatView({
                 <button
                   type="button"
                   disabled={!message.trim() || queueingMessage !== null}
-                  onClick={() => void queueMessage('steer')}
+                  onClick={() => void queueMessage("steer")}
                   className="border border-border-strong px-2.5 py-1 font-mono text-[10px] uppercase text-muted-foreground hover:border-accent hover:text-foreground disabled:opacity-50"
                 >
-                  {queueingMessage === 'steer' ? 'Queueing…' : 'Steer now'}
+                  {queueingMessage === "steer" ? "Queueing…" : "Steer now"}
                 </button>
                 <button
                   type="button"
                   disabled={!message.trim() || queueingMessage !== null}
-                  onClick={() => void queueMessage('follow-up')}
+                  onClick={() => void queueMessage("follow-up")}
                   className="border border-border-strong px-2.5 py-1 font-mono text-[10px] uppercase text-muted-foreground hover:border-accent hover:text-foreground disabled:opacity-50"
                 >
-                  {queueingMessage === 'follow-up' ? 'Queueing…' : 'Follow up'}
+                  {queueingMessage === "follow-up" ? "Queueing…" : "Follow up"}
                 </button>
               </div>
             )}
@@ -763,31 +916,37 @@ export function ChatView({
               <label className="flex items-center gap-1.5">
                 <Cpu className="size-3 text-muted-foreground" />
                 <select
-                  {...form.register('modelId')}
+                  {...form.register("modelId")}
                   disabled={availableModelOptions.length === 0 || isRunningRun}
                   onChange={(event) => {
                     const next = availableModelOptions.find(
-                      ({ model: candidate }) => candidate.id === event.target.value,
-                    )
-                    form.setValue('modelId', next?.model.id)
-                    form.setValue('providerId', next?.provider.id)
+                      ({ model: candidate }) =>
+                        candidate.id === event.target.value,
+                    );
+                    form.setValue("modelId", next?.model.id);
+                    form.setValue("providerId", next?.provider.id);
                   }}
                   className="bg-transparent font-mono text-[11px] text-muted-foreground outline-none hover:text-foreground"
                 >
                   {availableModelOptions.length === 0 && (
                     <option value="">No enabled models</option>
                   )}
-                  {availableModelOptions.map(({ provider, model: candidate }) => (
-                    <option key={`${provider.id}:${candidate.id}`} value={candidate.id}>
-                      {provider.name} / {candidate.name ?? candidate.id}
-                    </option>
-                  ))}
+                  {availableModelOptions.map(
+                    ({ provider, model: candidate }) => (
+                      <option
+                        key={`${provider.id}:${candidate.id}`}
+                        value={candidate.id}
+                      >
+                        {provider.name} / {candidate.name ?? candidate.id}
+                      </option>
+                    ),
+                  )}
                 </select>
               </label>
               <label className="flex items-center gap-1.5">
                 <Brain className="size-3 text-muted-foreground" />
                 <select
-                  {...form.register('thinkingLevel')}
+                  {...form.register("thinkingLevel")}
                   className="bg-transparent font-mono text-[11px] text-muted-foreground outline-none hover:text-foreground"
                 >
                   {thinkingLevels.map((t) => (
@@ -817,8 +976,14 @@ export function ChatView({
             </PanelHeader>
             <div className="space-y-2 p-3">
               <Row icon={<Cpu className="size-3" />} label={activeModelName} />
-              <Row icon={<Brain className="size-3" />} label={`thinking · ${thinking}`} />
-              <Row icon={<Coins className="size-3" />} label={`${activeSession.totalTokens ?? 0} tokens`} />
+              <Row
+                icon={<Brain className="size-3" />}
+                label={`thinking · ${thinking}`}
+              />
+              <Row
+                icon={<Coins className="size-3" />}
+                label={`${activeSession.totalTokens ?? 0} tokens`}
+              />
             </div>
           </Panel>
           <Panel>
@@ -858,7 +1023,7 @@ export function ChatView({
         </div>
       </aside>
     </div>
-  )
+  );
 }
 
 function Row({ icon, label }: { icon: React.ReactNode; label: string }) {
@@ -880,23 +1045,55 @@ const roleMeta: Record<TreeNodeRole, { icon: React.ReactNode; color: string }> =
   custom: { icon: <Circle className="size-3" />, color: 'text-muted-foreground' },
 }
 
-function TreeNode({ node, depth }: { node: SessionTreeNode; depth: number }) {
-  const isEvent = node.type !== 'message'
-  const meta = node.role ? roleMeta[node.role] : null
+function findCurrentTreeNodeId(node: SessionTreeNode | null): string | null {
+  if (!node) return null;
+  if (node.isCurrent) return node.id;
+  for (const child of node.children) {
+    const current = findCurrentTreeNodeId(child);
+    if (current) return current;
+  }
+  return null;
+}
+
+function countTreeNodes(node: SessionTreeNode | null): number {
+  if (!node) return 0
+  return 1 + node.children.reduce((total, child) => total + countTreeNodes(child), 0)
+}
+
+function TreeNode({
+  node,
+  depth,
+  selectedId,
+  onSelect,
+}: {
+  node: SessionTreeNode;
+  depth: number;
+  selectedId: string | null;
+  onSelect: (entryId: string) => void;
+}) {
+  const isEvent = node.type !== "message";
+  const meta = node.role ? roleMeta[node.role] : null;
 
   return (
     <div>
       <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onSelect(node.id)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") onSelect(node.id);
+        }}
         className={cn(
-          'group flex cursor-pointer items-start gap-1.5 rounded-none px-2 py-1.5 transition-colors hover:bg-muted',
-          node.isCurrent && 'bg-accent/12 ring-1 ring-accent/40',
+          "group flex cursor-pointer items-start gap-1.5 rounded-none px-2 py-1.5 transition-colors hover:bg-muted",
+          node.isCurrent && "bg-accent/12 ring-1 ring-accent/40",
+          selectedId === node.id && "bg-primary/10 ring-1 ring-primary/40",
         )}
         style={{ paddingLeft: depth * 12 + 8 }}
       >
         <span
           className={cn(
-            'mt-0.5 shrink-0',
-            isEvent ? 'text-warning' : meta?.color ?? 'text-muted-foreground',
+            "mt-0.5 shrink-0",
+            isEvent ? "text-warning" : (meta?.color ?? "text-muted-foreground"),
           )}
         >
           {isEvent ? <GitBranch className="size-3" /> : meta?.icon}
@@ -909,8 +1106,8 @@ function TreeNode({ node, depth }: { node: SessionTreeNode; depth: number }) {
           )}
           <p
             className={cn(
-              'truncate font-mono text-[11px] leading-snug',
-              isEvent ? 'italic text-warning' : 'text-foreground/80',
+              "truncate font-mono text-[11px] leading-snug",
+              isEvent ? "italic text-warning" : "text-foreground/80",
             )}
           >
             {node.preview}
@@ -924,16 +1121,22 @@ function TreeNode({ node, depth }: { node: SessionTreeNode; depth: number }) {
         <div
           className={cn(
             node.children.length > 1 &&
-              'ml-3 border-l border-dashed border-border',
+              "ml-3 border-l border-dashed border-border",
           )}
         >
           {node.children.map((c) => (
-            <TreeNode key={c.id} node={c} depth={depth + 1} />
+            <TreeNode
+              key={c.id}
+              node={c}
+              depth={depth + 1}
+              selectedId={selectedId}
+              onSelect={onSelect}
+            />
           ))}
         </div>
       )}
     </div>
-  )
+  );
 }
 
 /* ---------- Message bubbles ---------- */

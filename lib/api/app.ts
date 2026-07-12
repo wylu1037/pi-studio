@@ -20,6 +20,7 @@ import {
   appendMessage,
   appendRunEvent,
   createAgent,
+  createForkedSessionRecord,
   createRun,
   createSession,
   deleteAgent,
@@ -81,7 +82,10 @@ import {
   ProviderTestResultSchema,
   RunSchema,
   SessionSchema,
+  SessionBranchContextSchema,
+  SessionEntryActionSchema,
   SessionTreeNodeSchema,
+  SdkSessionTreeSchema,
   SkillRegistryItemSchema,
   SkillInputSchema,
   SkillSchema,
@@ -1022,6 +1026,90 @@ api.openapi(
     responses: { 200: json(SessionTreeNodeSchema.nullable()) },
   }),
   (c) => c.json(getSessionTree(c.req.valid('param').id)),
+)
+
+api.openapi(
+  createRoute({
+    method: 'get',
+    path: '/sessions/{id}/sdk-tree',
+    tags: ['Sessions'],
+    request: { params: z.object({ id: z.string() }) },
+    responses: { 200: json(SdkSessionTreeSchema), 404: json(ErrorSchema) },
+  }),
+  async (c) => {
+    const session = getSession(c.req.valid('param').id)
+    if (!session) return c.json({ error: 'Session not found' }, 404)
+    const { readSdkSessionTree } = await import('@/lib/chat/session-branches')
+    const tree = readSdkSessionTree(session.filePath)
+    if (!tree) return c.json({ error: 'Session file not found' }, 404)
+    return c.json(tree)
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'get',
+    path: '/sessions/{id}/context',
+    tags: ['Sessions'],
+    request: {
+      params: z.object({ id: z.string() }),
+      query: z.object({ leafId: z.string().optional() }),
+    },
+    responses: { 200: json(SessionBranchContextSchema), 404: json(ErrorSchema) },
+  }),
+  async (c) => {
+    const session = getSession(c.req.valid('param').id)
+    if (!session) return c.json({ error: 'Session not found' }, 404)
+    const { readSdkSessionContext } = await import('@/lib/chat/session-branches')
+    const context = readSdkSessionContext(session.filePath, c.req.valid('query').leafId)
+    if (!context) return c.json({ error: 'Session file not found' }, 404)
+    return c.json(context)
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'post',
+    path: '/sessions/{id}/navigate',
+    tags: ['Sessions'],
+    request: {
+      params: z.object({ id: z.string() }),
+      body: json(SessionEntryActionSchema),
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean() })),
+      409: json(ErrorSchema),
+    },
+  }),
+  async (c) => {
+    const { selectSdkBranch } = await import('@/lib/chat/sdk-session-manager')
+    const ok = await selectSdkBranch(c.req.valid('param').id, c.req.valid('json').entryId)
+    if (!ok) return c.json({ error: 'Session is currently running.' }, 409)
+    return c.json({ ok: true })
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'post',
+    path: '/sessions/{id}/fork',
+    tags: ['Sessions'],
+    request: {
+      params: z.object({ id: z.string() }),
+      body: json(SessionEntryActionSchema),
+    },
+    responses: { 200: json(SessionSchema), 404: json(ErrorSchema) },
+  }),
+  async (c) => {
+    const source = getSession(c.req.valid('param').id)
+    if (!source) return c.json({ error: 'Session not found' }, 404)
+    const { forkSdkSessionFile } = await import('@/lib/chat/session-branches')
+    const filePath = forkSdkSessionFile(source.filePath, c.req.valid('json').entryId)
+    if (!filePath) return c.json({ error: 'Unable to fork session' }, 404)
+    const fork = createForkedSessionRecord({ sourceSessionId: source.id, filePath })
+    if (!fork) return c.json({ error: 'Unable to create fork session' }, 404)
+    return c.json(fork)
+  },
 )
 
 api.openapi(
