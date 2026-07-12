@@ -114,17 +114,30 @@ export function ChatView({
   const activeRunIdRef = useRef<string | null>(null)
   const reconcileTimerRef = useRef<number | null>(null)
 
-  const activeProvider =
-    providers.find((provider) => provider.id === activeAgent?.defaultProviderId) ??
-    providers[0]
-  const availableModels = providers.flatMap((provider) => provider.models)
+  const availableModelOptions = useMemo(() => {
+    const enabledProviders = new Set(activeAgent?.selectedProviderIds ?? [])
+    const enabledModels = new Set(activeAgent?.selectedModelIds ?? [])
+    return providers
+      .filter((provider) => enabledProviders.has(provider.id))
+      .flatMap((provider) =>
+        provider.models
+          .filter((model) => enabledModels.has(model.id))
+          .map((model) => ({ provider, model })),
+      )
+  }, [activeAgent?.selectedModelIds, activeAgent?.selectedProviderIds, providers])
+  const defaultModelOption =
+    availableModelOptions.find(
+      ({ provider, model }) =>
+        provider.id === activeAgent?.defaultProviderId &&
+        model.id === activeAgent?.defaultModelId,
+    ) ?? availableModelOptions[0]
 
   const form = useForm<ComposerValues>({
     resolver: zodResolver(postApiSessionsIdRunsMutationRequestSchema as never),
     defaultValues: {
       message: '',
-      providerId: activeAgent?.defaultProviderId ?? activeProvider?.id,
-      modelId: activeAgent?.defaultModelId ?? availableModels[0]?.id,
+      providerId: defaultModelOption?.provider.id,
+      modelId: defaultModelOption?.model.id,
       thinkingLevel: activeAgent?.defaultThinkingLevel ?? 'medium',
     },
   })
@@ -138,10 +151,28 @@ export function ChatView({
     modelId: form.watch('modelId'),
     thinkingLevel: thinking,
   }
-  const canSend =
-    postApiSessionsIdRunsMutationRequestSchema.safeParse(composerValues).success
+  const selectedModelOption = availableModelOptions.find(
+    ({ provider, model: candidate }) =>
+      provider.id === composerValues.providerId && candidate.id === composerValues.modelId,
+  )
+  const canSend = Boolean(
+    selectedModelOption &&
+      postApiSessionsIdRunsMutationRequestSchema.safeParse(composerValues).success,
+  )
   const activeModelName =
-    availableModels.find((candidate) => candidate.id === model)?.name ?? model
+    selectedModelOption?.model.name ?? selectedModelOption?.model.id ?? model
+
+  useEffect(() => {
+    const currentProviderId = form.getValues('providerId')
+    const currentModelId = form.getValues('modelId')
+    const currentIsEnabled = availableModelOptions.some(
+      ({ provider, model: candidate }) =>
+        provider.id === currentProviderId && candidate.id === currentModelId,
+    )
+    if (currentIsEnabled) return
+    form.setValue('providerId', defaultModelOption?.provider.id)
+    form.setValue('modelId', defaultModelOption?.model.id)
+  }, [availableModelOptions, defaultModelOption, form])
 
   const skillNames = useMemo(() => {
     const selected = new Set(activeAgent?.selectedSkillIds ?? [])
@@ -733,15 +764,24 @@ export function ChatView({
                 <Cpu className="size-3 text-muted-foreground" />
                 <select
                   {...form.register('modelId')}
+                  disabled={availableModelOptions.length === 0 || isRunningRun}
+                  onChange={(event) => {
+                    const next = availableModelOptions.find(
+                      ({ model: candidate }) => candidate.id === event.target.value,
+                    )
+                    form.setValue('modelId', next?.model.id)
+                    form.setValue('providerId', next?.provider.id)
+                  }}
                   className="bg-transparent font-mono text-[11px] text-muted-foreground outline-none hover:text-foreground"
                 >
-                  {providers.flatMap((provider) =>
-                    provider.models.map((candidate) => (
-                      <option key={`${provider.id}:${candidate.id}`} value={candidate.id}>
-                        {provider.name} / {candidate.name ?? candidate.id}
-                      </option>
-                    )),
+                  {availableModelOptions.length === 0 && (
+                    <option value="">No enabled models</option>
                   )}
+                  {availableModelOptions.map(({ provider, model: candidate }) => (
+                    <option key={`${provider.id}:${candidate.id}`} value={candidate.id}>
+                      {provider.name} / {candidate.name ?? candidate.id}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label className="flex items-center gap-1.5">

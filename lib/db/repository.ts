@@ -877,9 +877,7 @@ export function resolveAgentRunConfig(agentId: string, providerId?: string | nul
     .map((provider) => ({
       ...provider,
       models:
-        selectedModelSet.size > 0
-          ? provider.models.filter((model) => selectedModelSet.has(model.id))
-          : provider.models,
+        provider.models.filter((model) => selectedModelSet.has(model.id)),
     }))
   const selectedProvider =
     agentProviders.find((provider) => provider.id === providerId) ??
