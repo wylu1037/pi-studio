@@ -691,7 +691,7 @@ export function ChatView({
     <div className="flex h-full min-h-0">
       {/* LEFT: session tree */}
       <aside className="flex w-72 shrink-0 flex-col border-r border-border bg-panel">
-        <div className="border-b border-border px-4 py-3">
+        <div className="flex h-18 shrink-0 flex-col justify-center border-b border-border px-4">
           <Label>Session tree</Label>
           <p className="mt-1 font-mono text-[11px] text-muted-foreground">
             {countTreeNodes(tree)} nodes · {sessions.length} sessions
@@ -724,7 +724,9 @@ export function ChatView({
           >
             <span className="inline-flex items-center gap-1.5">
               <GitBranch className="size-3 shrink-0" />
-              <span>{branchPending === "navigate" ? "Branching" : "New branch"}</span>
+              <span>
+                {branchPending === "navigate" ? "Branching" : "New branch"}
+              </span>
             </span>
           </BracketButton>
           <BracketButton
@@ -743,7 +745,7 @@ export function ChatView({
       {/* CENTER: conversation */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* header */}
-        <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
+        <div className="flex h-18 shrink-0 items-center justify-between gap-3 border-b border-border px-5">
           <div className="flex min-w-0 items-center gap-2.5">
             <span className="flex size-7 items-center justify-center border border-border-strong bg-card">
               <Bot className="size-3.5 text-accent" />
@@ -807,10 +809,16 @@ export function ChatView({
               ),
             )}
             {isWaiting && <WaitingBubble agentName={activeAgent.name} />}
-            {displayMessages.length === 0 && (
-              <div className="border border-dashed border-border bg-panel/50 px-4 py-8 text-center font-mono text-xs text-muted-foreground">
-                Start a new pi conversation from the composer.
-              </div>
+            {displayMessages.length === 0 && !isWaiting && !streamError && (
+              <EmptyConversationState
+                agentName={activeAgent.name}
+                modelName={activeModelName}
+                skillCount={skillNames.length}
+                onSelectPrompt={(prompt) => {
+                  form.setValue("message", prompt);
+                  form.setFocus("message");
+                }}
+              />
             )}
             {streamError && (
               <MessageBubble
@@ -966,7 +974,7 @@ export function ChatView({
 
       {/* RIGHT: context inspector */}
       <aside className="hidden w-72 shrink-0 flex-col border-l border-border bg-panel xl:flex">
-        <div className="border-b border-border px-4 py-3">
+        <div className="flex h-18 shrink-0 items-center border-b border-border px-4">
           <Label>Active context</Label>
         </div>
         <div className="flex-1 space-y-4 overflow-auto p-4">
@@ -1033,6 +1041,94 @@ function Row({ icon, label }: { icon: React.ReactNode; label: string }) {
       {label}
     </div>
   )
+}
+
+function EmptyConversationState({
+  agentName,
+  modelName,
+  skillCount,
+  onSelectPrompt,
+}: {
+  agentName: string
+  modelName: string
+  skillCount: number
+  onSelectPrompt: (prompt: string) => void
+}) {
+  const prompts = [
+    "Review this project and summarize its architecture.",
+    "Find the highest-impact improvement to make next.",
+    "Help me implement a new feature in this workspace.",
+  ]
+
+  return (
+    <div className="flex min-h-[calc(100vh-250px)] items-center justify-center py-10">
+      <div className="w-full max-w-xl">
+        <div className="relative overflow-hidden border border-border-strong bg-card shadow-sm">
+          <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-accent to-transparent opacity-70" />
+          <div className="px-7 pb-6 pt-8 text-center">
+            <div className="mx-auto flex size-12 items-center justify-center border border-accent/40 bg-accent/10 text-accent shadow-[0_0_24px_color-mix(in_oklab,var(--accent)_18%,transparent)]">
+              <Bot className="size-5" />
+            </div>
+            <Label className="mt-5 inline-block text-accent">
+              Ready for a new task
+            </Label>
+            <h2 className="mt-2 font-serif text-2xl italic text-foreground">
+              Start working with {agentName}
+            </h2>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
+              Describe what you want to understand, change, or build. The agent
+              will use the active workspace and configured resources.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-3 border-y border-border bg-panel/60">
+            <div className="flex min-w-0 items-center justify-center gap-2 border-r border-border px-3 py-2.5">
+              <Cpu className="size-3 shrink-0 text-accent" />
+              <span className="truncate font-mono text-[10px] uppercase text-muted-foreground">
+                {modelName}
+              </span>
+            </div>
+            <div className="flex items-center justify-center gap-2 border-r border-border px-3 py-2.5">
+              <Layers className="size-3 text-accent" />
+              <span className="font-mono text-[10px] uppercase text-muted-foreground">
+                {skillCount} skills
+              </span>
+            </div>
+            <div className="flex items-center justify-center gap-2 px-3 py-2.5">
+              <Brain className="size-3 text-accent" />
+              <span className="font-mono text-[10px] uppercase text-muted-foreground">
+                Agent mode
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-2 p-4">
+            {prompts.map((prompt, index) => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() => onSelectPrompt(prompt)}
+                className="group flex w-full items-center gap-3 border border-border bg-panel/40 px-3 py-2.5 text-left transition-colors hover:border-accent/50 hover:bg-accent/5"
+              >
+                <span className="font-mono text-[10px] text-muted-foreground/50">
+                  0{index + 1}
+                </span>
+                <span className="flex-1 text-[13px] text-muted-foreground transition-colors group-hover:text-foreground">
+                  {prompt}
+                </span>
+                <span className="font-mono text-xs text-muted-foreground/40 transition-transform group-hover:translate-x-0.5 group-hover:text-accent">
+                  →
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="mt-3 text-center font-mono text-[10px] uppercase tracking-wider text-muted-foreground/50">
+          Or type a custom request in the composer below
+        </p>
+      </div>
+    </div>
+  );
 }
 
 /* ---------- Session tree ---------- */
