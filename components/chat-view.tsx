@@ -25,6 +25,8 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  ArrowDown,
+  ArrowUp,
 } from 'lucide-react'
 import {
   Label,
@@ -116,6 +118,10 @@ export function ChatView({
   const [queueingMessage, setQueueingMessage] = useState<'steer' | 'follow-up' | null>(null)
   const [showSessionTree, setShowSessionTree] = useState(false)
   const [showActiveContext, setShowActiveContext] = useState(false)
+  const messageViewportRef = useRef<HTMLDivElement>(null)
+  const shouldFollowMessagesRef = useRef(true)
+  const [canScrollUp, setCanScrollUp] = useState(false)
+  const [canScrollDown, setCanScrollDown] = useState(false)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(() =>
     findCurrentTreeNodeId(tree),
   );
@@ -290,6 +296,45 @@ export function ChatView({
       ]
     : [...baseMessages, ...streamProcessMessages]
   const displayItems = buildDisplayItems(displayMessages)
+
+  useEffect(() => {
+    const viewport = messageViewportRef.current
+    if (!viewport) return
+
+    const updateScrollState = () => {
+      const distanceFromBottom =
+        viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
+      const nearBottom = distanceFromBottom < 96
+      shouldFollowMessagesRef.current = nearBottom
+      setCanScrollUp(viewport.scrollTop > 96)
+      setCanScrollDown(distanceFromBottom > 96)
+    }
+
+    updateScrollState()
+    viewport.addEventListener('scroll', updateScrollState, { passive: true })
+    const observer = new ResizeObserver(updateScrollState)
+    observer.observe(viewport)
+    return () => {
+      viewport.removeEventListener('scroll', updateScrollState)
+      observer.disconnect()
+    }
+  }, [])
+
+  useEffect(() => {
+    const viewport = messageViewportRef.current
+    if (!viewport || !shouldFollowMessagesRef.current) return
+    viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'auto' })
+  }, [displayMessages.length, streamProcessMessages.length, streamingMessage])
+
+  const scrollMessagesTo = (position: 'top' | 'bottom') => {
+    const viewport = messageViewportRef.current
+    if (!viewport) return
+    shouldFollowMessagesRef.current = position === 'bottom'
+    viewport.scrollTo({
+      top: position === 'top' ? 0 : viewport.scrollHeight,
+      behavior: 'smooth',
+    })
+  }
   const isWaiting =
     !streamError &&
     runId !== null &&
@@ -762,7 +807,7 @@ export function ChatView({
       )}
 
       {/* CENTER: conversation */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="relative flex min-w-0 flex-1 flex-col">
         {/* header */}
         <div className="flex h-18 shrink-0 items-center justify-between gap-3 border-b border-border px-5">
           <div className="flex min-w-0 items-center gap-2.5">
@@ -817,7 +862,12 @@ export function ChatView({
         </div>
 
         {/* messages */}
-        <ScrollArea className="min-h-0 flex-1" viewportClassName="px-5 py-6">
+        <div className="relative min-h-0 flex-1">
+          <ScrollArea
+            className="h-full min-h-0"
+            viewportClassName="px-5 py-6"
+            viewportRef={messageViewportRef}
+          >
           <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-4 overflow-x-hidden">
             {displayItems.map((item) =>
               item.type === "process" ? (
@@ -873,7 +923,34 @@ export function ChatView({
               />
             )}
           </div>
-        </ScrollArea>
+          </ScrollArea>
+          {(canScrollUp || canScrollDown) && (
+            <div className="pointer-events-none absolute bottom-5 right-5 flex flex-col border border-border bg-card shadow-lg">
+            {canScrollUp && (
+              <button
+                type="button"
+                onClick={() => scrollMessagesTo('top')}
+                className="pointer-events-auto flex size-9 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98]"
+                title="Back to top"
+                aria-label="Back to top"
+              >
+                <ArrowUp className="size-4" />
+              </button>
+            )}
+            {canScrollDown && (
+              <button
+                type="button"
+                onClick={() => scrollMessagesTo('bottom')}
+                className="pointer-events-auto flex size-9 items-center justify-center border-t border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98] first:border-t-0"
+                title="Jump to latest message"
+                aria-label="Jump to latest message"
+              >
+                <ArrowDown className="size-4" />
+              </button>
+            )}
+            </div>
+          )}
+        </div>
 
         {/* composer */}
         <div className="border-t border-border bg-panel px-5 py-3">

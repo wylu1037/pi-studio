@@ -8,10 +8,12 @@ import { cn } from '@/lib/utils'
 function ScrollArea({
   className,
   viewportClassName,
+  viewportRef,
   children,
   ...props
 }: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
   viewportClassName?: string
+  viewportRef?: React.Ref<HTMLDivElement>
 }) {
   return (
     <ScrollAreaPrimitive.Root
@@ -20,6 +22,7 @@ function ScrollArea({
       {...props}
     >
       <ScrollAreaPrimitive.Viewport
+        ref={viewportRef}
         data-slot="scroll-area-viewport"
         className={cn('size-full min-w-0 overflow-x-hidden', viewportClassName)}
       >
