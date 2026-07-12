@@ -18,7 +18,20 @@ export const getApiSessionsIdMessages200Schema = z.array(z.object({
 "content": z.string(),
 "title": z.optional(z.string()),
 "timestamp": z.string(),
-"tokens": z.optional(z.number())
+"tokens": z.optional(z.number()),
+"usage": z.optional(z.object({
+    "input": z.number(),
+"output": z.number(),
+"cacheRead": z.number(),
+"cacheWrite": z.number(),
+"cost": z.optional(z.object({
+    "input": z.optional(z.number()),
+"output": z.optional(z.number()),
+"cacheRead": z.optional(z.number()),
+"cacheWrite": z.optional(z.number()),
+"total": z.optional(z.number())
+    }))
+    }))
     }))
 
 export const getApiSessionsIdMessagesQueryResponseSchema = z.lazy(() => getApiSessionsIdMessages200Schema)

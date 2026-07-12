@@ -185,4 +185,17 @@ export interface ChatMessage {
   title?: string
   timestamp: string
   tokens?: number
+  usage?: {
+    input: number
+    output: number
+    cacheRead: number
+    cacheWrite: number
+    cost?: {
+      input?: number
+      output?: number
+      cacheRead?: number
+      cacheWrite?: number
+      total?: number
+    }
+  }
 }

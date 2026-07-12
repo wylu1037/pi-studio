@@ -5,7 +5,11 @@ import { streamSSE } from 'hono/streaming'
 import {
   abortRun as abortRegisteredRun,
 } from '@/lib/chat/run-registry'
-import { defaultPiSessionDir, runPiCli } from '@/lib/chat/pi-adapter'
+import {
+  defaultPiSessionDir,
+  runPiCli,
+  type PiUsage,
+} from '@/lib/chat/pi-adapter'
 import { runNpx } from '@/lib/npx'
 import {
   materializeInstalledSkill,
@@ -912,6 +916,13 @@ api.get('/runs/:id/events', (c) => {
   const provider = piProviderName(config.provider?.api)
   let assistantContent = ''
   let thinkingContent = ''
+  let assistantTokens: number | undefined
+  let assistantUsage: PiUsage | undefined
+  const processMessages: Array<{
+    type: 'tool_call' | 'tool_result' | 'bash'
+    title?: string
+    content: string
+  }> = []
 
   return streamSSE(c, async (stream) => {
     const heartbeat = setInterval(() => {
@@ -956,8 +967,42 @@ api.get('/runs/:id/events', (c) => {
           env: mcp.env,
         })),
       })) {
-        if (event.type === 'message_delta') assistantContent += event.content
+        if (event.type === 'message_delta') {
+          assistantContent += event.content
+          assistantTokens = event.usage?.totalTokens || assistantTokens
+          assistantUsage = event.usage ?? assistantUsage
+        }
         if (event.type === 'thinking_delta') thinkingContent += event.content
+        if (event.type === 'tool_call_delta') {
+          processMessages.push({
+            type: 'tool_call',
+            title: event.title ?? 'Tool call',
+            content: event.content,
+          })
+        }
+        if (event.type === 'tool_result_delta') {
+          processMessages.push({
+            type: 'tool_result',
+            title: event.title ?? 'Tool result',
+            content: event.content,
+          })
+        }
+        if (event.type === 'bash_output') {
+          const last = processMessages.at(-1)
+          if (last?.type === 'bash' && last.title === event.stream) {
+            last.content += event.content
+          } else {
+            processMessages.push({
+              type: 'bash',
+              title: event.stream,
+              content: event.content,
+            })
+          }
+        }
+        if (event.type === 'usage') {
+          assistantTokens = event.usage.totalTokens || assistantTokens
+          assistantUsage = event.usage
+        }
         if (event.type === 'error') {
           throw new Error(event.message)
         }
@@ -979,11 +1024,22 @@ api.get('/runs/:id/events', (c) => {
           content: thinkingContent.trim(),
         })
       }
+      for (const message of processMessages) {
+        if (!message.content.trim()) continue
+        appendMessage({
+          sessionId: run.sessionId,
+          type: message.type,
+          title: message.title,
+          content: message.content.trim(),
+        })
+      }
       if (assistantContent.trim()) {
         appendMessage({
           sessionId: run.sessionId,
           type: 'assistant',
           content: assistantContent.trim(),
+          tokens: assistantTokens,
+          usage: assistantUsage,
         })
       }
       markRun(runId, 'completed')

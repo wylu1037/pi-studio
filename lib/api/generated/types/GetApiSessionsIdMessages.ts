@@ -52,6 +52,52 @@ export type GetApiSessionsIdMessages200 = {
      * @type number | undefined
     */
     tokens?: number;
+    /**
+     * @type object | undefined
+    */
+    usage?: {
+        /**
+         * @type number
+        */
+        input: number;
+        /**
+         * @type number
+        */
+        output: number;
+        /**
+         * @type number
+        */
+        cacheRead: number;
+        /**
+         * @type number
+        */
+        cacheWrite: number;
+        /**
+         * @type object | undefined
+        */
+        cost?: {
+            /**
+             * @type number | undefined
+            */
+            input?: number;
+            /**
+             * @type number | undefined
+            */
+            output?: number;
+            /**
+             * @type number | undefined
+            */
+            cacheRead?: number;
+            /**
+             * @type number | undefined
+            */
+            cacheWrite?: number;
+            /**
+             * @type number | undefined
+            */
+            total?: number;
+        };
+    };
 }[];
 
 export type GetApiSessionsIdMessagesQueryResponse = GetApiSessionsIdMessages200;

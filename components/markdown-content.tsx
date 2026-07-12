@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import { MermaidDiagram } from '@/components/mermaid-diagram'
 
 type MarkdownBlock =
@@ -7,6 +7,12 @@ type MarkdownBlock =
   | { type: 'paragraph'; content: string }
   | { type: 'quote'; content: string }
   | { type: 'list'; ordered: boolean; items: string[] }
+  | {
+      type: 'table'
+      headers: string[]
+      alignments: Array<'left' | 'center' | 'right'>
+      rows: string[][]
+    }
   | { type: 'hr' }
 
 const blockStartPattern = /^(#{1,6}\s+|```|>\s?|[-*]\s+|\d+\.\s+|---+\s*$)/
@@ -52,6 +58,31 @@ function parseMarkdown(content: string) {
       continue
     }
 
+    if (isTableStart(lines, index)) {
+      const headers = splitTableRow(line)
+      const alignments = parseTableAlignments(lines[index + 1], headers.length)
+      const rows: string[][] = []
+      index += 2
+
+      while (
+        index < lines.length &&
+        lines[index].trim() &&
+        hasTablePipes(lines[index]) &&
+        !isTableDelimiter(lines[index])
+      ) {
+        rows.push(normalizeTableRow(splitTableRow(lines[index]), headers.length))
+        index += 1
+      }
+
+      blocks.push({
+        type: 'table',
+        headers,
+        alignments,
+        rows,
+      })
+      continue
+    }
+
     const heading = line.match(/^(#{1,6})\s+(.+)$/)
     if (heading) {
       blocks.push({ type: 'heading', level: heading[1].length, content: heading[2] })
@@ -93,7 +124,8 @@ function parseMarkdown(content: string) {
     while (
       index < lines.length &&
       lines[index].trim() &&
-      !blockStartPattern.test(lines[index])
+      !blockStartPattern.test(lines[index]) &&
+      !isTableStart(lines, index)
     ) {
       paragraph.push(lines[index])
       index += 1
@@ -154,6 +186,47 @@ function renderBlock(block: MarkdownBlock, key: number) {
         </Tag>
       )
     }
+    case 'table':
+      return (
+        <div
+          key={key}
+          className="max-w-full overflow-x-auto border border-border bg-panel/40"
+        >
+          <table className="min-w-full border-collapse text-left text-[12px] leading-relaxed">
+            <thead className="bg-muted/60">
+              <tr>
+                {block.headers.map((header, index) => (
+                  <th
+                    key={`${key}-head-${index}`}
+                    className="border-b border-r border-border px-3 py-2 font-mono text-[11px] font-semibold text-foreground last:border-r-0"
+                    style={{ textAlign: block.alignments[index] }}
+                  >
+                    {renderInline(header)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {block.rows.map((row, rowIndex) => (
+                <tr
+                  key={`${key}-row-${rowIndex}`}
+                  className="border-b border-border last:border-b-0"
+                >
+                  {block.headers.map((_, cellIndex) => (
+                    <td
+                      key={`${key}-cell-${rowIndex}-${cellIndex}`}
+                      className="max-w-[18rem] border-r border-border px-3 py-2 align-top text-muted-foreground wrap-break-word last:border-r-0"
+                      style={{ textAlign: block.alignments[cellIndex] }}
+                    >
+                      {renderInline(row[cellIndex] ?? '')}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
     case 'hr':
       return <div key={key} className="h-px bg-border" />
     case 'paragraph':
@@ -161,10 +234,62 @@ function renderBlock(block: MarkdownBlock, key: number) {
   }
 }
 
+function isTableStart(lines: string[], index: number) {
+  const line = lines[index]
+  const delimiter = lines[index + 1]
+  return Boolean(
+    line &&
+      delimiter &&
+      hasTablePipes(line) &&
+      isTableDelimiter(delimiter) &&
+      splitTableRow(line).length >= 2,
+  )
+}
+
+function hasTablePipes(line: string) {
+  return line.includes('|')
+}
+
+function isTableDelimiter(line: string) {
+  const cells = splitTableRow(line)
+  return cells.length >= 2 && cells.every((cell) => /^:?-{3,}:?$/.test(cell))
+}
+
+function splitTableRow(line: string) {
+  return line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim())
+}
+
+function parseTableAlignments(line: string, count: number) {
+  const cells = normalizeTableRow(splitTableRow(line), count)
+  return cells.map((cell) => {
+    if (cell.startsWith(':') && cell.endsWith(':')) return 'center'
+    if (cell.endsWith(':')) return 'right'
+    return 'left'
+  })
+}
+
+function normalizeTableRow(cells: string[], count: number) {
+  return Array.from({ length: count }, (_, index) => cells[index] ?? '')
+}
+
 function renderInlineWithBreaks(content: string) {
-  return content.split('\n').flatMap((line, index) => (
-    index === 0 ? renderInline(line) : [<br key={`br-${index}`} />, ...renderInline(line)]
-  ))
+  const nodes: ReactNode[] = []
+  content.split('\n').forEach((line, lineIndex) => {
+    if (lineIndex > 0) nodes.push(<br key={`br-${lineIndex}`} />)
+    renderInline(line).forEach((node, nodeIndex) => {
+      nodes.push(
+        <Fragment key={`line-${lineIndex}-${nodeIndex}`}>
+          {node}
+        </Fragment>,
+      )
+    })
+  })
+  return nodes
 }
 
 function renderInline(content: string): ReactNode[] {

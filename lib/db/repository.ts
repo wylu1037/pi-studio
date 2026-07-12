@@ -697,6 +697,7 @@ export function listSessionMessages(sessionId: string): ChatMessage[] {
       content: message.content,
       timestamp: message.createdAt,
       tokens: message.tokens ?? undefined,
+      usage: messageUsage(message),
     }))
 }
 
@@ -784,11 +785,32 @@ export function appendMessage(input: {
   content: string
   title?: string
   tokens?: number
+  usage?: ChatMessage['usage']
 }) {
   const id = randomUUID()
   const createdAt = now()
+  const tokens =
+    input.tokens ??
+    (input.usage ? input.usage.input + input.usage.output : undefined)
   db.insert(chatMessages)
-    .values({ id, sessionId: input.sessionId, type: input.type, title: input.title, content: input.content, tokens: input.tokens, createdAt })
+    .values({
+      id,
+      sessionId: input.sessionId,
+      type: input.type,
+      title: input.title,
+      content: input.content,
+      tokens,
+      usageInputTokens: input.usage?.input,
+      usageOutputTokens: input.usage?.output,
+      usageCacheReadTokens: input.usage?.cacheRead,
+      usageCacheWriteTokens: input.usage?.cacheWrite,
+      usageCostInput: input.usage?.cost?.input,
+      usageCostOutput: input.usage?.cost?.output,
+      usageCostCacheRead: input.usage?.cost?.cacheRead,
+      usageCostCacheWrite: input.usage?.cost?.cacheWrite,
+      usageCostTotal: input.usage?.cost?.total,
+      createdAt,
+    })
     .run()
   db.insert(sessionTreeNodes)
     .values({
@@ -802,8 +824,64 @@ export function appendMessage(input: {
       createdAt,
     })
     .run()
-  db.update(sessions).set({ updatedAt: createdAt, activeNodeId: `node-${id}` }).where(eq(sessions.id, input.sessionId)).run()
+  const session = db
+    .select()
+    .from(sessions)
+    .where(eq(sessions.id, input.sessionId))
+    .get()
+  db.update(sessions)
+    .set({
+      updatedAt: createdAt,
+      activeNodeId: `node-${id}`,
+      totalTokens: tokens
+        ? (session?.totalTokens ?? 0) + tokens
+        : session?.totalTokens,
+      totalCost: input.usage?.cost?.total
+        ? (session?.totalCost ?? 0) + input.usage.cost.total
+        : session?.totalCost,
+    })
+    .where(eq(sessions.id, input.sessionId))
+    .run()
   return id
+}
+
+function messageUsage(
+  message: typeof chatMessages.$inferSelect,
+): ChatMessage['usage'] | undefined {
+  const hasUsage =
+    message.usageInputTokens != null ||
+    message.usageOutputTokens != null ||
+    message.usageCacheReadTokens != null ||
+    message.usageCacheWriteTokens != null ||
+    message.usageCostInput != null ||
+    message.usageCostOutput != null ||
+    message.usageCostCacheRead != null ||
+    message.usageCostCacheWrite != null ||
+    message.usageCostTotal != null
+  if (!hasUsage) return undefined
+
+  const cost =
+    message.usageCostInput != null ||
+    message.usageCostOutput != null ||
+    message.usageCostCacheRead != null ||
+    message.usageCostCacheWrite != null ||
+    message.usageCostTotal != null
+      ? {
+          input: message.usageCostInput ?? undefined,
+          output: message.usageCostOutput ?? undefined,
+          cacheRead: message.usageCostCacheRead ?? undefined,
+          cacheWrite: message.usageCostCacheWrite ?? undefined,
+          total: message.usageCostTotal ?? undefined,
+        }
+      : undefined
+
+  return {
+    input: message.usageInputTokens ?? 0,
+    output: message.usageOutputTokens ?? 0,
+    cacheRead: message.usageCacheReadTokens ?? 0,
+    cacheWrite: message.usageCacheWriteTokens ?? 0,
+    cost,
+  }
 }
 
 export function resolveAgentRunConfig(agentId: string, providerId?: string | null) {

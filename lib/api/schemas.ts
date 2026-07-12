@@ -273,6 +273,19 @@ export const ChatMessageSchema = z.object({
   title: z.string().optional(),
   timestamp: z.string(),
   tokens: z.number().optional(),
+  usage: z.object({
+    input: z.number(),
+    output: z.number(),
+    cacheRead: z.number(),
+    cacheWrite: z.number(),
+    cost: z.object({
+      input: z.number().optional(),
+      output: z.number().optional(),
+      cacheRead: z.number().optional(),
+      cacheWrite: z.number().optional(),
+      total: z.number().optional(),
+    }).optional(),
+  }).optional(),
 })
 
 export const SessionTreeNodeSchema = z.object({

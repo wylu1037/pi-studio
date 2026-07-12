@@ -39,6 +39,7 @@ import type {
   AgentProfile,
   AgentSessionSummary,
   ChatMessage,
+  ChatMessageType,
   GlobalMcpConfig,
   GlobalModelProvider,
   GlobalSkill,
@@ -54,6 +55,17 @@ const RUN_RECONCILE_POLL_MS = 1200
 const RUN_RECONCILE_MAX_MS = 20000
 
 type StreamPhase = 'idle' | 'starting' | 'connecting' | 'thinking' | 'streaming'
+
+type StreamUsage = {
+  input?: number
+  output?: number
+  cacheRead?: number
+  cacheWrite?: number
+  totalTokens?: number
+  cost?: {
+    total?: number
+  }
+}
 
 type ComposerValues = {
   message: string
@@ -84,6 +96,10 @@ export function ChatView({
   const router = useRouter()
   const [streamingMessage, setStreamingMessage] = useState('')
   const [streamBuffer, setStreamBuffer] = useState('')
+  const [streamProcessMessages, setStreamProcessMessages] = useState<ChatMessage[]>([])
+  const [streamingTokens, setStreamingTokens] = useState<number | null>(null)
+  const [streamingUsage, setStreamingUsage] = useState<StreamUsage | null>(null)
+  const [streamStartedAt, setStreamStartedAt] = useState<number | null>(null)
   const [streamDone, setStreamDone] = useState(false)
   const [streamPhase, setStreamPhase] = useState<StreamPhase>('idle')
   const [optimisticMessage, setOptimisticMessage] =
@@ -175,6 +191,10 @@ export function ChatView({
 
     setStreamingMessage('')
     setStreamBuffer('')
+    setStreamProcessMessages([])
+    setStreamingTokens(null)
+    setStreamingUsage(null)
+    setStreamStartedAt(null)
     setStreamDone(false)
     setOptimisticMessage(null)
     setStreamPhase('idle')
@@ -201,19 +221,23 @@ export function ChatView({
   const displayMessages = streamingMessage && !hasPersistedStreamingAssistant
     ? [
         ...baseMessages,
+        ...streamProcessMessages,
         {
           id: 'streaming-assistant',
           type: 'assistant' as const,
           content: streamingMessage,
           timestamp: 'streaming',
+          tokens: streamingTokens ?? undefined,
         },
       ]
-    : baseMessages
+    : [...baseMessages, ...streamProcessMessages]
+  const displayItems = buildDisplayItems(displayMessages)
   const isWaiting =
     !streamError &&
     runId !== null &&
     streamPhase !== 'idle' &&
-    streamingMessage.length === 0
+    streamingMessage.length === 0 &&
+    streamProcessMessages.length === 0
 
   const clearReconciliation = () => {
     if (!reconcileTimerRef.current) return
@@ -280,6 +304,45 @@ export function ChatView({
     reconcileTimerRef.current = window.setTimeout(poll, RUN_RECONCILE_INITIAL_DELAY_MS)
   }
 
+  const appendStreamProcessMessage = (
+    type: Extract<ChatMessageType, 'thinking' | 'tool_call' | 'tool_result' | 'bash'>,
+    content: string,
+    title?: string,
+  ) => {
+    if (!content) return
+    setStreamProcessMessages((current) => {
+      if (type === 'thinking') {
+        const existing = current.find((message) => message.type === 'thinking')
+        if (existing) {
+          return current.map((message) =>
+            message.id === existing.id
+              ? { ...message, content: message.content + content }
+              : message,
+          )
+        }
+      }
+
+      const last = current.at(-1)
+      if (last?.type === type && last.title === title && type === 'bash') {
+        return [
+          ...current.slice(0, -1),
+          { ...last, content: last.content + content },
+        ]
+      }
+
+      return [
+        ...current,
+        {
+          id: `stream-${type}-${Date.now()}-${current.length}`,
+          type,
+          title,
+          content,
+          timestamp: 'streaming',
+        },
+      ]
+    })
+  }
+
   const submit = form.handleSubmit(async (values) => {
     if (!activeSession || !activeAgent) return
     const payload = {
@@ -294,6 +357,10 @@ export function ChatView({
     activeRunIdRef.current = null
     setStreamingMessage('')
     setStreamBuffer('')
+    setStreamProcessMessages([])
+    setStreamingTokens(null)
+    setStreamingUsage(null)
+    setStreamStartedAt(Date.now())
     setStreamDone(false)
     setStreamPhase('starting')
     setAbortingRun(false)
@@ -340,11 +407,65 @@ export function ChatView({
       eventSource.addEventListener('message_delta', (event) => {
         if (activeRunIdRef.current !== currentRunId) return
         window.clearTimeout(connectionTimeout)
-        const payload = JSON.parse((event as MessageEvent).data) as { content?: string }
+        const payload = JSON.parse((event as MessageEvent).data) as {
+          content?: string
+          usage?: StreamUsage
+        }
         const content = payload.content ?? ''
         if (!content) return
         setStreamPhase('streaming')
+        if (payload.usage?.totalTokens) {
+          setStreamingTokens(payload.usage.totalTokens)
+          setStreamingUsage(payload.usage)
+        }
         setStreamBuffer((current) => current + content)
+      })
+      eventSource.addEventListener('thinking_delta', (event) => {
+        if (activeRunIdRef.current !== currentRunId) return
+        window.clearTimeout(connectionTimeout)
+        const payload = JSON.parse((event as MessageEvent).data) as { content?: string }
+        setStreamPhase('thinking')
+        appendStreamProcessMessage('thinking', payload.content ?? '', 'Thinking')
+      })
+      eventSource.addEventListener('tool_call_delta', (event) => {
+        if (activeRunIdRef.current !== currentRunId) return
+        window.clearTimeout(connectionTimeout)
+        const payload = JSON.parse((event as MessageEvent).data) as {
+          content?: string
+          title?: string
+        }
+        setStreamPhase('thinking')
+        appendStreamProcessMessage('tool_call', payload.content ?? '', payload.title ?? 'Tool call')
+      })
+      eventSource.addEventListener('tool_result_delta', (event) => {
+        if (activeRunIdRef.current !== currentRunId) return
+        window.clearTimeout(connectionTimeout)
+        const payload = JSON.parse((event as MessageEvent).data) as {
+          content?: string
+          title?: string
+        }
+        setStreamPhase('thinking')
+        appendStreamProcessMessage('tool_result', payload.content ?? '', payload.title ?? 'Tool result')
+      })
+      eventSource.addEventListener('bash_output', (event) => {
+        if (activeRunIdRef.current !== currentRunId) return
+        window.clearTimeout(connectionTimeout)
+        const payload = JSON.parse((event as MessageEvent).data) as {
+          content?: string
+          stream?: 'stdout' | 'stderr'
+        }
+        setStreamPhase('thinking')
+        appendStreamProcessMessage('bash', payload.content ?? '', payload.stream ?? 'stderr')
+      })
+      eventSource.addEventListener('usage', (event) => {
+        if (activeRunIdRef.current !== currentRunId) return
+        const payload = JSON.parse((event as MessageEvent).data) as {
+          usage?: StreamUsage
+        }
+        if (payload.usage?.totalTokens) {
+          setStreamingTokens(payload.usage.totalTokens)
+          setStreamingUsage(payload.usage)
+        }
       })
       eventSource.addEventListener('error', (event) => {
         if (activeRunIdRef.current !== currentRunId) return
@@ -388,6 +509,7 @@ export function ChatView({
       activeRunIdRef.current = null
       setRunId(null)
       setStreamPhase('idle')
+      setStreamStartedAt(null)
       router.refresh()
     } catch (error) {
       setStreamError(
@@ -472,8 +594,22 @@ export function ChatView({
         {/* messages */}
         <ScrollArea className="min-h-0 flex-1" viewportClassName="px-5 py-6">
           <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-4 overflow-x-hidden">
-            {displayMessages.map((m) => (
-              <MessageBubble key={m.id} message={m} agentName={activeAgent.name} />
+            {displayItems.map((item) => (
+              item.type === 'process' ? (
+                <ProcessDetailsGroup
+                  key={item.id}
+                  messages={item.messages}
+                  isStreaming={Boolean(runId && item.messages.some((message) => message.timestamp === 'streaming'))}
+                />
+              ) : (
+                <MessageBubble
+                  key={item.message.id}
+                  message={item.message}
+                  agentName={activeAgent.name}
+                  streamStartedAt={item.message.id === 'streaming-assistant' ? streamStartedAt : null}
+                  usageSummary={item.message.id === 'streaming-assistant' ? formatUsageSummary(streamingUsage) : undefined}
+                />
+              )
             ))}
             {isWaiting && (
               <WaitingBubble agentName={activeAgent.name} />
@@ -715,6 +851,69 @@ function TreeNode({ node, depth }: { node: SessionTreeNode; depth: number }) {
 
 /* ---------- Message bubbles ---------- */
 
+type DisplayItem =
+  | { type: 'message'; message: ChatMessage }
+  | { type: 'process'; id: string; messages: ChatMessage[] }
+
+const processMessageTypes = new Set<ChatMessageType>([
+  'thinking',
+  'tool_call',
+  'tool_result',
+  'bash',
+])
+
+function isProcessMessage(message: ChatMessage) {
+  return processMessageTypes.has(message.type)
+}
+
+function estimateTokens(content: string) {
+  return Math.max(1, Math.ceil(content.length / 4))
+}
+
+function formatUsageSummary(usage: StreamUsage | null) {
+  if (!usage) return null
+  const parts = [
+    usage.input ? `${usage.input.toLocaleString()} in` : null,
+    usage.output ? `${usage.output.toLocaleString()} out` : null,
+    usage.cacheRead ? `${usage.cacheRead.toLocaleString()} cache` : null,
+    usage.cacheWrite ? `${usage.cacheWrite.toLocaleString()} write` : null,
+    usage.cost?.total ? `$${usage.cost.total.toFixed(4)}` : null,
+  ].filter(Boolean)
+  return parts.length > 0 ? parts.join(' · ') : null
+}
+
+function buildDisplayItems(messages: ChatMessage[]): DisplayItem[] {
+  const items: DisplayItem[] = []
+  let pendingProcess: ChatMessage[] = []
+
+  const flushProcess = () => {
+    if (pendingProcess.length === 0) return
+    items.push({
+      type: 'process',
+      id: `process-${pendingProcess.map((message) => message.id).join('-')}`,
+      messages: pendingProcess,
+    })
+    pendingProcess = []
+  }
+
+  for (const message of messages) {
+    if (isProcessMessage(message)) {
+      pendingProcess.push(message)
+      continue
+    }
+    if (message.type === 'assistant') {
+      flushProcess()
+      items.push({ type: 'message', message })
+      continue
+    }
+    flushProcess()
+    items.push({ type: 'message', message })
+  }
+
+  flushProcess()
+  return items
+}
+
 function WaitingBubble({ agentName }: { agentName: string }) {
   return (
     <div className="flex flex-col gap-1">
@@ -734,12 +933,128 @@ function WaitingBubble({ agentName }: { agentName: string }) {
   )
 }
 
+function ProcessDetailsGroup({
+  messages,
+  isStreaming,
+}: {
+  messages: ChatMessage[]
+  isStreaming?: boolean
+}) {
+  const toolCalls = messages.filter((message) => message.type === 'tool_call').length
+  const toolResults = messages.filter((message) => message.type === 'tool_result').length
+  const bashOutputs = messages.filter((message) => message.type === 'bash').length
+  const thinking = messages.some((message) => message.type === 'thinking')
+  const summary = [
+    `${messages.length} messages`,
+    toolCalls ? `${toolCalls} tool calls` : null,
+    toolResults ? `${toolResults} results` : null,
+    bashOutputs ? `${bashOutputs} outputs` : null,
+  ].filter(Boolean).join(' · ')
+
+  return (
+    <details className="group border border-border bg-panel/35">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2">
+        <span className="flex size-5 items-center justify-center border border-border bg-card text-muted-foreground">
+          {toolCalls > 0 ? (
+            <Wrench className="size-3" />
+          ) : bashOutputs > 0 ? (
+            <Terminal className="size-3" />
+          ) : (
+            <Brain className="size-3" />
+          )}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[11px] uppercase text-muted-foreground">
+              {isStreaming ? 'Working' : 'Process details'}
+            </span>
+            {isStreaming && (
+              <span className="flex items-center gap-1">
+                <span className="size-1.5 animate-pulse bg-accent/70" />
+                <span className="size-1.5 animate-pulse bg-accent/70 [animation-delay:120ms]" />
+                <span className="size-1.5 animate-pulse bg-accent/70 [animation-delay:240ms]" />
+              </span>
+            )}
+          </div>
+          <div className="truncate font-mono text-[10px] text-muted-foreground/60">
+            {thinking ? 'Thinking' : 'Activity'} · {summary}
+          </div>
+        </div>
+        <ChevronRight className="size-3 text-muted-foreground transition-transform group-open:rotate-90" />
+      </summary>
+      <div className="space-y-2 border-t border-border px-3 py-3">
+        {messages.map((message) => (
+          <ProcessMessageRow key={message.id} message={message} />
+        ))}
+      </div>
+    </details>
+  )
+}
+
+function ProcessMessageRow({ message }: { message: ChatMessage }) {
+  const meta = processMessageMeta(message)
+  return (
+    <div className="overflow-hidden border border-border bg-card/70">
+      <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+        <span className={cn('shrink-0', meta.color)}>{meta.icon}</span>
+        <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
+          {message.title ?? meta.label}
+        </span>
+        <span className="ml-auto font-mono text-[10px] text-muted-foreground/50">
+          {message.timestamp}
+        </span>
+      </div>
+      <pre className={cn(
+        'max-h-72 max-w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap wrap-break-word p-3 font-mono text-[11px] leading-relaxed',
+        message.type === 'thinking'
+          ? 'italic text-muted-foreground'
+          : 'text-foreground/85',
+      )}>
+        {message.content}
+      </pre>
+    </div>
+  )
+}
+
+function processMessageMeta(message: ChatMessage) {
+  switch (message.type) {
+    case 'tool_call':
+      return {
+        label: 'Tool call',
+        icon: <Wrench className="size-3" />,
+        color: 'text-accent',
+      }
+    case 'tool_result':
+      return {
+        label: 'Tool result',
+        icon: <Wrench className="size-3" />,
+        color: 'text-success',
+      }
+    case 'bash':
+      return {
+        label: 'Bash output',
+        icon: <Terminal className="size-3" />,
+        color: 'text-success',
+      }
+    default:
+      return {
+        label: 'Thinking',
+        icon: <Brain className="size-3" />,
+        color: 'text-muted-foreground',
+      }
+  }
+}
+
 function MessageBubble({
   message,
   agentName,
+  streamStartedAt,
+  usageSummary,
 }: {
   message: ChatMessage
   agentName: string
+  streamStartedAt?: number | null
+  usageSummary?: string | null
 }) {
   switch (message.type) {
     case 'user':
@@ -756,21 +1071,39 @@ function MessageBubble({
           </div>
         </div>
       );
-    case 'assistant':
+    case 'assistant': {
+      const estimatedTokens = message.tokens ?? estimateTokens(message.content)
+      const streamSeconds =
+        streamStartedAt && message.timestamp === 'streaming'
+          ? Math.max(1, Math.round((Date.now() - streamStartedAt) / 1000))
+          : null
+      const effectiveUsageSummary =
+        usageSummary ?? formatUsageSummary(message.usage ?? null)
+      const meta = [
+        effectiveUsageSummary,
+        !effectiveUsageSummary && message.tokens
+          ? `${message.tokens.toLocaleString()} tok`
+          : !effectiveUsageSummary && message.timestamp === 'streaming'
+            ? `~${estimatedTokens.toLocaleString()} tok`
+            : null,
+        streamSeconds ? `${streamSeconds}s` : null,
+        message.timestamp !== 'streaming' ? message.timestamp : null,
+      ].filter(Boolean).join(' · ')
       return (
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1.5">
             <Bot className="size-3 text-accent" />
             <Label>{agentName}</Label>
-            {message.tokens && (
+            {meta && (
               <span className="font-mono text-[10px] text-muted-foreground/50">
-                {message.tokens} tok · {message.timestamp}
+                {meta}
               </span>
             )}
           </div>
           <MarkdownContent content={message.content} />
         </div>
       )
+    }
     case 'thinking':
       return (
         <details className="group border border-dashed border-border bg-panel/40">

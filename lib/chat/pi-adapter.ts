@@ -51,11 +51,28 @@ export interface PiRunInput {
   mcpConfigs?: PiMcpConfig[]
 }
 
+export interface PiUsage {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  totalTokens: number
+  cost?: {
+    input?: number
+    output?: number
+    cacheRead?: number
+    cacheWrite?: number
+    total?: number
+  }
+}
+
 export type PiRunEvent =
-  | { type: 'message_delta'; content: string }
+  | { type: 'message_delta'; content: string; usage?: PiUsage }
   | { type: 'thinking_delta'; content: string }
-  | { type: 'tool_call_delta'; content: string }
+  | { type: 'tool_call_delta'; content: string; title?: string }
+  | { type: 'tool_result_delta'; content: string; title?: string; isError?: boolean }
   | { type: 'bash_output'; stream: 'stdout' | 'stderr'; content: string }
+  | { type: 'usage'; usage: PiUsage }
   | { type: 'error'; message: string }
   | { type: 'done'; exitCode: number | null }
 
@@ -122,7 +139,8 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
     for (const line of chunk.split(/\r?\n/).filter(Boolean)) {
       const parsed = parsePiJsonLine(line)
       if (parsed === null) continue
-      const event = parsed ?? { type: 'message_delta' as const, content: `${line}\n` }
+      const events = parsed ?? [{ type: 'message_delta' as const, content: `${line}\n` }]
+      for (const event of events) {
       if (event.type === 'thinking_delta') {
         const delta = assistantDelta(thinkingSnapshot, event.content)
         if (!delta) continue
@@ -138,11 +156,15 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
       }
 
       const delta = assistantDelta(assistantSnapshot, event.content)
-      if (!delta) continue
+      if (!delta) {
+        if (event.usage) push({ type: 'usage', usage: event.usage })
+        continue
+      }
       assistantSnapshot = event.content.startsWith(assistantSnapshot)
         ? event.content
         : assistantSnapshot + event.content
-      push({ type: 'message_delta', content: delta })
+      push({ type: 'message_delta', content: delta, usage: event.usage })
+      }
     }
   })
   child.stderr.on('data', (chunk: string) => {
@@ -293,7 +315,7 @@ function writeJson(path: string, value: unknown, mode?: number) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, { mode })
 }
 
-function parsePiJsonLine(line: string): PiRunEvent | null | undefined {
+function parsePiJsonLine(line: string): PiRunEvent[] | null | undefined {
   try {
     const payload = JSON.parse(line) as Record<string, unknown>
     const type = String(payload.type ?? payload.event ?? '')
@@ -311,26 +333,43 @@ function parsePiJsonLine(line: string): PiRunEvent | null | undefined {
       assistantMessage?.stopReason === 'error' ||
       lastAssistantMessage?.stopReason === 'error'
     ) {
-      return { type: 'error', message: errorMessage || line }
+      return [{ type: 'error', message: errorMessage || line }]
     }
+
+    const toolResult = extractToolResult(payload)
+    if (toolResult) return [{ type: 'tool_result_delta', ...toolResult }]
+
     if (message && message.role !== 'assistant') return null
 
-    const thinkingContent = extractThinkingContent(payload)
-    if (thinkingContent) return { type: 'thinking_delta', content: thinkingContent }
+    const events: PiRunEvent[] = []
 
-    const content = extractContent(payload)
-    if (type.includes('tool')) return { type: 'tool_call_delta', content: content || line }
-    if (type.includes('error')) return { type: 'error', message: content || line }
+    const thinkingContent = extractThinkingContent(payload)
+    if (thinkingContent) events.push({ type: 'thinking_delta', content: thinkingContent })
+
+    for (const toolCall of extractToolCalls(payload)) {
+      events.push({ type: 'tool_call_delta', ...toolCall })
+    }
+
+    const content = extractTextContent(payload)
+    if (type.includes('tool') && events.length === 0) {
+      events.push({ type: 'tool_call_delta', content: content || line })
+    }
+    if (type.includes('error')) return [{ type: 'error', message: content || line }]
     if (type === 'message_end') {
-      const assistantContent = extractContent(
+      const assistantContent = extractTextContent(
         assistantMessage ?? lastAssistantMessage,
       )
-      return assistantContent
-        ? { type: 'message_delta', content: assistantContent }
-        : null
+      const usage = extractUsage(assistantMessage ?? lastAssistantMessage ?? payload)
+      if (assistantContent) {
+        events.push({ type: 'message_delta', content: assistantContent, usage })
+      } else if (usage) {
+        events.push({ type: 'usage', usage })
+      }
+      return events.length > 0 ? events : null
     }
     if (type === 'turn_end' || type === 'agent_end') return null
-    return content ? { type: 'message_delta', content } : null
+    if (content) events.push({ type: 'message_delta', content })
+    return events.length > 0 ? events : null
   } catch {
     return undefined
   }
@@ -362,6 +401,30 @@ function extractContent(value: unknown): string {
   return ''
 }
 
+function extractTextContent(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) {
+    return value.map(extractTextContent).filter(Boolean).join('')
+  }
+  if (!value || typeof value !== 'object') return ''
+
+  const record = value as Record<string, unknown>
+  const type = String(record.type ?? '')
+  if (type === 'thinking' || type === 'toolCall' || type === 'tool_call') return ''
+  if (type === 'text' && typeof record.text === 'string') return record.text
+  if (Array.isArray(record.content)) {
+    return record.content.map(extractTextContent).filter(Boolean).join('')
+  }
+  if (Array.isArray(record.parts)) {
+    return record.parts.map(extractTextContent).filter(Boolean).join('')
+  }
+  for (const key of ['text', 'delta', 'message', 'output']) {
+    const content = extractTextContent(record[key])
+    if (content) return content
+  }
+  return ''
+}
+
 function extractThinkingContent(value: unknown): string {
   if (!value || typeof value !== 'object') return ''
 
@@ -385,6 +448,96 @@ function extractThinkingContent(value: unknown): string {
     return record.parts.map(extractThinkingContent).filter(Boolean).join('')
   }
   return extractThinkingContent(record.message)
+}
+
+function extractToolCalls(value: unknown): Array<{ content: string; title?: string }> {
+  if (!value || typeof value !== 'object') return []
+  if (Array.isArray(value)) return value.flatMap(extractToolCalls)
+
+  const record = value as Record<string, unknown>
+  const type = String(record.type ?? '')
+  const calls: Array<{ content: string; title?: string }> = []
+  if (type === 'toolCall' || type === 'tool_call') {
+    const title = stringValue(record.toolName) ?? stringValue(record.name) ?? stringValue(record.tool)
+    const input = record.input ?? record.args ?? record.arguments ?? {}
+    calls.push({
+      title,
+      content: formatToolPayload(title, input),
+    })
+  }
+
+  for (const key of ['content', 'parts', 'messages']) {
+    const nested = record[key]
+    if (Array.isArray(nested)) calls.push(...nested.flatMap(extractToolCalls))
+  }
+  if (record.message) calls.push(...extractToolCalls(record.message))
+  return calls
+}
+
+function extractToolResult(value: unknown) {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const message = asRecord(record.message) ?? record
+  const role = String(message.role ?? '')
+  if (role !== 'toolResult' && role !== 'tool_result') return null
+
+  const title =
+    stringValue(message.toolName) ??
+    stringValue(message.name) ??
+    stringValue(message.tool) ??
+    'Tool result'
+  const content = extractTextContent(message.content) || extractContent(message.content) || ''
+  return {
+    title,
+    content: content || JSON.stringify(message, null, 2),
+    isError: Boolean(message.isError),
+  }
+}
+
+function extractUsage(value: unknown): PiUsage | undefined {
+  const record = asRecord(value)
+  const usage = asRecord(record?.usage)
+  if (!usage) return undefined
+
+  const input = numberValue(usage.input)
+  const output = numberValue(usage.output)
+  const cacheRead = numberValue(usage.cacheRead)
+  const cacheWrite = numberValue(usage.cacheWrite)
+  const totalTokens = numberValue(usage.totalTokens) || input + output
+  const cost = asRecord(usage.cost)
+
+  return {
+    input,
+    output,
+    cacheRead,
+    cacheWrite,
+    totalTokens,
+    cost: cost
+      ? {
+          input: numberValue(cost.input),
+          output: numberValue(cost.output),
+          cacheRead: numberValue(cost.cacheRead),
+          cacheWrite: numberValue(cost.cacheWrite),
+          total: numberValue(cost.total),
+        }
+      : undefined,
+  }
+}
+
+function formatToolPayload(title: string | undefined, input: unknown) {
+  const body =
+    input && typeof input === 'object'
+      ? JSON.stringify(input, null, 2)
+      : String(input ?? '')
+  return title ? `${title}\n${body}` : body
+}
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value : undefined
+}
+
+function numberValue(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
 function asRecord(value: unknown) {
