@@ -1,5 +1,7 @@
 import { Fragment, type ReactNode } from 'react'
+import { AudioLines } from 'lucide-react'
 import { MermaidDiagram } from '@/components/mermaid-diagram'
+import { MarkdownImage } from '@/components/markdown-image'
 
 type MarkdownBlock =
   | { type: 'code'; language?: string; content: string }
@@ -16,7 +18,7 @@ type MarkdownBlock =
   | { type: 'hr' }
 
 const blockStartPattern = /^\s*(#{1,6}\s+|`{3,}|~{3,}|>\s?|[-*]\s+|\d+\.\s+|---+\s*$)/
-const inlinePattern = /(\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_)/g
+const inlinePattern = /(!?\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_)/g
 
 const headingClasses: Record<number, string> = {
   1: 'text-xl font-semibold leading-tight tracking-tight text-foreground',
@@ -30,16 +32,18 @@ const headingClasses: Record<number, string> = {
 export function MarkdownContent({
   content,
   accentBorder = false,
+  mediaSessionId,
 }: {
   content: string
   accentBorder?: boolean
+  mediaSessionId?: string
 }) {
   const blocks = parseMarkdown(content)
   return (
     <div
       className={`max-w-full min-w-0 space-y-3 overflow-hidden text-sm leading-relaxed wrap-break-word text-foreground ${accentBorder ? 'border-l-2 border-accent/50 pl-3.5' : ''}`}
     >
-      {blocks.map((block, index) => renderBlock(block, index))}
+      {blocks.map((block, index) => renderBlock(block, index, mediaSessionId))}
     </div>
   )
 }
@@ -165,7 +169,7 @@ function parseMarkdown(content: string) {
   return blocks
 }
 
-function renderBlock(block: MarkdownBlock, key: number) {
+function renderBlock(block: MarkdownBlock, key: number, mediaSessionId?: string) {
   switch (block.type) {
     case 'code':
       if (block.language?.toLowerCase() === 'mermaid') {
@@ -192,7 +196,7 @@ function renderBlock(block: MarkdownBlock, key: number) {
           aria-level={level}
           className={`pt-1 font-mono first:pt-0 ${headingClasses[level]}`}
         >
-          {renderInline(block.content)}
+          {renderInline(block.content, mediaSessionId)}
         </div>
       )
     }
@@ -202,7 +206,7 @@ function renderBlock(block: MarkdownBlock, key: number) {
           key={key}
           className="border-l-2 border-border-strong pl-3 font-mono text-[12px] text-muted-foreground italic"
         >
-          {renderInlineWithBreaks(block.content)}
+          {renderInlineWithBreaks(block.content, mediaSessionId)}
         </blockquote>
       )
     case 'list': {
@@ -213,7 +217,7 @@ function renderBlock(block: MarkdownBlock, key: number) {
           className={block.ordered ? 'list-decimal space-y-1 pl-5' : 'list-disc space-y-1 pl-5'}
         >
           {block.items.map((item, index) => (
-            <li key={`${key}-${index}`}>{renderInline(item)}</li>
+            <li key={`${key}-${index}`}>{renderInline(item, mediaSessionId)}</li>
           ))}
         </Tag>
       )
@@ -230,7 +234,7 @@ function renderBlock(block: MarkdownBlock, key: number) {
                     className="border-r border-b border-border px-3 py-2 font-mono text-[11px] font-semibold text-foreground last:border-r-0"
                     style={{ textAlign: block.alignments[index] }}
                   >
-                    {renderInline(header)}
+                    {renderInline(header, mediaSessionId)}
                   </th>
                 ))}
               </tr>
@@ -247,7 +251,7 @@ function renderBlock(block: MarkdownBlock, key: number) {
                       className="max-w-[18rem] border-r border-border px-3 py-2 align-top wrap-break-word text-muted-foreground last:border-r-0"
                       style={{ textAlign: block.alignments[cellIndex] }}
                     >
-                      {renderInline(row[cellIndex] ?? '')}
+                      {renderInline(row[cellIndex] ?? '', mediaSessionId)}
                     </td>
                   ))}
                 </tr>
@@ -259,7 +263,7 @@ function renderBlock(block: MarkdownBlock, key: number) {
     case 'hr':
       return <div key={key} className="h-px bg-border" />
     case 'paragraph':
-      return <p key={key}>{renderInlineWithBreaks(block.content)}</p>
+      return <p key={key}>{renderInlineWithBreaks(block.content, mediaSessionId)}</p>
   }
 }
 
@@ -306,18 +310,18 @@ function normalizeTableRow(cells: string[], count: number) {
   return Array.from({ length: count }, (_, index) => cells[index] ?? '')
 }
 
-function renderInlineWithBreaks(content: string) {
+function renderInlineWithBreaks(content: string, mediaSessionId?: string) {
   const nodes: ReactNode[] = []
   content.split('\n').forEach((line, lineIndex) => {
     if (lineIndex > 0) nodes.push(<br key={`br-${lineIndex}`} />)
-    renderInline(line).forEach((node, nodeIndex) => {
+    renderInline(line, mediaSessionId).forEach((node, nodeIndex) => {
       nodes.push(<Fragment key={`line-${lineIndex}-${nodeIndex}`}>{node}</Fragment>)
     })
   })
   return nodes
 }
 
-function renderInline(content: string): ReactNode[] {
+function renderInline(content: string, mediaSessionId?: string): ReactNode[] {
   const nodes: ReactNode[] = []
   let cursor = 0
 
@@ -325,7 +329,7 @@ function renderInline(content: string): ReactNode[] {
     const [token] = match
     const index = match.index ?? 0
     if (index > cursor) nodes.push(content.slice(cursor, index))
-    nodes.push(renderInlineToken(token, nodes.length))
+    nodes.push(renderInlineToken(token, nodes.length, mediaSessionId))
     cursor = index + token.length
   }
 
@@ -333,7 +337,7 @@ function renderInline(content: string): ReactNode[] {
   return nodes
 }
 
-function renderInlineToken(token: string, key: number) {
+function renderInlineToken(token: string, key: number, mediaSessionId?: string) {
   if (token.startsWith('`')) {
     return (
       <code
@@ -351,9 +355,35 @@ function renderInlineToken(token: string, key: number) {
     return <em key={key}>{token.slice(1, -1)}</em>
   }
 
-  const link = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
+  const link = token.match(/^!?\[([^\]]+)\]\(([^)]+)\)$/)
   if (link) {
-    const href = safeHref(link[2].trim())
+    const rawHref = link[2].trim()
+    if (mediaSessionId && isImageHref(rawHref)) {
+      return <MarkdownImage key={key} src={mediaSrc(rawHref, mediaSessionId)} alt={link[1]} />
+    }
+    if (mediaSessionId && isMp3Href(rawHref)) {
+      const src = mediaSrc(rawHref, mediaSessionId)
+      return (
+        <span
+          key={key}
+          className="my-2 flex w-full max-w-md items-center gap-3 border border-border-strong bg-card p-3"
+        >
+          <span className="flex size-8 shrink-0 items-center justify-center border border-border bg-muted text-accent">
+            <AudioLines className="size-4" aria-hidden="true" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="mb-1.5 block truncate font-mono text-[11px] text-foreground">
+              {link[1]}
+            </span>
+            <audio className="block h-8 w-full" controls preload="metadata" src={src}>
+              <a href={src}>Play {link[1]}</a>
+            </audio>
+          </span>
+        </span>
+      )
+    }
+
+    const href = safeHref(rawHref)
     return (
       <a
         key={key}
@@ -368,6 +398,26 @@ function renderInlineToken(token: string, key: number) {
   }
 
   return token
+}
+
+function isMp3Href(href: string) {
+  return href.split(/[?#]/, 1)[0].toLowerCase().endsWith('.mp3')
+}
+
+function isImageHref(href: string) {
+  return /\.(?:avif|gif|jpe?g|png|webp)$/i.test(href.split(/[?#]/, 1)[0])
+}
+
+function mediaSrc(href: string, sessionId: string) {
+  if (/^https?:\/\//i.test(href)) {
+    try {
+      const url = new URL(href)
+      if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) return href
+    } catch {
+      return '#'
+    }
+  }
+  return `/api/media?sessionId=${encodeURIComponent(sessionId)}&path=${encodeURIComponent(href)}`
 }
 
 function safeHref(href: string) {

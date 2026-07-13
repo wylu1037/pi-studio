@@ -1054,6 +1054,7 @@ export function ChatView({
                     key={item.message.id}
                     message={item.message}
                     agentName={activeAgent.name}
+                    mediaSessionId={activeSession.id}
                     streamStartedAt={
                       item.message.timestamp === 'streaming' ? streamStartedAt : null
                     }
@@ -1973,11 +1974,13 @@ const MessageBubble = memo(function MessageBubble({
   agentName,
   streamStartedAt,
   usageSummary,
+  mediaSessionId,
 }: {
   message: ChatMessage
   agentName: string
   streamStartedAt?: number | null
   usageSummary?: string | null
+  mediaSessionId?: string
 }) {
   switch (message.type) {
     case 'user':
@@ -2025,7 +2028,7 @@ const MessageBubble = memo(function MessageBubble({
               {message.content}
             </div>
           ) : (
-            <MarkdownContent content={message.content} />
+            <MarkdownContent content={message.content} mediaSessionId={mediaSessionId} />
           )}
         </div>
       )
