@@ -14,6 +14,8 @@ import {
   Plug,
   History,
   Clock,
+  Cpu,
+  Brain,
 } from 'lucide-react'
 import type { AgentProfile } from '@/lib/types'
 import { deleteApiAgentsId } from '@/lib/api/generated/clients/deleteApiAgentsId'
@@ -189,7 +191,7 @@ function AgentCard({
 
   return (
     <div className="group flex flex-col border border-border bg-card transition-colors hover:border-border-strong">
-      <div className="flex items-start gap-3 border-b border-border p-4">
+      <div className="flex items-start gap-3 p-4">
         <div
           className="mt-0.5 flex size-9 shrink-0 items-center justify-center border"
           style={{
@@ -215,23 +217,49 @@ function AgentCard({
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-1.5 px-4 pt-3">
-        {agent.tags.map((t) => (
-          <Tag key={t} tone="outline">
-            {t}
-          </Tag>
-        ))}
-      </div>
+      {agent.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 px-4 pt-3">
+          {agent.tags.map((t) => (
+            <Tag key={t} tone="outline">
+              {t}
+            </Tag>
+          ))}
+        </div>
+      )}
 
-      {/* Model + thinking */}
-      <div className="flex items-center gap-2 px-4 pt-3 font-mono text-xs text-muted-foreground">
-        <span className="text-foreground">{agent.defaultModelId}</span>
-        <span className="text-muted-foreground/50">·</span>
-        <Tag tone="accent">think:{agent.defaultThinkingLevel}</Tag>
+      {/* Runtime profile */}
+      <div
+        className={`grid grid-cols-[minmax(0,1.6fr)_minmax(112px,0.8fr)] border-y border-border bg-panel/40 ${agent.tags.length > 0 ? 'mt-3' : ''}`}
+      >
+        <div className="min-w-0 px-4 py-3">
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <Cpu className="size-3.5" />
+            <Label>Model</Label>
+          </div>
+          <p className="mt-1.5 truncate font-mono text-[12px] text-foreground">
+            {agent.defaultModelId ?? 'Automatic selection'}
+          </p>
+          <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
+            {agent.defaultProviderId ?? 'Default provider'} ·{' '}
+            {agent.selectedModelIds.length} enabled
+          </p>
+        </div>
+        <div className="border-l border-border px-4 py-3">
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <Brain className="size-3.5" />
+            <Label>Reasoning</Label>
+          </div>
+          <p className="mt-1.5 font-mono text-[12px] capitalize text-foreground">
+            {agent.defaultThinkingLevel}
+          </p>
+          <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+            default level
+          </p>
+        </div>
       </div>
 
       {/* Stats */}
-      <div className="mt-3 grid grid-cols-4 border-t border-border">
+      <div className="grid grid-cols-4">
         {stats.map((s) => {
           const Icon = s.icon
           return (

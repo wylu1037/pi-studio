@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
@@ -61,6 +62,7 @@ const EVENT_STREAM_CONNECT_TIMEOUT_MS = 5000
 const RUN_RECONCILE_INITIAL_DELAY_MS = 1000
 const RUN_RECONCILE_POLL_MS = 1200
 const RUN_RECONCILE_MAX_MS = 20000
+const SESSION_TREE_RECENT_NODE_LIMIT = 80
 
 type StreamPhase = 'idle' | 'starting' | 'connecting' | 'thinking' | 'streaming'
 
@@ -720,6 +722,13 @@ export function ChatView({
     }
   };
 
+  const totalTreeNodes = countTreeNodes(tree)
+  const visibleTree = useMemo(
+    () => buildRecentSessionTree(tree, SESSION_TREE_RECENT_NODE_LIMIT, selectedNodeId),
+    [tree, selectedNodeId],
+  )
+  const visibleTreeNodes = countTreeNodes(visibleTree)
+
   if (!activeAgent || !activeSession) {
     return (
       <div className="flex h-full items-center justify-center font-mono text-sm text-muted-foreground">
@@ -747,7 +756,10 @@ export function ChatView({
           <div>
             <Label>Session tree</Label>
             <p className="mt-1 font-mono text-[11px] text-muted-foreground">
-              {countTreeNodes(tree)} nodes · {sessions.length} sessions
+              {visibleTreeNodes < totalTreeNodes
+                ? `${visibleTreeNodes} of ${totalTreeNodes} recent nodes`
+                : `${totalTreeNodes} nodes`}{' '}
+              · {sessions.length} sessions
             </p>
           </div>
           <button
@@ -760,10 +772,13 @@ export function ChatView({
             <PanelLeftClose className="size-4" />
           </button>
         </div>
-        <div className="flex-1 overflow-auto p-2">
-          {tree ? (
+        <ScrollArea
+          className="min-h-0 flex-1"
+          viewportClassName="py-2 pl-2 pr-5"
+        >
+          {visibleTree ? (
             <TreeNode
-              node={tree}
+              node={visibleTree}
               depth={0}
               selectedId={selectedNodeId}
               onSelect={selectTreeNode}
@@ -773,7 +788,7 @@ export function ChatView({
               No tree nodes yet
             </p>
           )}
-        </div>
+        </ScrollArea>
         {branchError && (
           <p className="border-t border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
             {branchError}
@@ -1285,6 +1300,75 @@ function countTreeNodes(node: SessionTreeNode | null): number {
   return 1 + node.children.reduce((total, child) => total + countTreeNodes(child), 0)
 }
 
+function formatTreeTimestamp(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const today = new Date()
+  const sameDay = date.toDateString() === today.toDateString()
+  return new Intl.DateTimeFormat(undefined, {
+    month: sameDay ? undefined : 'short',
+    day: sameDay ? undefined : 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(date)
+}
+
+function buildRecentSessionTree(
+  tree: SessionTreeNode | null,
+  limit: number,
+  selectedId: string | null,
+): SessionTreeNode | null {
+  if (!tree || countTreeNodes(tree) <= limit) return tree
+
+  const nodes: SessionTreeNode[] = []
+  const parents = new Map<string, string | null>()
+  const visit = (node: SessionTreeNode) => {
+    nodes.push(node)
+    parents.set(node.id, node.parentId)
+    node.children.forEach(visit)
+  }
+  visit(tree)
+
+  const included = new Set(
+    nodes
+      .slice()
+      .sort((a, b) => {
+        const aTime = Date.parse(a.timestamp)
+        const bTime = Date.parse(b.timestamp)
+        if (Number.isNaN(aTime) || Number.isNaN(bTime)) {
+          return nodes.indexOf(a) - nodes.indexOf(b)
+        }
+        return aTime - bTime
+      })
+      .slice(-limit)
+      .map((node) => node.id),
+  )
+  if (selectedId) included.add(selectedId)
+  const currentId = findCurrentTreeNodeId(tree)
+  if (currentId) included.add(currentId)
+
+  for (const id of Array.from(included)) {
+    let parentId = parents.get(id) ?? null
+    while (parentId) {
+      included.add(parentId)
+      parentId = parents.get(parentId) ?? null
+    }
+  }
+
+  const cloneIncluded = (node: SessionTreeNode): SessionTreeNode | null => {
+    if (!included.has(node.id)) return null
+    return {
+      ...node,
+      children: node.children
+        .map(cloneIncluded)
+        .filter((child): child is SessionTreeNode => child !== null),
+    }
+  }
+
+  return cloneIncluded(tree)
+}
+
 function TreeNode({
   node,
   depth,
@@ -1298,6 +1382,23 @@ function TreeNode({
 }) {
   const isEvent = node.type !== "message";
   const meta = node.role ? roleMeta[node.role] : null;
+  const hasBranches = node.children.length > 1
+  const childDepth = hasBranches ? Math.min(depth + 1, 4) : depth
+  const previewRef = useRef<HTMLParagraphElement>(null)
+  const [tooltipPosition, setTooltipPosition] = useState<{
+    top: number
+    left: number
+  } | null>(null)
+
+  const showPreviewTooltip = () => {
+    const preview = previewRef.current
+    if (!preview || preview.scrollWidth <= preview.clientWidth) return
+    const rect = preview.getBoundingClientRect()
+    setTooltipPosition({
+      top: Math.max(12, Math.min(rect.top - 8, window.innerHeight - 140)),
+      left: Math.min(rect.right + 10, window.innerWidth - 380),
+    })
+  }
 
   return (
     <div>
@@ -1305,15 +1406,19 @@ function TreeNode({
         role="button"
         tabIndex={0}
         onClick={() => onSelect(node.id)}
+        onMouseEnter={showPreviewTooltip}
+        onMouseLeave={() => setTooltipPosition(null)}
+        onFocus={showPreviewTooltip}
+        onBlur={() => setTooltipPosition(null)}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") onSelect(node.id);
         }}
         className={cn(
-          "group flex cursor-pointer items-start gap-1.5 rounded-none px-2 py-1.5 transition-colors hover:bg-muted",
-          node.isCurrent && "bg-accent/12 ring-1 ring-accent/40",
-          selectedId === node.id && "bg-primary/10 ring-1 ring-primary/40",
+          "group flex cursor-pointer items-start gap-2 border-l-2 border-transparent px-2 py-2 outline-none transition-colors hover:bg-muted/70 focus-visible:bg-muted focus-visible:border-ring",
+          node.isCurrent && "border-l-accent bg-accent/8",
+          selectedId === node.id && "border-l-primary bg-primary/10",
         )}
-        style={{ paddingLeft: depth * 12 + 8 }}
+        style={{ paddingLeft: Math.min(depth, 4) * 12 + 8 }}
       >
         <span
           className={cn(
@@ -1323,37 +1428,51 @@ function TreeNode({
         >
           {isEvent ? <GitBranch className="size-3" /> : meta?.icon}
         </span>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 max-w-55 flex-1">
           {node.label && (
             <span className="mb-0.5 mr-1 inline-block bg-accent/12 px-1 font-mono text-[9px] uppercase tracking-wider text-accent">
               {node.label}
             </span>
           )}
           <p
+            ref={previewRef}
             className={cn(
-              "truncate font-mono text-[11px] leading-snug",
+              "truncate font-mono text-[11px] leading-4",
               isEvent ? "italic text-warning" : "text-foreground/80",
             )}
           >
             {node.preview}
           </p>
-          <span className="font-mono text-[9px] text-muted-foreground/50">
-            {node.timestamp}
+          <span
+            className="mt-0.5 block font-mono text-[9px] text-muted-foreground/55"
+            title={node.timestamp}
+          >
+            {formatTreeTimestamp(node.timestamp)}
           </span>
         </div>
       </div>
+      {tooltipPosition &&
+        createPortal(
+          <div
+            role="tooltip"
+            className="pointer-events-none fixed z-50 max-w-sm border border-border-strong bg-card px-3 py-2 font-mono text-[11px] leading-relaxed text-foreground shadow-xl"
+            style={tooltipPosition}
+          >
+            {node.preview}
+          </div>,
+          document.body,
+        )}
       {node.children.length > 0 && (
         <div
           className={cn(
-            node.children.length > 1 &&
-              "ml-3 border-l border-dashed border-border",
+            hasBranches && "ml-3 border-l border-dashed border-border-strong",
           )}
         >
           {node.children.map((c) => (
             <TreeNode
               key={c.id}
               node={c}
-              depth={depth + 1}
+              depth={childDepth}
               selectedId={selectedId}
               onSelect={onSelect}
             />
