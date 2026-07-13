@@ -489,7 +489,9 @@ function ProviderDetail({
   const deleteModel = async (id: string) => {
     setPending(`model:${id}`)
     try {
-      const updated = await deleteApiModelsId(id)
+      const updated = await deleteApiModelsId(id, {
+        params: { providerId: provider.id },
+      })
       setDisplayModels(updated.models as GlobalModel[])
       onProviderUpdate(updated)
     } finally {

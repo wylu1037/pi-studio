@@ -782,11 +782,17 @@ api.openapi(
     method: 'delete',
     path: '/models/{id}',
     tags: ['Models'],
-    request: { params: z.object({ id: z.string() }) },
+    request: {
+      params: z.object({ id: z.string() }),
+      query: z.object({ providerId: z.string() }),
+    },
     responses: { 200: json(ProviderSchema), 404: json(ErrorSchema) },
   }),
   (c) => {
-    const provider = deleteModel(c.req.valid('param').id)
+    const provider = deleteModel(
+      c.req.valid('query').providerId,
+      c.req.valid('param').id,
+    )
     if (!provider) return c.json({ error: 'Model not found' }, 404)
     return c.json(provider)
   },

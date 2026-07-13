@@ -588,10 +588,11 @@ function ModelsTab({
                 {pOn && (
                   <div className="grid pl-4 sm:grid-cols-2">
                     {p.models.map((m) => {
-                      const mOn = enabledModels.has(m.id)
+                      const resourceId = `${p.id}::${m.id}`
+                      const mOn = enabledModels.has(resourceId)
                       return (
                         <label
-                          key={m.id}
+                          key={resourceId}
                           className="flex cursor-pointer items-center gap-2.5 border-t border-border bg-card px-4 py-2.5 sm:odd:border-r"
                         >
                           <button
@@ -599,12 +600,12 @@ function ModelsTab({
                             onClick={() =>
                               toggleResource(
                                 'model',
-                                m.id,
+                                resourceId,
                                 enabledModels,
                                 setEnabledModels,
                               )
                             }
-                            disabled={pending === `model:${m.id}`}
+                            disabled={pending === `model:${resourceId}`}
                             className={cn(
                               'flex size-4 items-center justify-center border',
                               mOn

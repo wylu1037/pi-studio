@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import type {
   AgentProfile,
   AgentSessionSummary,
@@ -66,6 +66,23 @@ function ids(table: string, idColumn: string, valueColumn: string, id: string) {
     .map((row) => String((row as Row)[valueColumn]))
 }
 
+function selectedModelResourceIds(agentId: string) {
+  return db
+    .select({ modelId: agentModels.modelId })
+    .from(agentModels)
+    .where(eq(agentModels.agentId, agentId))
+    .all()
+    .map(({ modelId }) => {
+      const model = db.select().from(models).where(eq(models.id, modelId)).get()
+      return model
+        ? modelStorageId(
+            model.providerId,
+            externalModelId(model.providerId, model.id),
+          )
+        : modelId
+    })
+}
+
 function count(table: string, column: string, value: string) {
   const row = sqlite
     .prepare(`select count(*) as value from ${table} where ${column} = ?`)
@@ -100,7 +117,7 @@ export function listAgents(): AgentProfile[] {
       'provider_id',
       agent.id,
     ),
-    selectedModelIds: ids('agent_models', 'agent_id', 'model_id', agent.id),
+    selectedModelIds: selectedModelResourceIds(agent.id),
     sessionCount: count('sessions', 'agent_id', agent.id),
     lastUsed: agent.lastUsed ?? agent.updatedAt,
     createdAt: agent.createdAt,
@@ -205,7 +222,23 @@ export function updateAgentResources(
   }
   if (input.selectedModelIds) {
     db.delete(agentModels).where(eq(agentModels.agentId, id)).run()
-    for (const modelId of input.selectedModelIds) db.insert(agentModels).values({ agentId: id, modelId }).run()
+    for (const resourceId of input.selectedModelIds) {
+      const exact = db.select().from(models).where(eq(models.id, resourceId)).get()
+      const separator = resourceId.indexOf('::')
+      const providerId = separator >= 0 ? resourceId.slice(0, separator) : null
+      const externalId = separator >= 0 ? resourceId.slice(separator + 2) : resourceId
+      const legacy = providerId
+        ? db
+            .select()
+            .from(models)
+            .where(and(eq(models.providerId, providerId), eq(models.id, externalId)))
+            .get()
+        : null
+      const storedModelId = exact?.id ?? legacy?.id
+      if (storedModelId) {
+        db.insert(agentModels).values({ agentId: id, modelId: storedModelId }).run()
+      }
+    }
   }
   db.update(agents)
     .set({
@@ -434,6 +467,15 @@ export function getProvider(id?: string | null) {
   return db.select().from(modelProviders).where(eq(modelProviders.id, id)).get() ?? null
 }
 
+function modelStorageId(providerId: string, modelId: string) {
+  return `${providerId}::${modelId}`
+}
+
+function externalModelId(providerId: string, storedId: string) {
+  const prefix = `${providerId}::`
+  return storedId.startsWith(prefix) ? storedId.slice(prefix.length) : storedId
+}
+
 export function listModels(providerId: string): GlobalModel[] {
   return db
     .select()
@@ -441,7 +483,7 @@ export function listModels(providerId: string): GlobalModel[] {
     .where(eq(models.providerId, providerId))
     .all()
     .map((model) => ({
-      id: model.id,
+      id: externalModelId(providerId, model.id),
       name: model.name ?? undefined,
       reasoning: model.reasoning,
       input: parseJson<Array<'text' | 'image'>>(model.inputJson, ['text']),
@@ -476,7 +518,18 @@ export function upsertModel(
   const provider = getProvider(providerId)
   if (!provider) return null
   const originalId = input.originalId ?? input.id
-  const existing = db.select().from(models).where(eq(models.id, originalId)).get()
+  const originalStorageId = modelStorageId(providerId, originalId)
+  const nextStorageId = modelStorageId(providerId, input.id)
+  const existing = db
+    .select()
+    .from(models)
+    .where(and(eq(models.providerId, providerId), eq(models.id, originalStorageId)))
+    .get() ?? db
+      .select()
+      .from(models)
+      .where(and(eq(models.providerId, providerId), eq(models.id, originalId)))
+      .get()
+  const existingStorageId = existing?.id ?? originalStorageId
   const values = {
     providerId,
     name: input.name,
@@ -485,34 +538,41 @@ export function upsertModel(
     contextWindow: input.contextWindow,
     maxTokens: input.maxTokens,
   }
-  if (existing && originalId !== input.id) {
-    const conflict = db.select().from(models).where(eq(models.id, input.id)).get()
+  if (existing && existingStorageId !== nextStorageId) {
+    const conflict = db.select().from(models).where(eq(models.id, nextStorageId)).get()
     if (conflict) throw new Error(`Model ID "${input.id}" already exists.`)
     sqlite.transaction(() => {
-      db.insert(models).values({ id: input.id, ...values }).run()
+      db.insert(models).values({ id: nextStorageId, ...values }).run()
       db.update(agentModels)
-        .set({ modelId: input.id })
-        .where(eq(agentModels.modelId, originalId))
+        .set({ modelId: nextStorageId })
+        .where(eq(agentModels.modelId, existingStorageId))
         .run()
       db.update(agents)
         .set({ defaultModelId: input.id })
-        .where(eq(agents.defaultModelId, originalId))
+        .where(
+          and(
+            eq(agents.defaultProviderId, providerId),
+            eq(agents.defaultModelId, originalId),
+          ),
+        )
         .run()
-      db.delete(models).where(eq(models.id, originalId)).run()
+      db.delete(models).where(eq(models.id, existingStorageId)).run()
     })()
   } else if (existing) {
-    db.update(models).set(values).where(eq(models.id, input.id)).run()
+    db.update(models).set(values).where(eq(models.id, existingStorageId)).run()
   } else {
-    db.insert(models).values({ id: input.id, ...values }).run()
+    db.insert(models).values({ id: nextStorageId, ...values }).run()
   }
   db.update(modelProviders).set({ updatedAt: now() }).where(eq(modelProviders.id, providerId)).run()
   return listProviders().find((item) => item.id === providerId) ?? null
 }
 
-export function deleteModel(id: string) {
-  const existing = db.select().from(models).where(eq(models.id, id)).get()
+export function deleteModel(providerId: string, id: string) {
+  const storageId = modelStorageId(providerId, id)
+  const existing = db.select().from(models).where(eq(models.id, storageId)).get() ??
+    db.select().from(models).where(and(eq(models.providerId, providerId), eq(models.id, id))).get()
   if (!existing) return null
-  db.delete(models).where(eq(models.id, id)).run()
+  db.delete(models).where(eq(models.id, existing.id)).run()
   db.update(modelProviders)
     .set({ updatedAt: now() })
     .where(eq(modelProviders.id, existing.providerId))
@@ -931,7 +991,10 @@ export function resolveAgentRunConfig(agentId: string, providerId?: string | nul
     .map((provider) => ({
       ...provider,
       models:
-        provider.models.filter((model) => selectedModelSet.has(model.id)),
+        provider.models.filter((model) =>
+          selectedModelSet.has(modelStorageId(provider.id, model.id)) ||
+          selectedModelSet.has(model.id),
+        ),
     }))
   const selectedProvider =
     agentProviders.find((provider) => provider.id === providerId) ??

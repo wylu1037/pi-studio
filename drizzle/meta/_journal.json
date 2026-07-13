@@ -15,6 +15,13 @@
       "when": 1783765338595,
       "tag": "0001_aromatic_terrax",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1783906922625,
+      "tag": "0002_provider_scoped_models",
+      "breakpoints": true
     }
   ]
 }
