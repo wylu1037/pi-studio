@@ -3,6 +3,8 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { syncPiSkillLinks } from '@/lib/skills/store'
 import { updateSessionFilePath } from '@/lib/db/repository'
+import { resolvePiProviderConnection } from '@/lib/models/pi-ai'
+import type { GlobalModelProvider } from '@/lib/types'
 import { registerRun, unregisterRun } from './run-registry'
 
 interface PiModelProviderConfig {
@@ -150,7 +152,10 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
 
   if (provider && input.model) {
     const model = session.inner.modelRegistry.find(provider, input.model)
-    if (model && session.inner.model?.id !== model.id) {
+    if (
+      model &&
+      (session.inner.model?.provider !== model.provider || session.inner.model?.id !== model.id)
+    ) {
       await session.inner.setModel(model)
     }
   }
@@ -244,6 +249,12 @@ export function syncUserAgentDir(input: PiRunInput) {
 }
 
 function serializeProvider(providerConfig: PiModelProviderConfig, modelId?: string) {
+  const connection = resolvePiProviderConnection({
+    baseUrl: providerConfig.baseUrl,
+    api: providerConfig.api as GlobalModelProvider['api'],
+    apiKey: providerConfig.apiKey,
+    headers: providerConfig.headers,
+  })
   const sourceModels = providerConfig.models ?? []
   const modelIds = new Set(sourceModels.map((model) => model.id))
   const models = [...sourceModels]
@@ -253,10 +264,10 @@ function serializeProvider(providerConfig: PiModelProviderConfig, modelId?: stri
 
   return {
     name: providerConfig.name,
-    baseUrl: providerConfig.baseUrl,
-    apiKey: providerConfig.apiKey,
+    baseUrl: connection.baseUrl,
+    apiKey: connection.apiKey,
     api: providerConfig.api,
-    headers: providerConfig.headers,
+    headers: connection.headers,
     models: models.map((model) => ({
       id: model.id,
       name: model.name,

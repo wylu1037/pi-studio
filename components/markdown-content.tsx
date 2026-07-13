@@ -15,7 +15,7 @@ type MarkdownBlock =
     }
   | { type: 'hr' }
 
-const blockStartPattern = /^(#{1,6}\s+|```|>\s?|[-*]\s+|\d+\.\s+|---+\s*$)/
+const blockStartPattern = /^\s*(#{1,6}\s+|`{3,}|~{3,}|>\s?|[-*]\s+|\d+\.\s+|---+\s*$)/
 const inlinePattern = /(\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_)/g
 
 const headingClasses: Record<number, string> = {
@@ -56,16 +56,24 @@ function parseMarkdown(content: string) {
       continue
     }
 
-    const fence = line.match(/^```\s*([^`]*)\s*$/)
+    const fence = line.match(/^\s*(`{3,}|~{3,})\s*([^\s`]*)?.*$/)
     if (fence) {
       const code: string[] = []
+      const marker = fence[1]
+      const closingFence = new RegExp(
+        `^\\s*${marker[0] === '`' ? '`' : '~'}{${marker.length},}\\s*$`,
+      )
       index += 1
-      while (index < lines.length && !lines[index].startsWith('```')) {
+      while (index < lines.length && !closingFence.test(lines[index])) {
         code.push(lines[index])
         index += 1
       }
       if (index < lines.length) index += 1
-      blocks.push({ type: 'code', language: fence[1]?.trim(), content: code.join('\n') })
+      blocks.push({
+        type: 'code',
+        language: fence[2]?.trim(),
+        content: code.join('\n'),
+      })
       continue
     }
 
@@ -100,37 +108,37 @@ function parseMarkdown(content: string) {
       continue
     }
 
-    const heading = line.match(/^(#{1,6})\s+(.+)$/)
+    const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+)$/)
     if (heading) {
       blocks.push({ type: 'heading', level: heading[1].length, content: heading[2] })
       index += 1
       continue
     }
 
-    if (/^>\s?/.test(line)) {
+    if (/^\s{0,3}>\s?/.test(line)) {
       const quote: string[] = []
-      while (index < lines.length && /^>\s?/.test(lines[index])) {
-        quote.push(lines[index].replace(/^>\s?/, ''))
+      while (index < lines.length && /^\s{0,3}>\s?/.test(lines[index])) {
+        quote.push(lines[index].replace(/^\s{0,3}>\s?/, ''))
         index += 1
       }
       blocks.push({ type: 'quote', content: quote.join('\n') })
       continue
     }
 
-    if (/^[-*]\s+/.test(line)) {
+    if (/^\s{0,3}[-*]\s+/.test(line)) {
       const items: string[] = []
-      while (index < lines.length && /^[-*]\s+/.test(lines[index])) {
-        items.push(lines[index].replace(/^[-*]\s+/, ''))
+      while (index < lines.length && /^\s{0,3}[-*]\s+/.test(lines[index])) {
+        items.push(lines[index].replace(/^\s{0,3}[-*]\s+/, ''))
         index += 1
       }
       blocks.push({ type: 'list', ordered: false, items })
       continue
     }
 
-    if (/^\d+\.\s+/.test(line)) {
+    if (/^\s{0,3}\d+\.\s+/.test(line)) {
       const items: string[] = []
-      while (index < lines.length && /^\d+\.\s+/.test(lines[index])) {
-        items.push(lines[index].replace(/^\d+\.\s+/, ''))
+      while (index < lines.length && /^\s{0,3}\d+\.\s+/.test(lines[index])) {
+        items.push(lines[index].replace(/^\s{0,3}\d+\.\s+/, ''))
         index += 1
       }
       blocks.push({ type: 'list', ordered: true, items })
@@ -144,6 +152,10 @@ function parseMarkdown(content: string) {
       !blockStartPattern.test(lines[index]) &&
       !isTableStart(lines, index)
     ) {
+      paragraph.push(lines[index])
+      index += 1
+    }
+    if (paragraph.length === 0) {
       paragraph.push(lines[index])
       index += 1
     }

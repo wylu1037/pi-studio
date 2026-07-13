@@ -5,6 +5,7 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
 import { streamSSE } from 'hono/streaming'
 import { abortRun as abortRegisteredRun } from '@/lib/chat/run-registry'
 import { defaultPiSessionDir, runPiCli, type PiUsage } from '@/lib/chat/pi-adapter'
+import { resolvePiProviderConnection } from '@/lib/models/pi-ai'
 import { runNpx } from '@/lib/npx'
 import { loadPackageGallery } from '@/lib/packages/pi-dev-gallery'
 import { materializeInstalledSkill, removeStoredSkill, studioRootDir } from '@/lib/skills/store'
@@ -271,22 +272,30 @@ async function installSkillsShPackage(pkg: string) {
 async function fetchProviderModelCatalog(providerId: string) {
   const provider = getProvider(providerId)
   if (!provider) return null
-  const url = new URL(provider.baseUrl)
+  const connection = resolvePiProviderConnection({
+    baseUrl: provider.baseUrl,
+    api: provider.api,
+    apiKey: provider.apiKey ?? undefined,
+    headers: JSON.parse(provider.headersJson || '{}'),
+  })
+  const url = new URL(connection.baseUrl)
   if (!url.pathname.replace(/\/$/, '').endsWith('/models')) {
     url.pathname = `${url.pathname.replace(/\/$/, '')}/models`
   }
   const headers: Record<string, string> = {
     accept: 'application/json',
-    ...JSON.parse(provider.headersJson || '{}'),
+    ...connection.headers,
   }
-  if (provider.apiKey) {
+  if (provider.api === 'anthropic-messages') {
+    headers['anthropic-version'] ??= '2023-06-01'
+  }
+  if (connection.apiKey) {
     if (provider.api === 'anthropic-messages') {
-      headers['x-api-key'] = provider.apiKey
-      headers['anthropic-version'] ??= '2023-06-01'
+      headers['x-api-key'] = connection.apiKey
     } else if (provider.api === 'google-generative-ai') {
-      headers['x-goog-api-key'] = provider.apiKey
+      headers['x-goog-api-key'] = connection.apiKey
     } else {
-      headers.authorization = `Bearer ${provider.apiKey}`
+      headers.authorization = `Bearer ${connection.apiKey}`
     }
   }
   const response = await fetch(url, { headers, cache: 'no-store' })

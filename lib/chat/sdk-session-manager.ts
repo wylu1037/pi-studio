@@ -7,6 +7,7 @@ import {
   type AgentSession,
   type AgentSessionEvent,
 } from '@earendil-works/pi-coding-agent'
+import { registerPiStudioApiProviders } from '@/lib/models/pi-ai'
 
 type Listener = (event: AgentSessionEvent) => void
 
@@ -123,6 +124,7 @@ export async function getOrCreateSdkSession(input: {
         },
       },
     })
+    registerPiStudioApiProviders()
     const model =
       input.modelProvider && input.modelId
         ? services.modelRegistry.find(input.modelProvider, input.modelId)

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   Search,
   Coins,
@@ -31,6 +32,7 @@ import { deleteApiSessionsId } from '@/lib/api/generated/clients/deleteApiSessio
 import { postApiSessions } from '@/lib/api/generated/clients/postApiSessions'
 import { postApiSessionsIdDuplicate } from '@/lib/api/generated/clients/postApiSessionsIdDuplicate'
 import { refreshAfterMutation } from '@/lib/api/refresh'
+import { errorMessage, showToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
 function agentName(agents: AgentProfile[], agentId: string) {
@@ -55,6 +57,7 @@ export function SessionsView({
   agents: AgentProfile[]
   sessions: AgentSessionSummary[]
 }) {
+  const router = useRouter()
   const [query, setQuery] = useState('')
   const [agentFilter, setAgentFilter] = useState<string>('all')
   const [tagFilter, setTagFilter] = useState<string>('all')
@@ -64,6 +67,10 @@ export function SessionsView({
   const [editTarget, setEditTarget] = useState<AgentSessionSummary | null>(null)
   const [editName, setEditName] = useState('')
   const [editCwd, setEditCwd] = useState('')
+  const [showNewSession, setShowNewSession] = useState(false)
+  const [newAgentId, setNewAgentId] = useState('')
+  const [newSessionName, setNewSessionName] = useState('New conversation')
+  const [newSessionCwd, setNewSessionCwd] = useState('')
 
   const allTags = useMemo(() => {
     const set = new Set<string>()
@@ -87,25 +94,45 @@ export function SessionsView({
     })
   }, [query, agentFilter, tagFilter])
 
+  const openNewSession = () => {
+    const agent =
+      agents.find((item) => item.id === agentFilter) ??
+      agents.find((item) => item.id === newAgentId) ??
+      agents[0]
+    if (!agent) {
+      showToast({ tone: 'error', title: 'No agent available', message: 'Create an agent first.' })
+      return
+    }
+    setNewAgentId(agent.id)
+    setNewSessionName('New conversation')
+    setNewSessionCwd(agent.defaultCwd ?? '')
+    setShowNewSession(true)
+  }
+
   const createSession = async () => {
-    const agentId =
-      agentFilter !== 'all'
-        ? agentFilter
-        : window.prompt(
-            `Start session for which agent?\n${agents
-              .map((agent) => `${agent.name} (${agent.id})`)
-              .join('\n')}`,
-          )
-    if (!agentId) return
-    const agent = agents.find((item) => item.id === agentId || item.name === agentId)
-    if (!agent) return window.alert('Agent not found')
+    const agent = agents.find((item) => item.id === newAgentId)
+    if (!agent || !newSessionName.trim()) return
     setPending('new')
     try {
       const session = await postApiSessions({
         agentId: agent.id,
-        name: 'New conversation',
+        name: newSessionName.trim(),
+        cwd: newSessionCwd.trim() || agent.defaultCwd,
       })
-      window.location.href = `/chat?agent=${agent.id}&session=${session.id}`
+      showToast({
+        tone: 'success',
+        title: 'Session created',
+        message: `Started "${newSessionName.trim()}" with ${agent.name}.`,
+      })
+      setShowNewSession(false)
+      router.push(`/chat?agent=${agent.id}&session=${session.id}`)
+      router.refresh()
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        title: 'Unable to create session',
+        message: errorMessage(error, 'Session creation failed.'),
+      })
     } finally {
       setPending(null)
     }
@@ -161,7 +188,7 @@ export function SessionsView({
         title="Sessions"
         subtitle="Browse, resume, and inspect every conversation across your agents."
       >
-        <BracketButton onClick={createSession} disabled={pending === 'new'}>
+        <BracketButton onClick={openNewSession} disabled={pending === 'new'}>
           New session
         </BracketButton>
       </PageHeader>
@@ -214,7 +241,7 @@ export function SessionsView({
       <div className="flex min-h-0 flex-1">
         <div className="min-w-0 flex-1 overflow-auto">
           {sessions.length === 0 ? (
-            <SessionsEmptyState onCreate={createSession} disabled={pending === 'new'} />
+            <SessionsEmptyState onCreate={openNewSession} disabled={pending === 'new'} />
           ) : (
             <>
               <table className="w-full border-collapse text-left">
@@ -470,6 +497,116 @@ export function SessionsView({
           </div>
         )}
       </div>
+      {showNewSession && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="new-session-title"
+        >
+          <button
+            type="button"
+            aria-label="Close new session dialog"
+            onClick={pending === 'new' ? undefined : () => setShowNewSession(false)}
+            className="absolute inset-0 bg-foreground/25 backdrop-blur-[1px]"
+          />
+          <form
+            className="relative w-full max-w-lg border border-border-strong bg-card shadow-[0_24px_80px_-36px_rgba(0,0,0,0.55)]"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void createSession()
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && pending !== 'new') setShowNewSession(false)
+            }}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-border bg-panel px-5 py-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-accent">
+                  <MessageSquare className="size-4" />
+                  <Label>New session</Label>
+                </div>
+                <h2 id="new-session-title" className="mt-1.5 text-lg font-semibold text-foreground">
+                  Start a clean conversation
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Choose the agent and working directory before opening Chat.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowNewSession(false)}
+                disabled={pending === 'new'}
+                className="flex size-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98] disabled:opacity-40"
+                aria-label="Close new session dialog"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 px-5 py-5">
+              <label className="block space-y-2">
+                <Label>Agent</Label>
+                <select
+                  value={newAgentId}
+                  onChange={(event) => {
+                    const agent = agents.find((item) => item.id === event.target.value)
+                    setNewAgentId(event.target.value)
+                    setNewSessionCwd(agent?.defaultCwd ?? '')
+                  }}
+                  className="w-full border border-input bg-panel px-3 py-2.5 text-sm text-foreground transition-colors outline-none focus:border-ring"
+                >
+                  {agents.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block space-y-2">
+                <Label>Session name</Label>
+                <input
+                  value={newSessionName}
+                  onChange={(event) => setNewSessionName(event.target.value)}
+                  placeholder="New conversation"
+                  className="w-full border border-input bg-panel px-3 py-2.5 text-sm text-foreground transition-colors outline-none placeholder:text-muted-foreground/60 focus:border-ring"
+                  autoFocus
+                />
+              </label>
+
+              <label className="block space-y-2">
+                <Label>Working directory</Label>
+                <div className="flex items-center border border-input bg-panel focus-within:border-ring">
+                  <Folder className="ml-3 size-3.5 shrink-0 text-muted-foreground" />
+                  <input
+                    value={newSessionCwd}
+                    onChange={(event) => setNewSessionCwd(event.target.value)}
+                    placeholder="Use the agent default"
+                    className="min-w-0 flex-1 bg-transparent px-2.5 py-2.5 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/60"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Leave empty to use the selected agent&apos;s default directory.
+                </p>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-border bg-panel px-5 py-3.5">
+              <ActionButton onClick={() => setShowNewSession(false)} disabled={pending === 'new'}>
+                Cancel
+              </ActionButton>
+              <ActionButton
+                type="submit"
+                variant="accent"
+                disabled={!newAgentId || !newSessionName.trim() || pending === 'new'}
+              >
+                {pending === 'new' ? 'Creating' : 'Create session'}
+              </ActionButton>
+            </div>
+          </form>
+        </div>
+      )}
       {editTarget && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"

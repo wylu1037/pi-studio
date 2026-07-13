@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -28,12 +28,14 @@ import {
   PanelRightOpen,
   ArrowDown,
   ArrowUp,
+  MessageSquarePlus,
 } from 'lucide-react'
 import { Label, Tag, BracketButton, Panel, PanelHeader } from '@/components/pi-ui'
 import { MarkdownContent } from '@/components/markdown-content'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { getApiRunsId } from '@/lib/api/generated/clients/getApiRunsId'
 import { postApiRunsIdAbort } from '@/lib/api/generated/clients/postApiRunsIdAbort'
+import { postApiSessions } from '@/lib/api/generated/clients/postApiSessions'
 import { postApiSessionsIdFollowUp } from '@/lib/api/generated/clients/postApiSessionsIdFollowUp'
 import { postApiSessionsIdSteer } from '@/lib/api/generated/clients/postApiSessionsIdSteer'
 import { postApiSessionsIdRuns } from '@/lib/api/generated/clients/postApiSessionsIdRuns'
@@ -50,6 +52,7 @@ import type {
   SessionTreeNode,
   TreeNodeRole,
 } from '@/lib/types'
+import { errorMessage, showToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
 const thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
@@ -58,6 +61,8 @@ const RUN_RECONCILE_INITIAL_DELAY_MS = 1000
 const RUN_RECONCILE_POLL_MS = 1200
 const RUN_RECONCILE_MAX_MS = 20000
 const SESSION_TREE_RECENT_NODE_LIMIT = 80
+const INITIAL_VISIBLE_MESSAGE_LIMIT = 120
+const MESSAGE_LIMIT_INCREMENT = 100
 
 type StreamPhase = 'idle' | 'starting' | 'connecting' | 'thinking' | 'streaming'
 
@@ -78,6 +83,22 @@ type ComposerValues = {
   modelId?: string
   providerId?: string
 }
+
+type SlashCommandOption =
+  | {
+      kind: 'builtin'
+      id: 'new-session'
+      command: 'new-session'
+      description: string
+    }
+  | {
+      kind: 'prompt'
+      id: string
+      command: string
+      description: string
+      argumentHint?: string
+      prompt: GlobalPromptTemplate
+    }
 
 export function ChatView({
   activeAgent,
@@ -118,9 +139,12 @@ export function ChatView({
   const [showActiveContext, setShowActiveContext] = useState(false)
   const messageViewportRef = useRef<HTMLDivElement>(null)
   const shouldFollowMessagesRef = useRef(true)
+  const prependScrollRef = useRef<{ height: number; top: number } | null>(null)
   const [canScrollUp, setCanScrollUp] = useState(false)
   const [canScrollDown, setCanScrollDown] = useState(false)
+  const [visibleMessageLimit, setVisibleMessageLimit] = useState(INITIAL_VISIBLE_MESSAGE_LIMIT)
   const [slashSelection, setSlashSelection] = useState(0)
+  const [creatingSession, setCreatingSession] = useState(false)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(() =>
     findCurrentTreeNodeId(tree),
   )
@@ -174,9 +198,11 @@ export function ChatView({
     ({ provider, model: candidate }) =>
       provider.id === composerValues.providerId && candidate.id === composerValues.modelId,
   )
+  const isNewSessionCommand = composerValues.message.toLowerCase() === '/new-session'
   const canSend = Boolean(
-    selectedModelOption &&
-    postApiSessionsIdRunsMutationRequestSchema.safeParse(composerValues).success,
+    isNewSessionCommand ||
+    (selectedModelOption &&
+      postApiSessionsIdRunsMutationRequestSchema.safeParse(composerValues).success),
   )
   const activeModelName = selectedModelOption?.model.name ?? selectedModelOption?.model.id ?? model
 
@@ -200,17 +226,73 @@ export function ChatView({
     const selected = new Set(activeAgent?.selectedPromptIds ?? [])
     return prompts.filter((prompt) => selected.has(prompt.id))
   }, [activeAgent?.selectedPromptIds, prompts])
+
+  const createNewSession = async () => {
+    if (!activeAgent || creatingSession) return
+    if (runId) {
+      showToast({
+        tone: 'error',
+        title: 'Run in progress',
+        message: 'Stop the active run before starting a new session.',
+      })
+      return
+    }
+    setCreatingSession(true)
+    try {
+      const session = await postApiSessions({
+        agentId: activeAgent.id,
+        name: 'New conversation',
+        cwd: activeAgent.defaultCwd ?? activeSession?.cwd,
+      })
+      form.setValue('message', '')
+      showToast({
+        tone: 'success',
+        title: 'New session ready',
+        message: `Started a clean conversation with ${activeAgent.name}.`,
+      })
+      router.push(`/chat?agent=${activeAgent.id}&session=${session.id}`)
+      router.refresh()
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        title: 'Unable to create session',
+        message: errorMessage(error, 'Session creation failed.'),
+      })
+    } finally {
+      setCreatingSession(false)
+    }
+  }
+
   const slashQuery = message.match(/^\/([^\s]*)$/)?.[1]?.toLowerCase()
-  const slashPromptOptions =
-    slashQuery === undefined
-      ? []
-      : selectedPrompts
-          .filter(
-            (prompt) =>
-              prompt.name.toLowerCase().includes(slashQuery) ||
-              prompt.description?.toLowerCase().includes(slashQuery),
-          )
-          .slice(0, 8)
+  const slashCommandOptions = useMemo<SlashCommandOption[]>(() => {
+    if (slashQuery === undefined) return []
+    const options: SlashCommandOption[] = []
+    if ('new-session'.includes(slashQuery)) {
+      options.push({
+        kind: 'builtin',
+        id: 'new-session',
+        command: 'new-session',
+        description: 'Start a clean conversation with the current agent.',
+      })
+    }
+    options.push(
+      ...selectedPrompts
+        .filter(
+          (prompt) =>
+            prompt.name.toLowerCase().includes(slashQuery) ||
+            prompt.description?.toLowerCase().includes(slashQuery),
+        )
+        .map((prompt) => ({
+          kind: 'prompt' as const,
+          id: prompt.id,
+          command: prompt.name,
+          description: prompt.description || 'No description',
+          argumentHint: prompt.argumentHint,
+          prompt,
+        })),
+    )
+    return options.slice(0, 8)
+  }, [selectedPrompts, slashQuery])
 
   useEffect(() => {
     setSlashSelection(0)
@@ -219,6 +301,14 @@ export function ChatView({
   const insertPromptCommand = (prompt: GlobalPromptTemplate) => {
     form.setValue('message', `/${prompt.name} `, { shouldDirty: true })
     form.setFocus('message')
+  }
+
+  const executeSlashCommand = (option: SlashCommandOption) => {
+    if (option.kind === 'builtin') {
+      void createNewSession()
+      return
+    }
+    insertPromptCommand(option.prompt)
   }
   const mcpNames = useMemo(() => {
     const selected = new Set(activeAgent?.selectedMcpConfigIds ?? [])
@@ -237,6 +327,7 @@ export function ChatView({
 
   useEffect(() => {
     setSelectedNodeId(findCurrentTreeNodeId(tree))
+    setVisibleMessageLimit(INITIAL_VISIBLE_MESSAGE_LIMIT)
     setBranchMessages(null)
     setBranchError(null)
   }, [activeSession?.id, tree])
@@ -246,10 +337,10 @@ export function ChatView({
     const timer = window.setTimeout(() => {
       setStreamingMessage((current) => {
         const remaining = streamBuffer.length - current.length
-        const step = Math.min(4, Math.max(1, Math.ceil(remaining / 24)))
+        const step = Math.min(24, Math.max(2, Math.ceil(remaining / 12)))
         return streamBuffer.slice(0, current.length + step)
       })
-    }, 18)
+    }, 32)
 
     return () => window.clearTimeout(timer)
   }, [streamBuffer, streamingMessage])
@@ -312,7 +403,33 @@ export function ChatView({
           },
         ]
       : [...baseMessages, ...streamProcessMessages]
-  const displayItems = buildDisplayItems(displayMessages)
+  const hiddenMessageCount = Math.max(0, displayMessages.length - visibleMessageLimit)
+  const visibleDisplayMessages =
+    hiddenMessageCount > 0 ? displayMessages.slice(-visibleMessageLimit) : displayMessages
+  const displayItems = buildDisplayItems(visibleDisplayMessages)
+
+  const loadOlderMessages = () => {
+    const viewport = messageViewportRef.current
+    if (viewport) {
+      prependScrollRef.current = {
+        height: viewport.scrollHeight,
+        top: viewport.scrollTop,
+      }
+    }
+    shouldFollowMessagesRef.current = false
+    setVisibleMessageLimit((current) => current + MESSAGE_LIMIT_INCREMENT)
+  }
+
+  useEffect(() => {
+    const previous = prependScrollRef.current
+    const viewport = messageViewportRef.current
+    if (!previous || !viewport) return
+    const frame = window.requestAnimationFrame(() => {
+      viewport.scrollTop = previous.top + (viewport.scrollHeight - previous.height)
+      prependScrollRef.current = null
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [visibleMessageLimit])
 
   useEffect(() => {
     const viewport = messageViewportRef.current
@@ -458,6 +575,10 @@ export function ChatView({
 
   const submit = form.handleSubmit(async (values) => {
     if (!activeSession || !activeAgent) return
+    if (values.message.trim().toLowerCase() === '/new-session') {
+      await createNewSession()
+      return
+    }
     const payload = {
       ...values,
       message: values.message.trim(),
@@ -736,9 +857,13 @@ export function ChatView({
     ? 'Stopping'
     : isRunningRun
       ? 'Stop'
-      : isStartingRun
-        ? 'Sending'
-        : 'Send'
+      : creatingSession
+        ? 'Creating'
+        : isStartingRun
+          ? 'Sending'
+          : isNewSessionCommand
+            ? 'New session'
+            : 'Send'
 
   return (
     <div className="flex h-full min-h-0">
@@ -868,6 +993,15 @@ export function ChatView({
             viewportRef={messageViewportRef}
           >
             <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-4 overflow-x-hidden">
+              {hiddenMessageCount > 0 && (
+                <button
+                  type="button"
+                  onClick={loadOlderMessages}
+                  className="mx-auto border border-border-strong bg-card px-3 py-1.5 font-mono text-[10px] tracking-wide text-muted-foreground uppercase transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  Load {Math.min(MESSAGE_LIMIT_INCREMENT, hiddenMessageCount)} older messages
+                </button>
+              )}
               {displayItems.map((item) =>
                 item.type === 'process' ? (
                   <ProcessDetailsGroup
@@ -949,40 +1083,51 @@ export function ChatView({
         {/* composer */}
         <div className="border-t border-border bg-panel px-5 py-3">
           <div className="relative mx-auto max-w-3xl">
-            {slashPromptOptions.length > 0 && (
+            {slashCommandOptions.length > 0 && (
               <div className="absolute inset-x-0 bottom-full mb-2 overflow-hidden border border-border-strong bg-card shadow-xl">
                 <div className="flex items-center justify-between border-b border-border bg-panel px-4 py-2.5">
-                  <Label>Prompt templates</Label>
+                  <Label>Slash commands</Label>
                   <span className="font-mono text-[10px] text-muted-foreground">
-                    {slashPromptOptions.length} available
+                    {slashCommandOptions.length} available
                   </span>
                 </div>
                 <ul className="scrollbar-thin max-h-64 overflow-auto py-1">
-                  {slashPromptOptions.map((prompt, index) => (
-                    <li key={prompt.id}>
+                  {slashCommandOptions.map((option, index) => (
+                    <li key={`${option.kind}:${option.id}`}>
                       <button
                         type="button"
                         onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => insertPromptCommand(prompt)}
+                        onClick={() => executeSlashCommand(option)}
+                        disabled={option.kind === 'builtin' && (Boolean(runId) || creatingSession)}
                         className={cn(
-                          'flex w-full flex-col gap-1 border-l-2 border-transparent px-4 py-3 text-left transition-colors',
+                          'flex w-full flex-col gap-1 border-l-2 border-transparent px-4 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45',
                           index === slashSelection
                             ? 'border-l-accent bg-accent/10'
                             : 'hover:bg-muted/70',
                         )}
                       >
-                        <span className="flex min-w-0 items-baseline gap-2.5">
+                        <span className="flex min-w-0 items-center gap-2.5">
+                          {option.kind === 'builtin' ? (
+                            <MessageSquarePlus className="size-3.5 shrink-0 text-accent" />
+                          ) : (
+                            <Terminal className="size-3.5 shrink-0 text-muted-foreground" />
+                          )}
                           <span className="shrink-0 font-mono text-[13px] leading-5 font-medium text-accent">
-                            /{prompt.name}
+                            /{option.command}
                           </span>
-                          {prompt.argumentHint && (
+                          {option.kind === 'prompt' && option.argumentHint && (
                             <span className="truncate font-mono text-[10px] leading-5 text-warning">
-                              {prompt.argumentHint}
+                              {option.argumentHint}
                             </span>
                           )}
+                          {option.kind === 'builtin' && (
+                            <Tag tone="outline" className="ml-auto shrink-0">
+                              built-in
+                            </Tag>
+                          )}
                         </span>
-                        <span className="line-clamp-2 pl-0 text-[12px] leading-4 text-muted-foreground">
-                          {prompt.description || 'No description'}
+                        <span className="line-clamp-2 pl-6 text-[12px] leading-4 text-muted-foreground">
+                          {option.description}
                         </span>
                       </button>
                     </li>
@@ -1004,24 +1149,24 @@ export function ChatView({
               <textarea
                 {...form.register('message')}
                 onKeyDown={(e) => {
-                  if (slashPromptOptions.length > 0) {
+                  if (slashCommandOptions.length > 0) {
                     if (e.key === 'ArrowDown') {
                       e.preventDefault()
-                      setSlashSelection((value) => (value + 1) % slashPromptOptions.length)
+                      setSlashSelection((value) => (value + 1) % slashCommandOptions.length)
                       return
                     }
                     if (e.key === 'ArrowUp') {
                       e.preventDefault()
                       setSlashSelection(
                         (value) =>
-                          (value - 1 + slashPromptOptions.length) % slashPromptOptions.length,
+                          (value - 1 + slashCommandOptions.length) % slashCommandOptions.length,
                       )
                       return
                     }
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()
-                      insertPromptCommand(
-                        slashPromptOptions[slashSelection] ?? slashPromptOptions[0],
+                      executeSlashCommand(
+                        slashCommandOptions[slashSelection] ?? slashCommandOptions[0],
                       )
                       return
                     }
@@ -1038,7 +1183,13 @@ export function ChatView({
                     e.keyCode !== 229
                   ) {
                     e.preventDefault()
-                    if (canSend && !isStartingRun && !isRunningRun && !abortingRun) {
+                    if (
+                      canSend &&
+                      !isStartingRun &&
+                      !isRunningRun &&
+                      !abortingRun &&
+                      !creatingSession
+                    ) {
                       void submit()
                     }
                   }
@@ -1054,7 +1205,7 @@ export function ChatView({
               <button
                 type={isRunningRun ? 'button' : 'submit'}
                 onClick={isRunningRun ? abort : undefined}
-                disabled={isRunningRun ? abortingRun : isStartingRun || !canSend}
+                disabled={isRunningRun ? abortingRun : isStartingRun || creatingSession || !canSend}
                 className={cn(
                   'flex h-9 items-center justify-center gap-1.5 border font-mono text-[11px] uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-70',
                   isRunningRun
@@ -1063,10 +1214,12 @@ export function ChatView({
                 )}
                 aria-label={isRunningRun ? 'Abort run' : 'Send message'}
               >
-                {abortingRun || isStartingRun ? (
+                {abortingRun || isStartingRun || creatingSession ? (
                   <LoaderCircle className="size-3.5 animate-spin" />
                 ) : isRunningRun ? (
                   <Square className="size-3 fill-current" />
+                ) : isNewSessionCommand ? (
+                  <MessageSquarePlus className="size-3.5" />
                 ) : (
                   <Send className="size-3.5" />
                 )}
@@ -1614,6 +1767,7 @@ function ProcessDetailsGroup({
   messages: ChatMessage[]
   isStreaming?: boolean
 }) {
+  const [open, setOpen] = useState(false)
   const toolCalls = messages.filter((message) => message.type === 'tool_call').length
   const toolResults = messages.filter((message) => message.type === 'tool_result').length
   const bashOutputs = messages.filter((message) => message.type === 'bash').length
@@ -1628,7 +1782,11 @@ function ProcessDetailsGroup({
     .join(' · ')
 
   return (
-    <details className="group border border-border bg-panel/35">
+    <details
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      className="group border border-border bg-panel/35"
+    >
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2">
         <span className="flex size-5 items-center justify-center border border-border bg-card text-muted-foreground">
           {toolCalls > 0 ? (
@@ -1658,11 +1816,13 @@ function ProcessDetailsGroup({
         </div>
         <ChevronRight className="size-3 text-muted-foreground transition-transform group-open:rotate-90" />
       </summary>
-      <div className="space-y-2 border-t border-border px-3 py-3">
-        {messages.map((message) => (
-          <ProcessMessageRow key={message.id} message={message} />
-        ))}
-      </div>
+      {open && (
+        <div className="space-y-2 border-t border-border px-3 py-3">
+          {messages.map((message) => (
+            <ProcessMessageRow key={message.id} message={message} />
+          ))}
+        </div>
+      )}
     </details>
   )
 }
@@ -1721,7 +1881,7 @@ function processMessageMeta(message: ChatMessage) {
   }
 }
 
-function MessageBubble({
+const MessageBubble = memo(function MessageBubble({
   message,
   agentName,
   streamStartedAt,
@@ -1773,7 +1933,13 @@ function MessageBubble({
             <Label>{agentName}</Label>
             {meta && <span className="font-mono text-[10px] text-muted-foreground/50">{meta}</span>}
           </div>
-          <MarkdownContent content={message.content} />
+          {message.timestamp === 'streaming' ? (
+            <div className="border-l-2 border-accent/50 pl-3.5 text-sm leading-relaxed wrap-break-word whitespace-pre-wrap text-foreground">
+              {message.content}
+            </div>
+          ) : (
+            <MarkdownContent content={message.content} />
+          )}
         </div>
       )
     }
@@ -1857,4 +2023,4 @@ function MessageBubble({
     default:
       return null
   }
-}
+})
