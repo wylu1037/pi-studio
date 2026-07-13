@@ -32,6 +32,7 @@ import {
 } from 'lucide-react'
 import { Label, Tag, BracketButton, Panel, PanelHeader } from '@/components/pi-ui'
 import { MarkdownContent } from '@/components/markdown-content'
+import { WorkspaceExplorer } from '@/components/workspace-explorer'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Select,
@@ -1475,7 +1476,7 @@ export function ChatView({
 
       {/* RIGHT: context inspector */}
       {showActiveContext && (
-        <aside className="hidden w-72 shrink-0 flex-col border-l border-border bg-panel xl:flex">
+        <aside className="hidden w-80 shrink-0 flex-col border-l border-border bg-panel xl:flex">
           <div className="flex h-18 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
             <Label>Active context</Label>
             <button
@@ -1488,54 +1489,57 @@ export function ChatView({
               <PanelRightClose className="size-4" />
             </button>
           </div>
-          <div className="flex-1 space-y-4 overflow-auto p-4">
-            <Panel>
-              <PanelHeader>
-                <Label>Model</Label>
-              </PanelHeader>
-              <div className="space-y-2 p-3">
-                <Row icon={<Cpu className="size-3" />} label={activeModelName} />
-                <Row icon={<Brain className="size-3" />} label={`thinking · ${thinking}`} />
-                <Row
-                  icon={<Coins className="size-3" />}
-                  label={`${activeSession.totalTokens ?? 0} tokens`}
-                />
-              </div>
-            </Panel>
-            <Panel>
-              <PanelHeader>
-                <Label>Skills</Label>
-                <Tag>{skillNames.length}</Tag>
-              </PanelHeader>
-              <ul className="divide-y divide-border">
-                {skillNames.map((s) => (
-                  <li
-                    key={s}
-                    className="flex items-center gap-2 px-3 py-2 font-mono text-[11px] text-muted-foreground"
-                  >
-                    <Layers className="size-3 shrink-0 text-accent" />
-                    {s}
-                  </li>
-                ))}
-              </ul>
-            </Panel>
-            <Panel>
-              <PanelHeader>
-                <Label>MCP tools</Label>
-                <Tag>{mcpNames.length}</Tag>
-              </PanelHeader>
-              <ul className="divide-y divide-border">
-                {mcpNames.map((s) => (
-                  <li
-                    key={s}
-                    className="flex items-center gap-2 px-3 py-2 font-mono text-[11px] text-muted-foreground"
-                  >
-                    <Wrench className="size-3 shrink-0 text-accent" />
-                    {s}
-                  </li>
-                ))}
-              </ul>
-            </Panel>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
+              <Panel>
+                <PanelHeader>
+                  <Label>Model</Label>
+                </PanelHeader>
+                <div className="space-y-2 p-3">
+                  <Row icon={<Cpu className="size-3" />} label={activeModelName} />
+                  <Row icon={<Brain className="size-3" />} label={`thinking · ${thinking}`} />
+                  <Row
+                    icon={<Coins className="size-3" />}
+                    label={`${activeSession.totalTokens ?? 0} tokens`}
+                  />
+                </div>
+              </Panel>
+              <Panel>
+                <PanelHeader>
+                  <Label>Skills</Label>
+                  <Tag>{skillNames.length}</Tag>
+                </PanelHeader>
+                <ul className="divide-y divide-border">
+                  {skillNames.map((s) => (
+                    <li
+                      key={s}
+                      className="flex items-center gap-2 px-3 py-2 font-mono text-[11px] text-muted-foreground"
+                    >
+                      <Layers className="size-3 shrink-0 text-accent" />
+                      {s}
+                    </li>
+                  ))}
+                </ul>
+              </Panel>
+              <Panel>
+                <PanelHeader>
+                  <Label>MCP tools</Label>
+                  <Tag>{mcpNames.length}</Tag>
+                </PanelHeader>
+                <ul className="divide-y divide-border">
+                  {mcpNames.map((s) => (
+                    <li
+                      key={s}
+                      className="flex items-center gap-2 px-3 py-2 font-mono text-[11px] text-muted-foreground"
+                    >
+                      <Wrench className="size-3 shrink-0 text-accent" />
+                      {s}
+                    </li>
+                  ))}
+                </ul>
+              </Panel>
+            </div>
+            <WorkspaceExplorer sessionId={activeSession.id} />
           </div>
         </aside>
       )}
