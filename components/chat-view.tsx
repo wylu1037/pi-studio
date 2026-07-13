@@ -145,7 +145,11 @@ export function ChatView({
       .filter((provider) => enabledProviders.has(provider.id))
       .flatMap((provider) =>
         provider.models
-          .filter((model) => enabledModels.has(model.id))
+          .filter(
+            (model) =>
+              enabledModels.has(`${provider.id}::${model.id}`) ||
+              enabledModels.has(model.id),
+          )
           .map((model) => ({ provider, model })),
       )
   }, [activeAgent?.selectedModelIds, activeAgent?.selectedProviderIds, providers])
@@ -1056,16 +1060,29 @@ export function ChatView({
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
               <label className="flex items-center gap-1.5">
                 <Cpu className="size-3 text-muted-foreground" />
+                <input type="hidden" {...form.register("providerId")} />
+                <input type="hidden" {...form.register("modelId")} />
                 <select
-                  {...form.register("modelId")}
                   disabled={availableModelOptions.length === 0 || isRunningRun}
+                  value={
+                    selectedModelOption
+                      ? `${selectedModelOption.provider.id}::${selectedModelOption.model.id}`
+                      : ""
+                  }
                   onChange={(event) => {
                     const next = availableModelOptions.find(
-                      ({ model: candidate }) =>
-                        candidate.id === event.target.value,
+                      ({ provider, model: candidate }) =>
+                        `${provider.id}::${candidate.id}` === event.target.value,
                     );
-                    form.setValue("modelId", next?.model.id);
-                    form.setValue("providerId", next?.provider.id);
+                    if (!next) return;
+                    form.setValue("providerId", next.provider.id, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    });
+                    form.setValue("modelId", next.model.id, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    });
                   }}
                   className="bg-transparent font-mono text-[11px] text-muted-foreground outline-none hover:text-foreground"
                 >
@@ -1076,7 +1093,7 @@ export function ChatView({
                     ({ provider, model: candidate }) => (
                       <option
                         key={`${provider.id}:${candidate.id}`}
-                        value={candidate.id}
+                        value={`${provider.id}::${candidate.id}`}
                       >
                         {provider.name} / {candidate.name ?? candidate.id}
                       </option>

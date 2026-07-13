@@ -390,11 +390,8 @@ function ProviderDetail({
   const [showAddModel, setShowAddModel] = useState(false)
   const [editingModel, setEditingModel] = useState<GlobalModel | null>(null)
   const [showApiKey, setShowApiKey] = useState(false)
-  const [testResult, setTestResult] = useState<{
-    ok: boolean
-    status: string
-    message?: string
-  } | null>(null)
+  const [availableModels, setAvailableModels] = useState<Array<{ id: string; name: string }>>([])
+  const [loadingModels, setLoadingModels] = useState(false)
 
   const saveProvider = async (values: ProviderForm) => {
     try {
@@ -421,28 +418,38 @@ function ProviderDetail({
 
   const testProvider = async () => {
     setPending('test')
-    setTestResult(null)
     try {
       const result = await postApiModelProvidersIdTest(provider.id)
       if (result.status === 'connected' || result.status === 'error') {
         onProviderUpdate({ ...provider, status: result.status })
       }
-      setTestResult({
-        ok: result.ok,
-        status: result.status,
+      showToast({
+        tone: result.ok ? 'success' : 'error',
+        title: result.ok ? 'Connection successful' : 'Connection failed',
         message: result.message,
       })
     } catch (error) {
-      setTestResult({
-        ok: false,
-        status: 'error',
-        message:
-          error instanceof Error
-            ? error.message
-            : 'Connection test failed.',
-      })
+      showToast({ tone: 'error', title: 'Connection failed', message: errorMessage(error, 'Connection test failed.') })
     } finally {
       setPending(null)
+    }
+  }
+
+  const openAddModel = async () => {
+    setShowAddModel(true)
+    setLoadingModels(true)
+    try {
+      const response = await fetch(`/api/model-providers/${encodeURIComponent(provider.id)}/available-models`)
+      const body = (await response.json()) as Array<{ id: string; name: string }> | { error?: string }
+      if (!response.ok || !Array.isArray(body)) {
+        throw new Error(Array.isArray(body) ? 'Unable to load models.' : body.error)
+      }
+      setAvailableModels(body)
+    } catch (error) {
+      setAvailableModels([])
+      showToast({ tone: 'error', title: 'Unable to load models', message: errorMessage(error) })
+    } finally {
+      setLoadingModels(false)
     }
   }
 
@@ -543,16 +550,6 @@ function ProviderDetail({
           </ActionButton>
         </div>
       </div>
-      {testResult && (
-        <div className="flex items-center justify-between gap-3 border border-border bg-panel px-3 py-2">
-          <span className="font-mono text-xs text-foreground">
-            {testResult.message}
-          </span>
-          <Tag tone={testResult.ok ? 'success' : 'warning'}>
-            {testResult.status}
-          </Tag>
-        </div>
-      )}
 
       {/* Config */}
       <Panel className="p-4">
@@ -632,7 +629,7 @@ function ProviderDetail({
           <Label>Models</Label>
           <ActionButton
             variant="ghost"
-            onClick={() => setShowAddModel(true)}
+            onClick={() => void openAddModel()}
             disabled={pending === 'model:add'}
           >
             <Plus className="size-3.5" />
@@ -658,7 +655,7 @@ function ProviderDetail({
                 Add a model id before assigning this provider to agents.
               </p>
             </div>
-            <ActionButton onClick={() => setShowAddModel(true)}>
+            <ActionButton onClick={() => void openAddModel()}>
               <Plus className="size-3.5" />
               Add model
             </ActionButton>
@@ -750,6 +747,8 @@ function ProviderDetail({
       open={showAddModel}
       busy={pending === 'model:add'}
       mode="add"
+      availableModels={availableModels}
+      loadingModels={loadingModels}
       onCancel={() => setShowAddModel(false)}
       onSubmit={(model) => void upsertModel(model, 'add')}
     />
@@ -771,6 +770,8 @@ function ModelDialog({
   busy,
   mode,
   model,
+  availableModels = [],
+  loadingModels,
   onCancel,
   onSubmit,
 }: {
@@ -778,6 +779,8 @@ function ModelDialog({
   busy?: boolean
   mode: 'add' | 'edit'
   model?: GlobalModel
+  availableModels?: Array<{ id: string; name: string }>
+  loadingModels?: boolean
   onCancel: () => void
   onSubmit: (model: PostApiModelProvidersIdModelsMutationRequest) => void
 }) {
@@ -844,10 +847,26 @@ function ModelDialog({
         </div>
         <div className="space-y-4 p-4">
           <Config label="Model ID" error={errors.id?.message}>
-            <input
-              {...register('id')}
-              className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
-            />
+            {mode === 'add' && (loadingModels || availableModels.length > 0) ? (
+              <select
+                {...register('id')}
+                disabled={loadingModels}
+                className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring disabled:opacity-60"
+              >
+                <option value="">
+                  {loadingModels ? 'Loading models…' : 'Select a model'}
+                </option>
+                {availableModels.map((item) => (
+                  <option key={item.id} value={item.id}>{item.name === item.id ? item.id : `${item.name} · ${item.id}`}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                {...register('id')}
+                placeholder={mode === 'add' ? 'Enter model ID manually' : undefined}
+                className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+              />
+            )}
           </Config>
           <Config label="Display name">
             <input

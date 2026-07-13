@@ -34,6 +34,7 @@ import {
   duplicateSession,
   getAgent,
   getModelCapabilities,
+  getProvider,
   getRun,
   getSession,
   getSessionTree,
@@ -283,6 +284,51 @@ async function installSkillsShPackage(pkg: string) {
   }
 }
 
+async function fetchProviderModelCatalog(providerId: string) {
+  const provider = getProvider(providerId)
+  if (!provider) return null
+  const url = new URL(provider.baseUrl)
+  if (!url.pathname.replace(/\/$/, '').endsWith('/models')) {
+    url.pathname = `${url.pathname.replace(/\/$/, '')}/models`
+  }
+  const headers: Record<string, string> = {
+    accept: 'application/json',
+    ...JSON.parse(provider.headersJson || '{}'),
+  }
+  if (provider.apiKey) {
+    if (provider.api === 'anthropic-messages') {
+      headers['x-api-key'] = provider.apiKey
+      headers['anthropic-version'] ??= '2023-06-01'
+    } else if (provider.api === 'google-generative-ai') {
+      headers['x-goog-api-key'] = provider.apiKey
+    } else {
+      headers.authorization = `Bearer ${provider.apiKey}`
+    }
+  }
+  const response = await fetch(url, { headers, cache: 'no-store' })
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 300)
+    throw new Error(`Model catalog request failed (${response.status}): ${detail}`)
+  }
+  const payload = (await response.json()) as {
+    data?: Array<{ id?: string; name?: string; display_name?: string }>
+    models?: Array<{ id?: string; name?: string; displayName?: string }>
+  }
+  const entries = payload.data ?? payload.models ?? []
+  return Array.from(
+    new Map(
+      entries
+        .map((item) => {
+          const rawId = item.id ?? item.name
+          if (!rawId) return null
+          const id = rawId.replace(/^models\//, '')
+          return [id, { id, name: item.display_name ?? item.displayName ?? id }] as const
+        })
+        .filter((item): item is readonly [string, { id: string; name: string }] => item !== null),
+    ).values(),
+  ).sort((a, b) => a.id.localeCompare(b.id))
+}
+
 api.onError((error, c) => {
   console.error(error)
   return c.json(
@@ -301,6 +347,29 @@ api.doc('/openapi.json', {
     version: '0.1.0',
   },
 })
+
+api.openapi(
+  createRoute({
+    method: 'get',
+    path: '/model-providers/{id}/available-models',
+    tags: ['Models'],
+    request: { params: z.object({ id: z.string() }) },
+    responses: {
+      200: json(z.array(z.object({ id: z.string(), name: z.string() }))),
+      404: json(ErrorSchema),
+      502: json(ErrorSchema),
+    },
+  }),
+  async (c) => {
+    try {
+      const models = await fetchProviderModelCatalog(c.req.valid('param').id)
+      if (!models) return c.json({ error: 'Provider not found' }, 404)
+      return c.json(models)
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : 'Unable to load models.' }, 502)
+    }
+  },
+)
 
 api.openapi(
   createRoute({
