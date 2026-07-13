@@ -12,8 +12,11 @@ export const postApiPrompts200Schema = z.object({
     "id": z.string(),
 "name": z.string(),
 "description": z.optional(z.string()),
+"argumentHint": z.optional(z.string()),
 "content": z.string(),
 "path": z.string(),
+"source": z.enum(["studio", "global", "project", "package"]),
+"scope": z.enum(["global", "project"]),
 "tags": z.array(z.string()),
 "createdAt": z.string(),
 "updatedAt": z.string(),
@@ -34,8 +37,11 @@ export const postApiPromptsMutationRequestSchema = z.object({
     "id": z.optional(z.string()),
 "name": z.string().min(1),
 "description": z.optional(z.string()),
+"argumentHint": z.optional(z.string()),
 "content": z.string().min(1),
 "path": z.optional(z.string()),
+"source": z.optional(z.enum(["studio", "global", "project", "package"])),
+"scope": z.optional(z.enum(["global", "project"])),
 "tags": z.optional(z.array(z.string()))
     })
 

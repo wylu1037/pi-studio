@@ -51,6 +51,7 @@ import type {
   ChatMessageType,
   GlobalMcpConfig,
   GlobalModelProvider,
+  GlobalPromptTemplate,
   GlobalSkill,
   SessionTreeNode,
   TreeNodeRole,
@@ -92,6 +93,7 @@ export function ChatView({
   tree,
   providers,
   skills,
+  prompts,
   mcpConfigs,
 }: {
   activeAgent?: AgentProfile
@@ -101,6 +103,7 @@ export function ChatView({
   tree: SessionTreeNode | null
   providers: GlobalModelProvider[]
   skills: GlobalSkill[]
+  prompts: GlobalPromptTemplate[]
   mcpConfigs: GlobalMcpConfig[]
 }) {
   const router = useRouter()
@@ -124,6 +127,7 @@ export function ChatView({
   const shouldFollowMessagesRef = useRef(true)
   const [canScrollUp, setCanScrollUp] = useState(false)
   const [canScrollDown, setCanScrollDown] = useState(false)
+  const [slashSelection, setSlashSelection] = useState(0)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(() =>
     findCurrentTreeNodeId(tree),
   );
@@ -206,6 +210,29 @@ export function ChatView({
     const selected = new Set(activeAgent?.selectedSkillIds ?? [])
     return skills.filter((skill) => selected.has(skill.id)).map((skill) => skill.name)
   }, [activeAgent?.selectedSkillIds, skills])
+  const selectedPrompts = useMemo(() => {
+    const selected = new Set(activeAgent?.selectedPromptIds ?? [])
+    return prompts.filter((prompt) => selected.has(prompt.id))
+  }, [activeAgent?.selectedPromptIds, prompts])
+  const slashQuery = message.match(/^\/([^\s]*)$/)?.[1]?.toLowerCase()
+  const slashPromptOptions = slashQuery === undefined
+    ? []
+    : selectedPrompts
+        .filter(
+          (prompt) =>
+            prompt.name.toLowerCase().includes(slashQuery) ||
+            prompt.description?.toLowerCase().includes(slashQuery),
+        )
+        .slice(0, 8)
+
+  useEffect(() => {
+    setSlashSelection(0)
+  }, [slashQuery])
+
+  const insertPromptCommand = (prompt: GlobalPromptTemplate) => {
+    form.setValue('message', `/${prompt.name} `, { shouldDirty: true })
+    form.setFocus('message')
+  }
   const mcpNames = useMemo(() => {
     const selected = new Set(activeAgent?.selectedMcpConfigIds ?? [])
     return mcpConfigs.filter((mcp) => selected.has(mcp.id)).map((mcp) => mcp.name)
@@ -973,7 +1000,48 @@ export function ChatView({
 
         {/* composer */}
         <div className="border-t border-border bg-panel px-5 py-3">
-          <div className="mx-auto max-w-3xl">
+          <div className="relative mx-auto max-w-3xl">
+            {slashPromptOptions.length > 0 && (
+              <div className="absolute inset-x-0 bottom-full mb-2 overflow-hidden border border-border-strong bg-card shadow-xl">
+                <div className="flex items-center justify-between border-b border-border bg-panel px-4 py-2.5">
+                  <Label>Prompt templates</Label>
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    {slashPromptOptions.length} available
+                  </span>
+                </div>
+                <ul className="max-h-64 overflow-auto py-1 scrollbar-thin">
+                  {slashPromptOptions.map((prompt, index) => (
+                    <li key={prompt.id}>
+                      <button
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => insertPromptCommand(prompt)}
+                        className={cn(
+                          'flex w-full flex-col gap-1 border-l-2 border-transparent px-4 py-3 text-left transition-colors',
+                          index === slashSelection
+                            ? 'border-l-accent bg-accent/10'
+                            : 'hover:bg-muted/70',
+                        )}
+                      >
+                        <span className="flex min-w-0 items-baseline gap-2.5">
+                          <span className="shrink-0 font-mono text-[13px] font-medium leading-5 text-accent">
+                            /{prompt.name}
+                          </span>
+                          {prompt.argumentHint && (
+                            <span className="truncate font-mono text-[10px] leading-5 text-warning">
+                              {prompt.argumentHint}
+                            </span>
+                          )}
+                        </span>
+                        <span className="line-clamp-2 pl-0 text-[12px] leading-4 text-muted-foreground">
+                          {prompt.description || 'No description'}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <form
               onSubmit={submit}
               className="flex items-center gap-2.5 border border-border-strong bg-card p-2.5 focus-within:border-ring"
@@ -988,6 +1056,28 @@ export function ChatView({
               <textarea
                 {...form.register("message")}
                 onKeyDown={(e) => {
+                  if (slashPromptOptions.length > 0) {
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault()
+                      setSlashSelection((value) => (value + 1) % slashPromptOptions.length)
+                      return
+                    }
+                    if (e.key === 'ArrowUp') {
+                      e.preventDefault()
+                      setSlashSelection((value) => (value - 1 + slashPromptOptions.length) % slashPromptOptions.length)
+                      return
+                    }
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      insertPromptCommand(slashPromptOptions[slashSelection] ?? slashPromptOptions[0])
+                      return
+                    }
+                    if (e.key === 'Escape') {
+                      e.preventDefault()
+                      form.setValue('message', '')
+                      return
+                    }
+                  }
                   if (
                     e.key === "Enter" &&
                     !e.shiftKey &&

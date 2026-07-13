@@ -100,8 +100,11 @@ export const PromptSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string().optional(),
+  argumentHint: z.string().optional(),
   content: z.string(),
   path: z.string(),
+  source: z.enum(['studio', 'global', 'project', 'package']),
+  scope: z.enum(['global', 'project']),
   tags: z.array(z.string()),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -112,8 +115,11 @@ export const PromptInputSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1),
   description: z.string().optional(),
+  argumentHint: z.string().optional(),
   content: z.string().min(1),
   path: z.string().optional(),
+  source: z.enum(['studio', 'global', 'project', 'package']).default('studio'),
+  scope: z.enum(['global', 'project']).default('global'),
   tags: z.array(z.string()).default([]),
 })
 

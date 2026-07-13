@@ -92,6 +92,7 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
     modelProvider: provider,
     modelId: input.model,
     thinkingLevel: input.thinkingLevel,
+    promptPaths: input.prompts,
   })
   if (session.inner.sessionFile) {
     updateSessionFilePath(input.sessionId, session.inner.sessionFile)

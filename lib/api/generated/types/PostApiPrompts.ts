@@ -20,6 +20,7 @@ export type PostApiPrompts200 = {
      * @type string | undefined
     */
     description?: string;
+    argumentHint?: string;
     /**
      * @type string
     */
@@ -28,6 +29,8 @@ export type PostApiPrompts200 = {
      * @type string
     */
     path: string;
+    source: "studio" | "global" | "project" | "package";
+    scope: "global" | "project";
     /**
      * @type array
     */
@@ -73,6 +76,7 @@ export type PostApiPromptsMutationRequest = {
      * @type string | undefined
     */
     description?: string;
+    argumentHint?: string;
     /**
      * @minLength 1
      * @type string
@@ -82,6 +86,8 @@ export type PostApiPromptsMutationRequest = {
      * @type string | undefined
     */
     path?: string;
+    source?: "studio" | "global" | "project" | "package";
+    scope?: "global" | "project";
     /**
      * @type array | undefined
     */

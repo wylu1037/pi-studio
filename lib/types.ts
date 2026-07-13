@@ -27,8 +27,11 @@ export interface GlobalPromptTemplate {
   id: string
   name: string
   description?: string
+  argumentHint?: string
   content: string
   path: string
+  source: 'studio' | 'global' | 'project' | 'package'
+  scope: 'global' | 'project'
   tags: string[]
   createdAt: string
   updatedAt: string

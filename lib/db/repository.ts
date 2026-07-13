@@ -12,6 +12,11 @@ import type {
   GlobalSkill,
   SessionTreeNode,
 } from '@/lib/types'
+import {
+  ensureStoredPrompt,
+  removeStoredPrompt,
+  writeStoredPrompt,
+} from '@/lib/prompts/store'
 import { db, sqlite } from './client'
 import {
   agentMcpConfigs,
@@ -345,17 +350,34 @@ export function listPrompts(): GlobalPromptTemplate[] {
     .select()
     .from(globalPrompts)
     .all()
-    .map((prompt) => ({
-      id: prompt.id,
-      name: prompt.name,
-      description: prompt.description ?? undefined,
-      content: prompt.content,
-      path: prompt.path,
-      tags: tags('prompt_tags', 'prompt_id', prompt.id),
-      createdAt: prompt.createdAt,
-      updatedAt: prompt.updatedAt,
-      usedByAgents: count('agent_prompts', 'prompt_id', prompt.id),
-    }))
+    .map((prompt) => {
+      const path =
+        prompt.source === 'studio'
+          ? ensureStoredPrompt({
+              name: prompt.name,
+              description: prompt.description ?? undefined,
+              argumentHint: prompt.argumentHint ?? undefined,
+              content: prompt.content,
+            })
+          : prompt.path
+      if (path !== prompt.path) {
+        db.update(globalPrompts).set({ path }).where(eq(globalPrompts.id, prompt.id)).run()
+      }
+      return {
+        id: prompt.id,
+        name: prompt.name,
+        description: prompt.description ?? undefined,
+        argumentHint: prompt.argumentHint ?? undefined,
+        content: prompt.content,
+        path,
+        source: prompt.source as GlobalPromptTemplate['source'],
+        scope: prompt.scope as GlobalPromptTemplate['scope'],
+        tags: tags('prompt_tags', 'prompt_id', prompt.id),
+        createdAt: prompt.createdAt,
+        updatedAt: prompt.updatedAt,
+        usedByAgents: count('agent_prompts', 'prompt_id', prompt.id),
+      }
+    })
 }
 
 export function upsertPrompt(input: Partial<GlobalPromptTemplate> & { id?: string; name: string; content: string }) {
@@ -363,25 +385,46 @@ export function upsertPrompt(input: Partial<GlobalPromptTemplate> & { id?: strin
   const id = input.id ?? `pr-${randomUUID()}`
   const existing = db.select().from(globalPrompts).where(eq(globalPrompts.id, id)).get()
   if (existing) {
+    const path = writeStoredPrompt(
+      {
+        name: input.name,
+        description: input.description,
+        argumentHint: input.argumentHint,
+        content: input.content,
+      },
+      existing.path,
+    )
     db.update(globalPrompts)
       .set({
         name: input.name,
         description: input.description,
+        argumentHint: input.argumentHint,
         content: input.content,
-        path: input.path ?? existing.path,
+        path,
+        source: input.source ?? existing.source,
+        scope: input.scope ?? existing.scope,
         updatedAt: at,
       })
       .where(eq(globalPrompts.id, id))
       .run()
     db.delete(promptTags).where(eq(promptTags.promptId, id)).run()
   } else {
+    const path = writeStoredPrompt({
+      name: input.name,
+      description: input.description,
+      argumentHint: input.argumentHint,
+      content: input.content,
+    })
     db.insert(globalPrompts)
       .values({
         id,
         name: input.name,
         description: input.description,
+        argumentHint: input.argumentHint,
         content: input.content,
-        path: input.path ?? `~/.pi/prompts/${input.name}.md`,
+        path,
+        source: input.source ?? 'studio',
+        scope: input.scope ?? 'global',
         createdAt: at,
         updatedAt: at,
       })
@@ -392,6 +435,8 @@ export function upsertPrompt(input: Partial<GlobalPromptTemplate> & { id?: strin
 }
 
 export function deletePrompt(id: string) {
+  const prompt = db.select().from(globalPrompts).where(eq(globalPrompts.id, id)).get()
+  if (prompt) removeStoredPrompt(prompt.path)
   db.delete(globalPrompts).where(eq(globalPrompts.id, id)).run()
 }
 

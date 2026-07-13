@@ -6,6 +6,7 @@ import {
   listAgents,
   listMcpConfigs,
   listProviders,
+  listPrompts,
   listSessionMessages,
   listSessions,
   listSkills,
@@ -59,6 +60,7 @@ export default async function ChatPage({
       tree={tree}
       providers={listProviders()}
       skills={listSkills()}
+      prompts={listPrompts()}
       mcpConfigs={listMcpConfigs()}
     />
   )

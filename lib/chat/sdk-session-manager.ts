@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import {
   createAgentSessionFromServices,
   createAgentSessionServices,
@@ -19,6 +19,7 @@ class StudioAgentSession {
   constructor(
     readonly key: string,
     readonly inner: AgentSession,
+    readonly resourceSignature: string,
   ) {
     this.unsubscribe = inner.subscribe((event) => {
       this.touch()
@@ -84,12 +85,25 @@ export async function getOrCreateSdkSession(input: {
   modelProvider?: string
   modelId?: string
   thinkingLevel?: string
+  promptPaths?: string[]
 }) {
+  const resourceSignature = JSON.stringify(
+    [...(input.promptPaths ?? [])]
+      .sort()
+      .map((path) => {
+        try {
+          return [path, statSync(path).mtimeMs]
+        } catch {
+          return [path, 0]
+        }
+      }),
+  )
   const existing = sessions().get(input.studioSessionId)
-  if (existing?.isAlive()) {
+  if (existing?.isAlive() && existing.resourceSignature === resourceSignature) {
     existing.touch()
     return existing
   }
+  if (existing?.isAlive()) existing.destroy()
 
   const inflight = locks().get(input.studioSessionId)
   if (inflight) return inflight
@@ -102,6 +116,16 @@ export async function getOrCreateSdkSession(input: {
     const services = await createAgentSessionServices({
       cwd: input.cwd,
       agentDir: getAgentDir(),
+      resourceLoaderOptions: {
+        additionalPromptTemplatePaths: input.promptPaths ?? [],
+        promptsOverride: (base) => {
+          const selected = new Set(input.promptPaths ?? [])
+          return {
+            prompts: base.prompts.filter((prompt) => selected.has(prompt.filePath)),
+            diagnostics: base.diagnostics,
+          }
+        },
+      },
     })
     const model =
       input.modelProvider && input.modelId
@@ -135,7 +159,11 @@ export async function getOrCreateSdkSession(input: {
         error instanceof Error ? error.message : error,
       )
     }
-    const wrapped = new StudioAgentSession(input.studioSessionId, session)
+    const wrapped = new StudioAgentSession(
+      input.studioSessionId,
+      session,
+      resourceSignature,
+    )
     sessions().set(input.studioSessionId, wrapped)
     return wrapped
   })().finally(() => locks().delete(input.studioSessionId))

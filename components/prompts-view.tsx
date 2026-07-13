@@ -1,15 +1,17 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
-import { Search, Plus, Save, Trash2, Eye, Pencil, FileText } from 'lucide-react'
+import { Search, Plus, Save, Trash2, FileText, Eye, Pencil } from 'lucide-react'
 import type { GlobalPromptTemplate } from '@/lib/types'
 import { deleteApiPromptsId } from '@/lib/api/generated/clients/deleteApiPromptsId'
 import { postApiPrompts } from '@/lib/api/generated/clients/postApiPrompts'
 import type { PostApiPromptsMutationRequest } from '@/lib/api/generated/types/PostApiPrompts'
 import { postApiPromptsMutationRequestSchema } from '@/lib/api/generated/zod/postApiPromptsSchema'
 import { refreshAfterMutation } from '@/lib/api/refresh'
+import { errorMessage, showToast } from '@/lib/toast'
 import {
   ActionButton,
   ConfirmDialog,
@@ -18,6 +20,9 @@ import {
   TextInput,
 } from '@/components/pi-ui'
 import { cn } from '@/lib/utils'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Switch } from '@/components/ui/switch'
+import { MarkdownContent } from '@/components/markdown-content'
 
 function promptDefaults(
   prompt?: GlobalPromptTemplate,
@@ -26,13 +31,17 @@ function promptDefaults(
     id: prompt?.id,
     name: prompt?.name ?? '',
     description: prompt?.description ?? '',
+    argumentHint: prompt?.argumentHint ?? '',
     content: prompt?.content ?? '',
     path: prompt?.path,
+    source: prompt?.source ?? 'studio',
+    scope: prompt?.scope ?? 'global',
     tags: prompt?.tags ?? [],
   }
 }
 
 export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
+  const router = useRouter()
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState(prompts[0]?.id)
   const [mode, setMode] = useState<'edit' | 'preview'>('edit')
@@ -56,21 +65,47 @@ export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
   const createPrompt = async () => {
     setPending('new')
     try {
+      const names = new Set(prompts.map((prompt) => prompt.name))
+      let name = 'new-prompt'
+      let suffix = 2
+      while (names.has(name)) name = `new-prompt-${suffix++}`
       await postApiPrompts({
-        name: 'New prompt',
+        name,
         description: '',
+        argumentHint: '',
         content: 'Write your reusable prompt here.',
+        source: 'studio',
+        scope: 'global',
         tags: [],
       })
-      refreshAfterMutation()
+      refreshAfterMutation(`Prompt /${name} created.`)
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        title: 'Unable to create prompt',
+        message: errorMessage(error),
+      })
     } finally {
       setPending(null)
     }
   }
 
   const savePrompt = async (values: PostApiPromptsMutationRequest) => {
-    await postApiPrompts(values)
-    refreshAfterMutation()
+    try {
+      const updated = await postApiPrompts(values)
+      showToast({
+        tone: 'success',
+        message: `Prompt /${updated.name} saved.`,
+      })
+      form.reset(values)
+      router.refresh()
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        title: 'Unable to save prompt',
+        message: errorMessage(error),
+      })
+    }
   }
 
   const deletePrompt = async () => {
@@ -93,8 +128,7 @@ export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
             Prompts
           </h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            Reusable prompt templates. Enable them per-agent from the agent
-            config.
+            Pi prompt templates invoked with slash commands and enabled per agent.
           </p>
         </div>
       </div>
@@ -123,13 +157,14 @@ export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
               <Plus className="size-3.5" />
             </ActionButton>
           </div>
-          <ul className="flex-1 overflow-y-auto scrollbar-thin">
-            {filtered.length === 0 ? (
-              <li className="px-4 py-12 text-center font-mono text-xs text-muted-foreground">
-                No prompts match your filters
-              </li>
-            ) : filtered.map((p) => (
-              <li key={p.id}>
+          <ScrollArea className="min-h-0 flex-1" viewportClassName="pr-3">
+            <ul>
+              {filtered.length === 0 ? (
+                <li className="px-4 py-12 text-center font-mono text-xs text-muted-foreground">
+                  No prompts match your filters
+                </li>
+              ) : filtered.map((p) => (
+                <li key={p.id}>
                 <button
                   type="button"
                   onClick={() => setSelectedId(p.id)}
@@ -148,7 +183,7 @@ export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
                         : 'text-foreground',
                     )}
                   >
-                    {p.name}
+                    /{p.name}
                   </span>
                   <span className="line-clamp-1 text-xs text-muted-foreground">
                     {p.description}
@@ -161,9 +196,10 @@ export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
                     ))}
                   </div>
                 </button>
-              </li>
-            ))}
-          </ul>
+                </li>
+              ))}
+            </ul>
+          </ScrollArea>
         </div>
 
         {/* Editor */}
@@ -175,40 +211,32 @@ export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
             <div className="flex items-center justify-between border-b border-border bg-panel px-4 py-2.5">
               <input
                 {...form.register('name')}
+                aria-label="Prompt command name"
                 className="border-none bg-transparent font-mono text-sm text-foreground outline-none"
               />
               <div className="flex items-center gap-2">
-                <div className="flex border border-border-strong">
-                  <button
-                    type="button"
-                    onClick={() => setMode('edit')}
-                    className={cn(
-                      'flex items-center gap-1.5 px-2.5 py-1 font-mono text-[11px] uppercase tracking-wider',
-                      mode === 'edit'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:bg-muted',
-                    )}
-                  >
-                    <Pencil className="size-3" />
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMode('preview')}
-                    className={cn(
-                      'flex items-center gap-1.5 px-2.5 py-1 font-mono text-[11px] uppercase tracking-wider',
+                <div className="flex h-8 items-center">
+                  <Switch
+                    checked={mode === 'preview'}
+                    onCheckedChange={(checked) =>
+                      setMode(checked ? 'preview' : 'edit')
+                    }
+                    icons={{
+                      unchecked: <Pencil className="size-3.5" />,
+                      checked: <Eye className="size-3.5" />,
+                    }}
+                    aria-label={
                       mode === 'preview'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:bg-muted',
-                    )}
-                  >
-                    <Eye className="size-3" />
-                    Preview
-                  </button>
+                        ? 'Switch to prompt editor'
+                        : 'Switch to prompt preview'
+                    }
+                    title={mode === 'preview' ? 'Preview mode' : 'Edit mode'}
+                  />
                 </div>
                 <ActionButton
                   variant="accent"
                   type="submit"
+                  className="h-8 py-0"
                   disabled={form.formState.isSubmitting}
                 >
                   <Save className="size-3.5" />
@@ -216,6 +244,7 @@ export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
                 </ActionButton>
                 <ActionButton
                   variant="danger"
+                  className="size-8 p-0"
                   title="Delete"
                   onClick={() => setConfirmDelete(true)}
                   disabled={pending === 'delete' || form.formState.isSubmitting}
@@ -225,26 +254,46 @@ export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
               </div>
             </div>
 
-            <div className="grid flex-1 grid-cols-[1fr_260px] overflow-hidden">
-              <div className="overflow-y-auto scrollbar-thin p-4">
+            <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_260px] overflow-hidden">
+              <ScrollArea
+                className="h-full min-h-0"
+                viewportClassName="p-4 pr-6"
+                contentClassName="h-full"
+              >
                 {mode === 'edit' ? (
                   <textarea
                     {...form.register('content')}
-                    className="h-full min-h-[420px] w-full resize-none border border-input bg-panel p-4 font-mono text-[13px] leading-relaxed text-foreground outline-none focus:border-ring"
+                    className="h-full min-h-0 w-full resize-none border border-input bg-panel p-4 font-mono text-[13px] leading-relaxed text-foreground outline-none focus:border-ring"
                   />
                 ) : (
-                  <div className="prose-preview whitespace-pre-wrap border border-border bg-panel p-4 font-mono text-[13px] leading-relaxed text-foreground">
-                    {content}
+                  <div className="min-h-full border border-border bg-panel p-5">
+                    {content.trim() ? (
+                      <MarkdownContent content={content} accentBorder={false} />
+                    ) : (
+                      <p className="font-mono text-[12px] text-muted-foreground">
+                        Nothing to preview.
+                      </p>
+                    )}
                   </div>
                 )}
-              </div>
+              </ScrollArea>
 
               <div className="border-l border-border p-4">
+                <Label className="mb-2 block">Command</Label>
+                <div className="mb-4 border border-border bg-panel px-3 py-2 font-mono text-[12px] text-accent">
+                  /{form.watch('name') || 'prompt'} {form.watch('argumentHint')}
+                </div>
                 <Label className="mb-2 block">Description</Label>
                 <textarea
                   {...form.register('description')}
                   rows={3}
                   className="mb-4 w-full resize-none border border-input bg-panel px-3 py-2 text-[13px] text-foreground outline-none focus:border-ring"
+                />
+                <Label className="mb-2 block">Argument hint</Label>
+                <input
+                  {...form.register('argumentHint')}
+                  placeholder="[focus] or <file>"
+                  className="mb-4 w-full border border-input bg-panel px-3 py-2 font-mono text-[13px] text-foreground outline-none focus:border-ring"
                 />
                 <Label className="mb-2 block">Tags</Label>
                 <input
@@ -257,6 +306,22 @@ export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
                   })}
                   className="mb-4 w-full border border-input bg-panel px-3 py-2 font-mono text-[13px] text-foreground outline-none focus:border-ring"
                 />
+                <div className="mb-4 grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="mb-2 block">Source</Label>
+                    <input type="hidden" {...form.register('source')} />
+                    <div className="border border-border bg-panel px-2 py-2 font-mono text-[11px] text-muted-foreground">
+                      {form.watch('source')}
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="mb-2 block">Scope</Label>
+                    <select {...form.register('scope')} className="w-full border border-input bg-panel px-2 py-2 font-mono text-[11px] text-foreground outline-none focus:border-ring">
+                      <option value="global">Global</option>
+                      <option value="project">Project</option>
+                    </select>
+                  </div>
+                </div>
                 <Label className="mb-2 block">Path</Label>
                 <code className="mb-4 block break-all font-mono text-[11px] text-muted-foreground">
                   {selected.path}

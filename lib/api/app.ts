@@ -719,9 +719,16 @@ api.openapi(
     responses: { 200: json(PromptSchema), 400: json(ErrorSchema) },
   }),
   (c) => {
-    const prompt = upsertPrompt(c.req.valid('json'))
-    if (!prompt) return c.json({ error: 'Unable to save prompt' }, 400)
-    return c.json(prompt)
+    try {
+      const prompt = upsertPrompt(c.req.valid('json'))
+      if (!prompt) return c.json({ error: 'Unable to save prompt' }, 400)
+      return c.json(prompt)
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : 'Unable to save prompt' },
+        400,
+      )
+    }
   },
 )
 

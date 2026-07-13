@@ -18,10 +18,27 @@ type MarkdownBlock =
 const blockStartPattern = /^(#{1,6}\s+|```|>\s?|[-*]\s+|\d+\.\s+|---+\s*$)/
 const inlinePattern = /(\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_)/g
 
-export function MarkdownContent({ content }: { content: string }) {
+const headingClasses: Record<number, string> = {
+  1: 'text-xl font-semibold leading-tight tracking-tight text-foreground',
+  2: 'text-lg font-semibold leading-tight tracking-tight text-foreground',
+  3: 'text-base font-semibold leading-snug text-foreground',
+  4: 'text-sm font-semibold leading-snug text-foreground',
+  5: 'text-[12px] font-semibold leading-snug uppercase tracking-wide text-foreground/85',
+  6: 'text-[11px] font-medium leading-snug uppercase tracking-wider text-muted-foreground',
+}
+
+export function MarkdownContent({
+  content,
+  accentBorder = true,
+}: {
+  content: string
+  accentBorder?: boolean
+}) {
   const blocks = parseMarkdown(content)
   return (
-    <div className="min-w-0 max-w-full space-y-3 overflow-hidden border-l-2 border-accent/50 pl-3.5 text-sm leading-relaxed text-foreground wrap-break-word">
+    <div
+      className={`min-w-0 max-w-full space-y-3 overflow-hidden text-sm leading-relaxed text-foreground wrap-break-word ${accentBorder ? 'border-l-2 border-accent/50 pl-3.5' : ''}`}
+    >
       {blocks.map((block, index) => renderBlock(block, index))}
     </div>
   );
@@ -164,7 +181,7 @@ function renderBlock(block: MarkdownBlock, key: number) {
           key={key}
           role="heading"
           aria-level={level}
-          className="font-mono text-[13px] font-semibold leading-snug text-foreground"
+          className={`pt-1 font-mono first:pt-0 ${headingClasses[level]}`}
         >
           {renderInline(block.content)}
         </div>

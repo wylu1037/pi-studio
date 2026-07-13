@@ -58,8 +58,11 @@ export const globalPrompts = sqliteTable('global_prompts', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   description: text('description'),
+  argumentHint: text('argument_hint'),
   content: text('content').notNull(),
   path: text('path').notNull(),
+  source: text('source').notNull().default('studio'),
+  scope: text('scope').notNull().default('global'),
   ...timestamps,
 })
 
