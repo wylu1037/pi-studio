@@ -15,6 +15,13 @@ import { errorMessage, showToast } from '@/lib/toast'
 import { ActionButton, ConfirmDialog, Label, Tag, TextInput } from '@/components/pi-ui'
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { MarkdownContent } from '@/components/markdown-content'
 
@@ -299,13 +306,26 @@ export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
                     </div>
                     <div>
                       <Label className="mb-2 block">Scope</Label>
-                      <select
-                        {...form.register('scope')}
-                        className="w-full border border-input bg-panel px-2 py-2 font-mono text-[11px] text-foreground outline-none focus:border-ring"
+                      <input type="hidden" {...form.register('scope')} />
+                      <Select
+                        value={form.watch('scope')}
+                        onValueChange={(value) => {
+                          if (value === 'global' || value === 'project') {
+                            form.setValue('scope', value, {
+                              shouldDirty: true,
+                              shouldValidate: true,
+                            })
+                          }
+                        }}
                       >
-                        <option value="global">Global</option>
-                        <option value="project">Project</option>
-                      </select>
+                        <SelectTrigger className="w-full text-[11px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent align="start">
+                          <SelectItem value="global">Global</SelectItem>
+                          <SelectItem value="project">Project</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                   <Label className="mb-2 block">Path</Label>

@@ -33,6 +33,13 @@ import {
 import { Label, Tag, BracketButton, Panel, PanelHeader } from '@/components/pi-ui'
 import { MarkdownContent } from '@/components/markdown-content'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { getApiRunsId } from '@/lib/api/generated/clients/getApiRunsId'
 import { postApiRunsIdAbort } from '@/lib/api/generated/clients/postApiRunsIdAbort'
 import { postApiSessions } from '@/lib/api/generated/clients/postApiSessions'
@@ -293,6 +300,20 @@ export function ChatView({
     } finally {
       setCreatingSession(false)
     }
+  }
+
+  const switchSession = (sessionId: string) => {
+    if (
+      !activeAgent ||
+      sessionId === activeSession?.id ||
+      streamPhase !== 'idle' ||
+      creatingSession ||
+      branchPending !== null
+    )
+      return
+    router.push(
+      `/chat?agent=${encodeURIComponent(activeAgent.id)}&session=${encodeURIComponent(sessionId)}`,
+    )
   }
 
   const slashQuery = message.match(/^\/([^\s]*)$/)?.[1]?.toLowerCase()
@@ -993,9 +1014,34 @@ export function ChatView({
             </span>
             <div className="min-w-0">
               <div className="truncate text-sm font-medium text-foreground">{activeAgent.name}</div>
-              <div className="truncate font-mono text-[11px] text-muted-foreground">
-                {activeSession.name ?? activeSession.firstUserMessage ?? 'New conversation'}
-              </div>
+              <Select
+                value={activeSession.id}
+                onValueChange={(value) => {
+                  if (value !== null) switchSession(value)
+                }}
+                disabled={streamPhase !== 'idle' || creatingSession || branchPending !== null}
+              >
+                <SelectTrigger
+                  aria-label="Switch session"
+                  size="sm"
+                  className="h-5 max-w-[40vw] border-0 bg-transparent px-0 py-0 text-[11px] text-muted-foreground hover:text-foreground focus-visible:ring-0 sm:max-w-80"
+                >
+                  <SelectValue>
+                    {activeSession.name ?? activeSession.firstUserMessage ?? 'New conversation'}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent
+                  align="start"
+                  alignItemWithTrigger={false}
+                  className="w-max max-w-[calc(100vw-2rem)] min-w-(--anchor-width) sm:max-w-lg"
+                >
+                  {sessions.map((session) => (
+                    <SelectItem key={session.id} value={session.id}>
+                      {session.name ?? session.firstUserMessage ?? 'New conversation'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <div className="flex items-center gap-1.5">
@@ -1301,17 +1347,18 @@ export function ChatView({
                   <Cpu className="size-3 text-muted-foreground" />
                   <input type="hidden" {...form.register('providerId')} />
                   <input type="hidden" {...form.register('modelId')} />
-                  <select
+                  <Select
                     disabled={availableModelOptions.length === 0 || isRunningRun}
                     value={
                       selectedModelOption
                         ? `${selectedModelOption.provider.id}::${selectedModelOption.model.id}`
-                        : ''
+                        : null
                     }
-                    onChange={(event) => {
+                    onValueChange={(value) => {
+                      if (value === null) return
                       const next = availableModelOptions.find(
                         ({ provider, model: candidate }) =>
-                          `${provider.id}::${candidate.id}` === event.target.value,
+                          `${provider.id}::${candidate.id}` === value,
                       )
                       if (!next) return
                       form.setValue('providerId', next.provider.id, {
@@ -1323,33 +1370,70 @@ export function ChatView({
                         shouldValidate: true,
                       })
                     }}
-                    className="bg-transparent font-mono text-[11px] text-muted-foreground outline-none hover:text-foreground"
                   >
-                    {availableModelOptions.length === 0 && (
-                      <option value="">No enabled models</option>
-                    )}
-                    {availableModelOptions.map(({ provider, model: candidate }) => (
-                      <option
-                        key={`${provider.id}:${candidate.id}`}
-                        value={`${provider.id}::${candidate.id}`}
-                      >
-                        {provider.name} / {candidate.name ?? candidate.id}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger
+                      size="sm"
+                      className="h-6 max-w-[45vw] border-0 bg-transparent px-0 py-0 text-[11px] text-muted-foreground hover:text-foreground focus-visible:ring-0 sm:max-w-72"
+                    >
+                      <SelectValue>
+                        {selectedModelOption
+                          ? `${selectedModelOption.provider.name} / ${selectedModelOption.model.name ?? selectedModelOption.model.id}`
+                          : 'No enabled models'}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent
+                      align="start"
+                      alignItemWithTrigger={false}
+                      className="w-max max-w-[calc(100vw-2rem)] min-w-(--anchor-width) sm:max-w-lg"
+                    >
+                      {availableModelOptions.map(({ provider, model: candidate }) => (
+                        <SelectItem
+                          key={`${provider.id}:${candidate.id}`}
+                          value={`${provider.id}::${candidate.id}`}
+                        >
+                          {provider.name} / {candidate.name ?? candidate.id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </label>
                 <label className="flex items-center gap-1.5">
                   <Brain className="size-3 text-muted-foreground" />
-                  <select
-                    {...form.register('thinkingLevel')}
-                    className="bg-transparent font-mono text-[11px] text-muted-foreground outline-none hover:text-foreground"
+                  <input type="hidden" {...form.register('thinkingLevel')} />
+                  <Select
+                    value={thinking}
+                    onValueChange={(value) => {
+                      if (
+                        value !== null &&
+                        thinkingLevels.includes(value as (typeof thinkingLevels)[number])
+                      ) {
+                        form.setValue('thinkingLevel', value as (typeof thinkingLevels)[number], {
+                          shouldDirty: true,
+                          shouldValidate: true,
+                        })
+                      }
+                    }}
                   >
-                    {thinkingLevels.map((t) => (
-                      <option key={t} value={t}>
-                        thinking: {t}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger
+                      size="sm"
+                      className="h-6 max-w-[40vw] border-0 bg-transparent px-0 py-0 text-[11px] text-muted-foreground hover:text-foreground focus-visible:ring-0 sm:max-w-56"
+                    >
+                      <SelectValue>
+                        {(value) => `thinking: ${String(value ?? thinking)}`}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent
+                      align="start"
+                      alignItemWithTrigger={false}
+                      className="w-max max-w-[calc(100vw-2rem)] min-w-(--anchor-width) sm:max-w-sm"
+                    >
+                      {thinkingLevels.map((t) => (
+                        <SelectItem key={t} value={t}>
+                          thinking: {t}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </label>
                 <span className="ml-auto font-mono text-[11px] text-muted-foreground/60">
                   {activeSession.cwd}

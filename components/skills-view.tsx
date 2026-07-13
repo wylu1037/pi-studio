@@ -37,6 +37,13 @@ import {
   Tag,
   TextInput,
 } from '@/components/pi-ui'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 const sourceTone: Record<SkillSource, 'accent' | 'default' | 'outline'> = {
   'skills.sh': 'accent',
@@ -442,6 +449,8 @@ export function SkillsView({ agents, skills }: { agents: AgentProfile[]; skills:
 function SkillEditor({ skill, onClose }: { skill: GlobalSkill | null; onClose: () => void }) {
   const {
     register,
+    setValue,
+    watch,
     handleSubmit,
     formState: { isSubmitting, errors },
   } = useForm<PostApiSkillsMutationRequest>({
@@ -509,15 +518,27 @@ function SkillEditor({ skill, onClose }: { skill: GlobalSkill | null; onClose: (
           </EditorField>
           <div className="grid gap-3 sm:grid-cols-2">
             <EditorField label="Source">
-              <select
-                {...register('source')}
-                className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+              <input type="hidden" {...register('source')} />
+              <Select
+                value={watch('source')}
+                onValueChange={(value) => {
+                  if (value === null) return
+                  setValue('source', value as SkillSource, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                }}
               >
-                <option value="manual">manual</option>
-                <option value="skills.sh">skills.sh</option>
-                <option value="local">local</option>
-                <option value="git">git</option>
-              </select>
+                <SelectTrigger className="w-full text-[13px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="start">
+                  <SelectItem value="manual">manual</SelectItem>
+                  <SelectItem value="skills.sh">skills.sh</SelectItem>
+                  <SelectItem value="local">local</SelectItem>
+                  <SelectItem value="git">git</SelectItem>
+                </SelectContent>
+              </Select>
             </EditorField>
             <EditorField label="Version">
               <input

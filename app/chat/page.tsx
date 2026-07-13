@@ -2,6 +2,7 @@ import { ChatView } from '@/components/chat-view'
 import {
   createSession,
   getAgent,
+  getSession,
   getSessionTree,
   listAgents,
   listMcpConfigs,
@@ -21,14 +22,14 @@ export default async function ChatPage({
 }) {
   const params = await searchParams
   const agents = listAgents()
-  const activeAgent = getAgent(params.agent ?? agents[0]?.id) ?? agents[0]
+  const requestedSession = params.session ? getSession(params.session) : undefined
+  const activeAgent =
+    getAgent(requestedSession?.agentId ?? params.agent ?? agents[0]?.id) ?? agents[0]
   let sessions = activeAgent ? listSessions({ agentId: activeAgent.id }) : []
   const { hydrateSessionSummariesFromSdk, readSdkSessionContext, readSdkSessionTree } =
     await import('@/lib/chat/session-branches')
   sessions = hydrateSessionSummariesFromSdk(sessions)
-  let activeSession = params.session
-    ? sessions.find((session) => session.id === params.session)
-    : sessions[0]
+  let activeSession = sessions.find((session) => session.id === requestedSession?.id) ?? sessions[0]
 
   if (activeAgent && !activeSession) {
     const created = createSession({
@@ -53,6 +54,7 @@ export default async function ChatPage({
 
   return (
     <ChatView
+      key={`${activeAgent?.id ?? 'none'}:${activeSession?.id ?? 'none'}`}
       activeAgent={activeAgent}
       sessions={sessions}
       activeSession={activeSession}

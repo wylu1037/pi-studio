@@ -31,6 +31,13 @@ import { postApiModelProvidersIdModelsMutationRequestSchema } from '@/lib/api/ge
 import { refreshAfterMutation } from '@/lib/api/refresh'
 import { errorMessage, showToast } from '@/lib/toast'
 import { ActionButton, ConfirmDialog, Label, PageHeader, Panel, Tag } from '@/components/pi-ui'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 
 const providerFormSchema = z.object({
@@ -534,16 +541,33 @@ function ProviderDetail({
               />
             </Config>
             <Config label="API type">
-              <select
-                {...register('api')}
-                className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
-              >
-                {providerApis.map((api) => (
-                  <option key={api} value={api}>
-                    {api}
-                  </option>
-                ))}
-              </select>
+              <Controller
+                control={control}
+                name="api"
+                render={({ field }) => (
+                  <Select
+                    value={field.value}
+                    onValueChange={(value) => {
+                      if (value !== null) field.onChange(value)
+                    }}
+                  >
+                    <SelectTrigger
+                      ref={field.ref}
+                      onBlur={field.onBlur}
+                      className="w-full text-[13px]"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent align="start">
+                      {providerApis.map((api) => (
+                        <SelectItem key={api} value={api}>
+                          {api}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
             </Config>
             <Config label="API key">
               <div className="flex border border-input bg-panel focus-within:border-ring">
@@ -747,6 +771,7 @@ function ModelDialog({
   onSubmit: (model: PostApiModelProvidersIdModelsMutationRequest) => void
 }) {
   const {
+    control,
     register,
     handleSubmit,
     formState: { errors },
@@ -805,18 +830,34 @@ function ModelDialog({
         <div className="space-y-4 p-4">
           <Config label="Model ID" error={errors.id?.message}>
             {mode === 'add' && (loadingModels || availableModels.length > 0) ? (
-              <select
-                {...register('id')}
-                disabled={loadingModels}
-                className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring disabled:opacity-60"
-              >
-                <option value="">{loadingModels ? 'Loading models…' : 'Select a model'}</option>
-                {availableModels.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name === item.id ? item.id : `${item.name} · ${item.id}`}
-                  </option>
-                ))}
-              </select>
+              <Controller
+                control={control}
+                name="id"
+                render={({ field }) => (
+                  <Select
+                    value={field.value || null}
+                    onValueChange={(value) => field.onChange(value ?? '')}
+                    disabled={loadingModels}
+                  >
+                    <SelectTrigger
+                      ref={field.ref}
+                      onBlur={field.onBlur}
+                      className="w-full text-[13px]"
+                    >
+                      <SelectValue
+                        placeholder={loadingModels ? 'Loading models…' : 'Select a model'}
+                      />
+                    </SelectTrigger>
+                    <SelectContent align="start">
+                      {availableModels.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {item.name === item.id ? item.id : `${item.name} · ${item.id}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
             ) : (
               <input
                 {...register('id')}

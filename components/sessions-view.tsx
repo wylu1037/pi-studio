@@ -1,7 +1,6 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Search,
@@ -34,6 +33,13 @@ import { postApiSessionsIdDuplicate } from '@/lib/api/generated/clients/postApiS
 import { refreshAfterMutation } from '@/lib/api/refresh'
 import { errorMessage, showToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 function agentName(agents: AgentProfile[], agentId: string) {
   return agents.find((a) => a.id === agentId)?.name ?? agentId
@@ -204,33 +210,45 @@ export function SessionsView({
         />
         <div className="flex items-center gap-1.5">
           <Label>Agent</Label>
-          <select
+          <Select
             value={agentFilter}
-            onChange={(e) => setAgentFilter(e.target.value)}
-            className="border border-input bg-panel px-2 py-1.5 font-mono text-xs text-foreground outline-none focus:border-ring"
+            onValueChange={(value) => {
+              if (value !== null) setAgentFilter(value)
+            }}
           >
-            <option value="all">all</option>
-            {agents.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger size="sm" className="min-w-28">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="start">
+              <SelectItem value="all">all</SelectItem>
+              {agents.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="flex items-center gap-1.5">
           <Label>Tag</Label>
-          <select
+          <Select
             value={tagFilter}
-            onChange={(e) => setTagFilter(e.target.value)}
-            className="border border-input bg-panel px-2 py-1.5 font-mono text-xs text-foreground outline-none focus:border-ring"
+            onValueChange={(value) => {
+              if (value !== null) setTagFilter(value)
+            }}
           >
-            <option value="all">all</option>
-            {allTags.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger size="sm" className="min-w-24">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="start">
+              <SelectItem value="all">all</SelectItem>
+              {allTags.map((t) => (
+                <SelectItem key={t} value={t}>
+                  {t}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <span className="ml-auto font-mono text-xs text-muted-foreground">
           {filtered.length} / {sessions.length} sessions
@@ -465,15 +483,18 @@ export function SessionsView({
               </div>
 
               <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
-                <Link
-                  href={`/chat?agent=${selected.agentId}&session=${selected.id}`}
+                <ActionButton
+                  variant="accent"
                   className="flex-1"
+                  onClick={() =>
+                    router.push(
+                      `/chat?agent=${encodeURIComponent(selected.agentId)}&session=${encodeURIComponent(selected.id)}`,
+                    )
+                  }
                 >
-                  <ActionButton variant="accent" className="w-full">
-                    <Play className="size-3.5" />
-                    Resume
-                  </ActionButton>
-                </Link>
+                  <Play className="size-3.5" />
+                  Resume
+                </ActionButton>
                 <ActionButton title="Open in new window">
                   <ExternalLink className="size-3.5" />
                 </ActionButton>
@@ -547,21 +568,26 @@ export function SessionsView({
             <div className="space-y-4 px-5 py-5">
               <label className="block space-y-2">
                 <Label>Agent</Label>
-                <select
+                <Select
                   value={newAgentId}
-                  onChange={(event) => {
-                    const agent = agents.find((item) => item.id === event.target.value)
-                    setNewAgentId(event.target.value)
+                  onValueChange={(value) => {
+                    if (value === null) return
+                    const agent = agents.find((item) => item.id === value)
+                    setNewAgentId(value)
                     setNewSessionCwd(agent?.defaultCwd ?? '')
                   }}
-                  className="w-full border border-input bg-panel px-3 py-2.5 text-sm text-foreground transition-colors outline-none focus:border-ring"
                 >
-                  {agents.map((agent) => (
-                    <option key={agent.id} value={agent.id}>
-                      {agent.name}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="start">
+                    {agents.map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        {agent.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </label>
 
               <label className="block space-y-2">
