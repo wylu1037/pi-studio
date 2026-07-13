@@ -15,6 +15,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   const { id } = await params
   const agent = getAgent(id)
   if (!agent) notFound()
+  const { hydrateSessionSummariesFromSdk } = await import('@/lib/chat/session-branches')
   return (
     <AgentDetail
       agent={agent}
@@ -22,7 +23,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
       prompts={listPrompts()}
       mcpConfigs={listMcpConfigs()}
       providers={listProviders()}
-      sessions={listSessions({ agentId: agent.id })}
+      sessions={hydrateSessionSummariesFromSdk(listSessions({ agentId: agent.id }))}
     />
   )
 }

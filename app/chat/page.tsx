@@ -23,6 +23,9 @@ export default async function ChatPage({
   const agents = listAgents()
   const activeAgent = getAgent(params.agent ?? agents[0]?.id) ?? agents[0]
   let sessions = activeAgent ? listSessions({ agentId: activeAgent.id }) : []
+  const { hydrateSessionSummariesFromSdk, readSdkSessionContext, readSdkSessionTree } =
+    await import('@/lib/chat/session-branches')
+  sessions = hydrateSessionSummariesFromSdk(sessions)
   let activeSession = params.session
     ? sessions.find((session) => session.id === params.session)
     : sessions[0]
@@ -42,8 +45,6 @@ export default async function ChatPage({
   let messages = activeSession ? listSessionMessages(activeSession.id) : []
   let tree = activeSession ? getSessionTree(activeSession.id) : null
   if (activeSession) {
-    const { readSdkSessionContext, readSdkSessionTree } =
-      await import('@/lib/chat/session-branches')
     const sdkTree = readSdkSessionTree(activeSession.filePath)
     const sdkContext = readSdkSessionContext(activeSession.filePath)
     tree = sdkTree?.roots[0] ?? tree

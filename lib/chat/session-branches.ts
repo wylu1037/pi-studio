@@ -5,7 +5,7 @@ import {
   type SessionEntry,
   type SessionTreeNode as PiSessionTreeNode,
 } from '@earendil-works/pi-coding-agent'
-import type { ChatMessage, SessionTreeNode } from '@/lib/types'
+import type { AgentSessionSummary, ChatMessage, SessionTreeNode } from '@/lib/types'
 
 function textContent(value: unknown): string {
   if (typeof value === 'string') return value
@@ -59,36 +59,84 @@ function mapTreeNode(node: PiSessionTreeNode, leafId: string | null): SessionTre
 function mapMessage(
   message: ReturnType<typeof buildSessionContext>['messages'][number],
   index: number,
-): ChatMessage | null {
+): ChatMessage[] {
   if (message.role === 'user') {
-    return {
-      id: `sdk-user-${index}`,
-      type: 'user',
-      content: textContent(message.content),
-      timestamp: String(message.timestamp),
-    }
+    return [
+      {
+        id: `sdk-user-${index}`,
+        type: 'user',
+        content: textContent(message.content),
+        timestamp: String(message.timestamp),
+      },
+    ]
   }
   if (message.role === 'toolResult') {
-    return {
-      id: `sdk-tool-${index}`,
-      type: 'tool_result',
-      title: message.toolName,
-      content: textContent(message.content),
-      timestamp: String(message.timestamp),
-    }
+    return [
+      {
+        id: `sdk-tool-${index}`,
+        type: 'tool_result',
+        title: message.toolName,
+        content: textContent(message.content),
+        timestamp: String(message.timestamp),
+      },
+    ]
   }
   if (message.role === 'assistant') {
-    const content = textContent(message.content)
-    return {
-      id: `sdk-assistant-${index}`,
-      type: 'assistant',
-      content,
-      timestamp: String(message.timestamp),
-      tokens: message.usage?.totalTokens,
-      usage: message.usage,
+    const timestamp = String(message.timestamp)
+    const mapped: ChatMessage[] = []
+    const content = Array.isArray(message.content) ? message.content : []
+
+    for (const [contentIndex, item] of content.entries()) {
+      if (!item || typeof item !== 'object') continue
+      const record = item as unknown as Record<string, unknown>
+      if (record.type === 'thinking' && typeof record.thinking === 'string') {
+        mapped.push({
+          id: `sdk-thinking-${index}-${contentIndex}`,
+          type: 'thinking',
+          title: 'Thinking',
+          content: record.thinking,
+          timestamp,
+        })
+        continue
+      }
+      if (record.type === 'toolCall') {
+        const title = typeof record.name === 'string' ? record.name : 'Tool call'
+        mapped.push({
+          id: `sdk-tool-call-${index}-${contentIndex}`,
+          type: 'tool_call',
+          title,
+          content: formatToolCall(title, record.arguments),
+          timestamp,
+        })
+        continue
+      }
+      if (record.type !== 'text' || typeof record.text !== 'string' || !record.text) continue
+      const previous = mapped.at(-1)
+      if (previous?.type === 'assistant') {
+        previous.content += record.text
+      } else {
+        mapped.push({
+          id: `sdk-assistant-${index}-${contentIndex}`,
+          type: 'assistant',
+          content: record.text,
+          timestamp,
+        })
+      }
     }
+
+    const finalAssistant = mapped.findLast((item) => item.type === 'assistant')
+    if (finalAssistant) {
+      finalAssistant.tokens = message.usage?.totalTokens
+      finalAssistant.usage = message.usage
+    }
+    return mapped
   }
-  return null
+  return []
+}
+
+function formatToolCall(title: string, args: unknown) {
+  const body = args && typeof args === 'object' ? JSON.stringify(args, null, 2) : String(args ?? '')
+  return `${title}\n${body}`
 }
 
 export function readSdkSessionTree(filePath: string) {
@@ -106,12 +154,25 @@ export function readSdkSessionContext(filePath: string, leafId?: string | null) 
   const context = buildSessionContext(entries, leafId ?? manager.getLeafId())
   return {
     leafId: leafId ?? manager.getLeafId(),
-    messages: context.messages
-      .map(mapMessage)
-      .filter((message): message is ChatMessage => Boolean(message)),
+    messages: context.messages.flatMap(mapMessage),
     model: context.model,
     thinkingLevel: context.thinkingLevel,
   }
+}
+
+export function hydrateSessionSummariesFromSdk(sessions: AgentSessionSummary[]) {
+  return sessions.map((session) => {
+    const context = readSdkSessionContext(session.filePath)
+    if (!context) return session
+    const firstUser = context.messages.find((message) => message.type === 'user')
+    const lastMessage = context.messages.at(-1)
+    return {
+      ...session,
+      messageCount: context.messages.length,
+      firstUserMessage: firstUser?.content,
+      lastMessagePreview: lastMessage?.content,
+    }
+  })
 }
 
 export function forkSdkSessionFile(filePath: string, entryId: string) {

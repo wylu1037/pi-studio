@@ -29,7 +29,7 @@ const headingClasses: Record<number, string> = {
 
 export function MarkdownContent({
   content,
-  accentBorder = true,
+  accentBorder = false,
 }: {
   content: string
   accentBorder?: boolean

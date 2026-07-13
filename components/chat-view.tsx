@@ -122,11 +122,7 @@ export function ChatView({
   mcpConfigs: GlobalMcpConfig[]
 }) {
   const router = useRouter()
-  const [streamingMessage, setStreamingMessage] = useState('')
-  const [streamBuffer, setStreamBuffer] = useState('')
-  const [streamProcessMessages, setStreamProcessMessages] = useState<ChatMessage[]>([])
-  const [streamingTokens, setStreamingTokens] = useState<number | null>(null)
-  const [streamingUsage, setStreamingUsage] = useState<StreamUsage | null>(null)
+  const [streamMessages, setStreamMessages] = useState<ChatMessage[]>([])
   const [streamStartedAt, setStreamStartedAt] = useState<number | null>(null)
   const [streamDone, setStreamDone] = useState(false)
   const [streamPhase, setStreamPhase] = useState<StreamPhase>('idle')
@@ -154,6 +150,10 @@ export function ChatView({
   const eventSourceRef = useRef<EventSource | null>(null)
   const activeRunIdRef = useRef<string | null>(null)
   const reconcileTimerRef = useRef<number | null>(null)
+  const currentStreamingAssistantIdRef = useRef<string | null>(null)
+  const latestStreamingAssistantIdRef = useRef<string | null>(null)
+  const streamMessageSequenceRef = useRef(0)
+  const sourceMessageCountAtRunStartRef = useRef(messages.length)
 
   const availableModelOptions = useMemo(() => {
     const enabledProviders = new Set(activeAgent?.selectedProviderIds ?? [])
@@ -333,46 +333,26 @@ export function ChatView({
   }, [activeSession?.id, tree])
 
   useEffect(() => {
-    if (streamingMessage.length >= streamBuffer.length) return
-    const timer = window.setTimeout(() => {
-      setStreamingMessage((current) => {
-        const remaining = streamBuffer.length - current.length
-        const step = Math.min(24, Math.max(2, Math.ceil(remaining / 12)))
-        return streamBuffer.slice(0, current.length + step)
-      })
-    }, 32)
-
-    return () => window.clearTimeout(timer)
-  }, [streamBuffer, streamingMessage])
-
-  useEffect(() => {
-    if (!streamDone || streamingMessage.length < streamBuffer.length) return
+    if (!streamDone) return
     const timer = window.setTimeout(() => {
       router.refresh()
-    }, 150)
+    }, 50)
 
     return () => window.clearTimeout(timer)
-  }, [router, streamBuffer.length, streamDone, streamingMessage.length])
+  }, [router, streamDone])
 
   useEffect(() => {
-    if (!streamDone || !streamingMessage.trim()) return
-    const persisted = sourceMessages.some(
-      (message) =>
-        message.type === 'assistant' && message.content.trim() === streamingMessage.trim(),
-    )
-    if (!persisted) return
+    if (!streamDone || sourceMessages.length <= sourceMessageCountAtRunStartRef.current) return
 
-    setStreamingMessage('')
-    setStreamBuffer('')
-    setStreamProcessMessages([])
-    setStreamingTokens(null)
-    setStreamingUsage(null)
+    setStreamMessages([])
     setStreamStartedAt(null)
     setStreamDone(false)
     setOptimisticMessage(null)
     setStreamPhase('idle')
     setBranchMessages(null)
-  }, [sourceMessages, streamDone, streamingMessage])
+    currentStreamingAssistantIdRef.current = null
+    latestStreamingAssistantIdRef.current = null
+  }, [sourceMessages.length, streamDone])
 
   const baseMessages =
     optimisticMessage &&
@@ -382,27 +362,11 @@ export function ChatView({
       ? [...sourceMessages, optimisticMessage]
       : sourceMessages
 
-  const hasPersistedStreamingAssistant =
-    streamingMessage.trim().length > 0 &&
-    sourceMessages.some(
-      (message) =>
-        message.type === 'assistant' && message.content.trim() === streamingMessage.trim(),
-    )
-
-  const displayMessages =
-    streamingMessage && !hasPersistedStreamingAssistant
-      ? [
-          ...baseMessages,
-          ...streamProcessMessages,
-          {
-            id: 'streaming-assistant',
-            type: 'assistant' as const,
-            content: streamingMessage,
-            timestamp: 'streaming',
-            tokens: streamingTokens ?? undefined,
-          },
-        ]
-      : [...baseMessages, ...streamProcessMessages]
+  const hasPersistedRun =
+    streamDone && sourceMessages.length > sourceMessageCountAtRunStartRef.current
+  const displayMessages = hasPersistedRun
+    ? baseMessages
+    : [...baseMessages, ...streamMessages.filter((message) => message.content)]
   const hiddenMessageCount = Math.max(0, displayMessages.length - visibleMessageLimit)
   const visibleDisplayMessages =
     hiddenMessageCount > 0 ? displayMessages.slice(-visibleMessageLimit) : displayMessages
@@ -457,7 +421,7 @@ export function ChatView({
     const viewport = messageViewportRef.current
     if (!viewport || !shouldFollowMessagesRef.current) return
     viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'auto' })
-  }, [displayMessages.length, streamProcessMessages.length, streamingMessage])
+  }, [displayMessages.length, streamMessages])
 
   const scrollMessagesTo = (position: 'top' | 'bottom') => {
     const viewport = messageViewportRef.current
@@ -472,8 +436,7 @@ export function ChatView({
     !streamError &&
     runId !== null &&
     streamPhase !== 'idle' &&
-    streamingMessage.length === 0 &&
-    streamProcessMessages.length === 0
+    streamMessages.length === 0
 
   const clearReconciliation = () => {
     if (!reconcileTimerRef.current) return
@@ -537,21 +500,46 @@ export function ChatView({
     reconcileTimerRef.current = window.setTimeout(poll, RUN_RECONCILE_INITIAL_DELAY_MS)
   }
 
+  const startStreamingAssistant = () => {
+    const id = `stream-assistant-${Date.now()}-${streamMessageSequenceRef.current++}`
+    currentStreamingAssistantIdRef.current = id
+    latestStreamingAssistantIdRef.current = id
+    return id
+  }
+
+  const appendStreamingAssistantDelta = (content: string) => {
+    if (!content) return
+    const id = currentStreamingAssistantIdRef.current ?? startStreamingAssistant()
+    setStreamMessages((current) => {
+      const existing = current.find((message) => message.id === id)
+      if (existing) {
+        return current.map((message) =>
+          message.id === id ? { ...message, content: message.content + content } : message,
+        )
+      }
+      return [
+        ...current,
+        {
+          id,
+          type: 'assistant',
+          content,
+          timestamp: 'streaming',
+        },
+      ]
+    })
+  }
+
   const appendStreamProcessMessage = (
     type: Extract<ChatMessageType, 'thinking' | 'tool_call' | 'tool_result' | 'bash'>,
     content: string,
     title?: string,
   ) => {
     if (!content) return
-    setStreamProcessMessages((current) => {
+    setStreamMessages((current) => {
       if (type === 'thinking') {
-        const existing = current.find((message) => message.type === 'thinking')
-        if (existing) {
-          return current.map((message) =>
-            message.id === existing.id
-              ? { ...message, content: message.content + content }
-              : message,
-          )
+        const last = current.at(-1)
+        if (last?.type === 'thinking') {
+          return [...current.slice(0, -1), { ...last, content: last.content + content }]
         }
       }
 
@@ -589,16 +577,16 @@ export function ChatView({
     eventSourceRef.current?.close()
     clearReconciliation()
     activeRunIdRef.current = null
-    setStreamingMessage('')
-    setStreamBuffer('')
-    setStreamProcessMessages([])
-    setStreamingTokens(null)
-    setStreamingUsage(null)
+    setStreamMessages([])
     setStreamStartedAt(Date.now())
     setStreamDone(false)
     setStreamPhase('starting')
     setAbortingRun(false)
     setStreamError(null)
+    currentStreamingAssistantIdRef.current = null
+    latestStreamingAssistantIdRef.current = null
+    streamMessageSequenceRef.current = 0
+    sourceMessageCountAtRunStartRef.current = sourceMessages.length
     setOptimisticMessage({
       id: `optimistic-user-${Date.now()}`,
       type: 'user',
@@ -638,6 +626,15 @@ export function ChatView({
         window.clearTimeout(connectionTimeout)
         setStreamPhase('thinking')
       })
+      eventSource.addEventListener('assistant_message_start', () => {
+        if (activeRunIdRef.current !== currentRunId) return
+        window.clearTimeout(connectionTimeout)
+        startStreamingAssistant()
+      })
+      eventSource.addEventListener('assistant_message_end', () => {
+        if (activeRunIdRef.current !== currentRunId) return
+        currentStreamingAssistantIdRef.current = null
+      })
       eventSource.addEventListener('message_delta', (event) => {
         if (activeRunIdRef.current !== currentRunId) return
         window.clearTimeout(connectionTimeout)
@@ -648,11 +645,7 @@ export function ChatView({
         const content = payload.content ?? ''
         if (!content) return
         setStreamPhase('streaming')
-        if (payload.usage?.totalTokens) {
-          setStreamingTokens(payload.usage.totalTokens)
-          setStreamingUsage(payload.usage)
-        }
-        setStreamBuffer((current) => current + content)
+        appendStreamingAssistantDelta(content)
       })
       eventSource.addEventListener('thinking_delta', (event) => {
         if (activeRunIdRef.current !== currentRunId) return
@@ -700,10 +693,26 @@ export function ChatView({
         const payload = JSON.parse((event as MessageEvent).data) as {
           usage?: StreamUsage
         }
-        if (payload.usage?.totalTokens) {
-          setStreamingTokens(payload.usage.totalTokens)
-          setStreamingUsage(payload.usage)
+        const assistantId = latestStreamingAssistantIdRef.current
+        if (!assistantId || !payload.usage) return
+        const usage = {
+          input: payload.usage.input ?? 0,
+          output: payload.usage.output ?? 0,
+          cacheRead: payload.usage.cacheRead ?? 0,
+          cacheWrite: payload.usage.cacheWrite ?? 0,
+          cost: payload.usage.cost,
         }
+        setStreamMessages((current) =>
+          current.map((message) =>
+            message.id === assistantId
+              ? {
+                  ...message,
+                  tokens: payload.usage?.totalTokens,
+                  usage,
+                }
+              : message,
+          ),
+        )
       })
       eventSource.addEventListener('error', (event) => {
         if (activeRunIdRef.current !== currentRunId) return
@@ -1016,14 +1025,7 @@ export function ChatView({
                     key={item.message.id}
                     message={item.message}
                     agentName={activeAgent.name}
-                    streamStartedAt={
-                      item.message.id === 'streaming-assistant' ? streamStartedAt : null
-                    }
-                    usageSummary={
-                      item.message.id === 'streaming-assistant'
-                        ? formatUsageSummary(streamingUsage)
-                        : undefined
-                    }
+                    streamStartedAt={item.message.timestamp === 'streaming' ? streamStartedAt : null}
                   />
                 ),
               )}

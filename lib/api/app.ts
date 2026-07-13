@@ -4,13 +4,12 @@ import { mkdirSync } from 'node:fs'
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
 import { streamSSE } from 'hono/streaming'
 import { abortRun as abortRegisteredRun } from '@/lib/chat/run-registry'
-import { defaultPiSessionDir, runPiCli, type PiUsage } from '@/lib/chat/pi-adapter'
+import { defaultPiSessionDir, runPiCli } from '@/lib/chat/pi-adapter'
 import { resolvePiProviderConnection } from '@/lib/models/pi-ai'
 import { runNpx } from '@/lib/npx'
 import { loadPackageGallery } from '@/lib/packages/pi-dev-gallery'
 import { materializeInstalledSkill, removeStoredSkill, studioRootDir } from '@/lib/skills/store'
 import {
-  appendMessage,
   appendRunEvent,
   createAgent,
   createForkedSessionRecord,
@@ -1079,7 +1078,12 @@ api.openapi(
     request: { query: z.object({ agentId: z.string().optional() }) },
     responses: { 200: json(z.array(SessionSchema)) },
   }),
-  (c) => c.json(listSessions({ agentId: c.req.valid('query').agentId })),
+  async (c) => {
+    const { hydrateSessionSummariesFromSdk } = await import('@/lib/chat/session-branches')
+    return c.json(
+      hydrateSessionSummariesFromSdk(listSessions({ agentId: c.req.valid('query').agentId })),
+    )
+  },
 )
 
 api.openapi(
@@ -1134,7 +1138,13 @@ api.openapi(
     request: { params: z.object({ id: z.string() }) },
     responses: { 200: json(z.array(ChatMessageSchema)) },
   }),
-  (c) => c.json(listSessionMessages(c.req.valid('param').id)),
+  async (c) => {
+    const id = c.req.valid('param').id
+    const session = getSession(id)
+    if (!session) return c.json([])
+    const { readSdkSessionContext } = await import('@/lib/chat/session-branches')
+    return c.json(readSdkSessionContext(session.filePath)?.messages ?? listSessionMessages(id))
+  },
 )
 
 api.openapi(
@@ -1145,7 +1155,13 @@ api.openapi(
     request: { params: z.object({ id: z.string() }) },
     responses: { 200: json(SessionTreeNodeSchema.nullable()) },
   }),
-  (c) => c.json(getSessionTree(c.req.valid('param').id)),
+  async (c) => {
+    const id = c.req.valid('param').id
+    const session = getSession(id)
+    if (!session) return c.json(null)
+    const { readSdkSessionTree } = await import('@/lib/chat/session-branches')
+    return c.json(readSdkSessionTree(session.filePath)?.roots[0] ?? getSessionTree(id))
+  },
 )
 
 api.openapi(
@@ -1247,7 +1263,6 @@ api.openapi(
     const session = getSession(c.req.valid('param').id)
     if (!session) return c.json({ error: 'Session not found' }, 404)
     const body = c.req.valid('json')
-    appendMessage({ sessionId: session.id, type: 'user', content: body.message })
     const run = createRun({
       sessionId: session.id,
       agentId: session.agentId,
@@ -1300,16 +1315,6 @@ api.get('/runs/:id/events', (c) => {
   const config = resolveAgentRunConfig(run.agentId, run.providerId)
   if (!config) return c.json({ error: 'Agent not found' }, 404)
   const provider = piProviderName(config.provider?.api)
-  let assistantContent = ''
-  let thinkingContent = ''
-  let assistantTokens: number | undefined
-  let assistantUsage: PiUsage | undefined
-  const processMessages: Array<{
-    type: 'tool_call' | 'tool_result' | 'bash'
-    title?: string
-    content: string
-  }> = []
-
   return streamSSE(c, async (stream) => {
     const heartbeat = setInterval(() => {
       void stream.write(`: heartbeat ${Date.now()}\n\n`)
@@ -1354,42 +1359,6 @@ api.get('/runs/:id/events', (c) => {
           env: mcp.env,
         })),
       })) {
-        if (event.type === 'message_delta') {
-          assistantContent += event.content
-          assistantTokens = event.usage?.totalTokens || assistantTokens
-          assistantUsage = event.usage ?? assistantUsage
-        }
-        if (event.type === 'thinking_delta') thinkingContent += event.content
-        if (event.type === 'tool_call_delta') {
-          processMessages.push({
-            type: 'tool_call',
-            title: event.title ?? 'Tool call',
-            content: event.content,
-          })
-        }
-        if (event.type === 'tool_result_delta') {
-          processMessages.push({
-            type: 'tool_result',
-            title: event.title ?? 'Tool result',
-            content: event.content,
-          })
-        }
-        if (event.type === 'bash_output') {
-          const last = processMessages.at(-1)
-          if (last?.type === 'bash' && last.title === event.stream) {
-            last.content += event.content
-          } else {
-            processMessages.push({
-              type: 'bash',
-              title: event.stream,
-              content: event.content,
-            })
-          }
-        }
-        if (event.type === 'usage') {
-          assistantTokens = event.usage.totalTokens || assistantTokens
-          assistantUsage = event.usage
-        }
         if (event.type === 'error') {
           throw new Error(event.message)
         }
@@ -1403,39 +1372,12 @@ api.get('/runs/:id/events', (c) => {
         await send(event.type, event)
       }
 
-      if (thinkingContent.trim()) {
-        appendMessage({
-          sessionId: run.sessionId,
-          type: 'thinking',
-          title: 'Thinking',
-          content: thinkingContent.trim(),
-        })
-      }
-      for (const message of processMessages) {
-        if (!message.content.trim()) continue
-        appendMessage({
-          sessionId: run.sessionId,
-          type: message.type,
-          title: message.title,
-          content: message.content.trim(),
-        })
-      }
-      if (assistantContent.trim()) {
-        appendMessage({
-          sessionId: run.sessionId,
-          type: 'assistant',
-          content: assistantContent.trim(),
-          tokens: assistantTokens,
-          usage: assistantUsage,
-        })
-      }
       if (getRun(runId)?.status !== 'aborted') markRun(runId, 'completed')
       await send('done', { runId })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown pi error'
       if (getRun(runId)?.status !== 'aborted') {
         markRun(runId, 'failed', message)
-        appendMessage({ sessionId: run.sessionId, type: 'error', content: message })
       }
       await send('error', { message })
     } finally {
