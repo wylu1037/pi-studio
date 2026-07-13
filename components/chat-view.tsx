@@ -63,6 +63,7 @@ const RUN_RECONCILE_MAX_MS = 20000
 const SESSION_TREE_RECENT_NODE_LIMIT = 80
 const INITIAL_VISIBLE_MESSAGE_LIMIT = 120
 const MESSAGE_LIMIT_INCREMENT = 100
+const COMPOSER_MAX_HEIGHT = 160
 
 type StreamPhase = 'idle' | 'starting' | 'connecting' | 'thinking' | 'streaming'
 
@@ -124,6 +125,9 @@ export function ChatView({
   const router = useRouter()
   const [streamMessages, setStreamMessages] = useState<ChatMessage[]>([])
   const [streamStartedAt, setStreamStartedAt] = useState<number | null>(null)
+  const [composerInputHeight, setComposerInputHeight] = useState(44)
+  const [composerIsScrollable, setComposerIsScrollable] = useState(false)
+  const [composerOverlayHeight, setComposerOverlayHeight] = useState(112)
   const [streamDone, setStreamDone] = useState(false)
   const [streamPhase, setStreamPhase] = useState<StreamPhase>('idle')
   const [optimisticMessage, setOptimisticMessage] = useState<ChatMessage | null>(null)
@@ -134,6 +138,9 @@ export function ChatView({
   const [showSessionTree, setShowSessionTree] = useState(false)
   const [showActiveContext, setShowActiveContext] = useState(false)
   const messageViewportRef = useRef<HTMLDivElement>(null)
+  const composerTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const composerInputViewportRef = useRef<HTMLDivElement>(null)
+  const composerContainerRef = useRef<HTMLDivElement>(null)
   const shouldFollowMessagesRef = useRef(true)
   const prependScrollRef = useRef<{ height: number; top: number } | null>(null)
   const [canScrollUp, setCanScrollUp] = useState(false)
@@ -188,12 +195,37 @@ export function ChatView({
   const thinking = form.watch('thinkingLevel') ?? 'medium'
   const model = form.watch('modelId') ?? activeAgent?.defaultModelId ?? 'model'
   const message = form.watch('message') ?? ''
+  const messageRegistration = form.register('message')
   const composerValues = {
     message: message.trim(),
     providerId: form.watch('providerId'),
     modelId: form.watch('modelId'),
     thinkingLevel: thinking,
   }
+
+  useEffect(() => {
+    const contentHeight = resizeTextarea(composerTextareaRef.current)
+    setComposerInputHeight(Math.min(contentHeight, COMPOSER_MAX_HEIGHT))
+    setComposerIsScrollable(contentHeight > COMPOSER_MAX_HEIGHT)
+    const frame = window.requestAnimationFrame(() => {
+      const inputViewport = composerInputViewportRef.current
+      if (inputViewport) inputViewport.scrollTop = inputViewport.scrollHeight
+      if (!shouldFollowMessagesRef.current) return
+      const messageViewport = messageViewportRef.current
+      if (messageViewport) messageViewport.scrollTop = messageViewport.scrollHeight
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [message])
+
+  useEffect(() => {
+    const composer = composerContainerRef.current
+    if (!composer) return
+    const updateHeight = () => setComposerOverlayHeight(composer.offsetHeight)
+    updateHeight()
+    const observer = new ResizeObserver(updateHeight)
+    observer.observe(composer)
+    return () => observer.disconnect()
+  }, [])
   const selectedModelOption = availableModelOptions.find(
     ({ provider, model: candidate }) =>
       provider.id === composerValues.providerId && candidate.id === composerValues.modelId,
@@ -433,10 +465,7 @@ export function ChatView({
     })
   }
   const isWaiting =
-    !streamError &&
-    runId !== null &&
-    streamPhase !== 'idle' &&
-    streamMessages.length === 0
+    !streamError && runId !== null && streamPhase !== 'idle' && streamMessages.length === 0
 
   const clearReconciliation = () => {
     if (!reconcileTimerRef.current) return
@@ -1025,7 +1054,9 @@ export function ChatView({
                     key={item.message.id}
                     message={item.message}
                     agentName={activeAgent.name}
-                    streamStartedAt={item.message.timestamp === 'streaming' ? streamStartedAt : null}
+                    streamStartedAt={
+                      item.message.timestamp === 'streaming' ? streamStartedAt : null
+                    }
                   />
                 ),
               )}
@@ -1052,10 +1083,284 @@ export function ChatView({
                   }}
                 />
               )}
+              <div
+                aria-hidden="true"
+                className="shrink-0"
+                style={{ height: composerOverlayHeight + 16 }}
+              />
             </div>
           </ScrollArea>
+          {/* composer */}
+          <div
+            ref={composerContainerRef}
+            className="pointer-events-none absolute inset-x-0 bottom-0 px-5 pb-4"
+          >
+            <div className="pointer-events-auto relative mx-auto max-w-3xl bg-background/95 px-2 pt-2 shadow-[0_-16px_32px_-28px_rgba(24,28,36,0.45)]">
+              {slashCommandOptions.length > 0 && (
+                <div className="absolute inset-x-0 bottom-full mb-2 overflow-hidden border border-border-strong bg-card shadow-xl">
+                  <div className="flex items-center justify-between border-b border-border bg-panel px-4 py-2.5">
+                    <Label>Slash commands</Label>
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      {slashCommandOptions.length} available
+                    </span>
+                  </div>
+                  <ul className="scrollbar-thin max-h-64 overflow-auto py-1">
+                    {slashCommandOptions.map((option, index) => (
+                      <li key={`${option.kind}:${option.id}`}>
+                        <button
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => executeSlashCommand(option)}
+                          disabled={
+                            option.kind === 'builtin' && (Boolean(runId) || creatingSession)
+                          }
+                          className={cn(
+                            'flex w-full flex-col gap-1 border-l-2 border-transparent px-4 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45',
+                            index === slashSelection
+                              ? 'border-l-accent bg-accent/10'
+                              : 'hover:bg-muted/70',
+                          )}
+                        >
+                          <span className="flex min-w-0 items-center gap-2.5">
+                            {option.kind === 'builtin' ? (
+                              <MessageSquarePlus className="size-3.5 shrink-0 text-accent" />
+                            ) : (
+                              <Terminal className="size-3.5 shrink-0 text-muted-foreground" />
+                            )}
+                            <span className="shrink-0 font-mono text-[13px] leading-5 font-medium text-accent">
+                              /{option.command}
+                            </span>
+                            {option.kind === 'prompt' && option.argumentHint && (
+                              <span className="truncate font-mono text-[10px] leading-5 text-warning">
+                                {option.argumentHint}
+                              </span>
+                            )}
+                            {option.kind === 'builtin' && (
+                              <Tag tone="outline" className="ml-auto shrink-0">
+                                built-in
+                              </Tag>
+                            )}
+                          </span>
+                          <span className="line-clamp-2 pl-6 text-[12px] leading-4 text-muted-foreground">
+                            {option.description}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <form
+                onSubmit={submit}
+                className={cn(
+                  'border border-border-strong bg-card p-2.5 focus-within:border-ring',
+                  composerIsScrollable
+                    ? 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-end gap-2.5'
+                    : 'flex items-end gap-2.5',
+                )}
+              >
+                <button
+                  type="button"
+                  className={cn(
+                    'flex size-9 items-center justify-center text-muted-foreground hover:text-foreground',
+                    composerIsScrollable && 'col-start-1 row-start-2',
+                  )}
+                  aria-label="Attach file"
+                >
+                  <Paperclip className="size-4" />
+                </button>
+                <ScrollArea
+                  className={cn(
+                    'min-h-11 min-w-0',
+                    composerIsScrollable ? 'col-span-3 row-start-1 w-full' : 'flex-1',
+                  )}
+                  viewportClassName={cn('pr-3', composerIsScrollable && 'pl-[46px]')}
+                  viewportRef={composerInputViewportRef}
+                  style={{ height: composerInputHeight }}
+                >
+                  <textarea
+                    {...messageRegistration}
+                    ref={(element) => {
+                      messageRegistration.ref(element)
+                      composerTextareaRef.current = element
+                    }}
+                    onInput={(event) => {
+                      const contentHeight = resizeTextarea(event.currentTarget)
+                      setComposerInputHeight(Math.min(contentHeight, COMPOSER_MAX_HEIGHT))
+                      setComposerIsScrollable(contentHeight > COMPOSER_MAX_HEIGHT)
+                      window.requestAnimationFrame(() => {
+                        const viewport = composerInputViewportRef.current
+                        if (viewport) viewport.scrollTop = viewport.scrollHeight
+                      })
+                    }}
+                    onKeyDown={(e) => {
+                      if (slashCommandOptions.length > 0) {
+                        if (e.key === 'ArrowDown') {
+                          e.preventDefault()
+                          setSlashSelection((value) => (value + 1) % slashCommandOptions.length)
+                          return
+                        }
+                        if (e.key === 'ArrowUp') {
+                          e.preventDefault()
+                          setSlashSelection(
+                            (value) =>
+                              (value - 1 + slashCommandOptions.length) % slashCommandOptions.length,
+                          )
+                          return
+                        }
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault()
+                          executeSlashCommand(
+                            slashCommandOptions[slashSelection] ?? slashCommandOptions[0],
+                          )
+                          return
+                        }
+                        if (e.key === 'Escape') {
+                          e.preventDefault()
+                          form.setValue('message', '')
+                          return
+                        }
+                      }
+                      if (
+                        e.key === 'Enter' &&
+                        !e.shiftKey &&
+                        !e.nativeEvent.isComposing &&
+                        e.keyCode !== 229
+                      ) {
+                        e.preventDefault()
+                        if (
+                          canSend &&
+                          !isStartingRun &&
+                          !isRunningRun &&
+                          !abortingRun &&
+                          !creatingSession
+                        ) {
+                          void submit()
+                        }
+                      }
+                    }}
+                    rows={1}
+                    placeholder={
+                      runId
+                        ? 'Add guidance to the active run...'
+                        : 'Reply to the agent...  (Enter to send, Shift+Enter for newline)'
+                    }
+                    className="block min-h-11 w-full resize-none overflow-hidden bg-transparent py-2 font-mono text-[13px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/60"
+                  />
+                </ScrollArea>
+                <button
+                  type={isRunningRun ? 'button' : 'submit'}
+                  onClick={isRunningRun ? abort : undefined}
+                  disabled={
+                    isRunningRun ? abortingRun : isStartingRun || creatingSession || !canSend
+                  }
+                  className={cn(
+                    'flex h-9 items-center justify-center gap-1.5 border font-mono text-[11px] uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-70',
+                    composerIsScrollable && 'col-start-3 row-start-2',
+                    isRunningRun
+                      ? 'border-destructive/70 bg-destructive/10 px-3 text-destructive hover:bg-destructive hover:text-destructive-foreground'
+                      : 'border-accent bg-accent px-2.5 text-accent-foreground hover:opacity-90',
+                  )}
+                  aria-label={isRunningRun ? 'Abort run' : 'Send message'}
+                >
+                  {abortingRun || isStartingRun || creatingSession ? (
+                    <LoaderCircle className="size-3.5 animate-spin" />
+                  ) : isRunningRun ? (
+                    <Square className="size-3 fill-current" />
+                  ) : isNewSessionCommand ? (
+                    <MessageSquarePlus className="size-3.5" />
+                  ) : (
+                    <Send className="size-3.5" />
+                  )}
+                  <span>{sendButtonLabel}</span>
+                </button>
+              </form>
+              {isRunningRun && (
+                <div className="mt-2 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    disabled={!message.trim() || queueingMessage !== null}
+                    onClick={() => void queueMessage('steer')}
+                    className="border border-border-strong px-2.5 py-1 font-mono text-[10px] text-muted-foreground uppercase hover:border-accent hover:text-foreground disabled:opacity-50"
+                  >
+                    {queueingMessage === 'steer' ? 'Queueing…' : 'Steer now'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!message.trim() || queueingMessage !== null}
+                    onClick={() => void queueMessage('follow-up')}
+                    className="border border-border-strong px-2.5 py-1 font-mono text-[10px] text-muted-foreground uppercase hover:border-accent hover:text-foreground disabled:opacity-50"
+                  >
+                    {queueingMessage === 'follow-up' ? 'Queueing…' : 'Follow up'}
+                  </button>
+                </div>
+              )}
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                <label className="flex items-center gap-1.5">
+                  <Cpu className="size-3 text-muted-foreground" />
+                  <input type="hidden" {...form.register('providerId')} />
+                  <input type="hidden" {...form.register('modelId')} />
+                  <select
+                    disabled={availableModelOptions.length === 0 || isRunningRun}
+                    value={
+                      selectedModelOption
+                        ? `${selectedModelOption.provider.id}::${selectedModelOption.model.id}`
+                        : ''
+                    }
+                    onChange={(event) => {
+                      const next = availableModelOptions.find(
+                        ({ provider, model: candidate }) =>
+                          `${provider.id}::${candidate.id}` === event.target.value,
+                      )
+                      if (!next) return
+                      form.setValue('providerId', next.provider.id, {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      })
+                      form.setValue('modelId', next.model.id, {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      })
+                    }}
+                    className="bg-transparent font-mono text-[11px] text-muted-foreground outline-none hover:text-foreground"
+                  >
+                    {availableModelOptions.length === 0 && (
+                      <option value="">No enabled models</option>
+                    )}
+                    {availableModelOptions.map(({ provider, model: candidate }) => (
+                      <option
+                        key={`${provider.id}:${candidate.id}`}
+                        value={`${provider.id}::${candidate.id}`}
+                      >
+                        {provider.name} / {candidate.name ?? candidate.id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex items-center gap-1.5">
+                  <Brain className="size-3 text-muted-foreground" />
+                  <select
+                    {...form.register('thinkingLevel')}
+                    className="bg-transparent font-mono text-[11px] text-muted-foreground outline-none hover:text-foreground"
+                  >
+                    {thinkingLevels.map((t) => (
+                      <option key={t} value={t}>
+                        thinking: {t}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <span className="ml-auto font-mono text-[11px] text-muted-foreground/60">
+                  {activeSession.cwd}
+                </span>
+              </div>
+            </div>
+          </div>
           {(canScrollUp || canScrollDown) && (
-            <div className="pointer-events-none absolute right-5 bottom-5 flex flex-col border border-border bg-card shadow-lg">
+            <div
+              className="pointer-events-none absolute right-5 flex flex-col border border-border bg-card shadow-lg"
+              style={{ bottom: composerOverlayHeight + 20 }}
+            >
               {canScrollUp && (
                 <button
                   type="button"
@@ -1080,234 +1385,6 @@ export function ChatView({
               )}
             </div>
           )}
-        </div>
-
-        {/* composer */}
-        <div className="border-t border-border bg-panel px-5 py-3">
-          <div className="relative mx-auto max-w-3xl">
-            {slashCommandOptions.length > 0 && (
-              <div className="absolute inset-x-0 bottom-full mb-2 overflow-hidden border border-border-strong bg-card shadow-xl">
-                <div className="flex items-center justify-between border-b border-border bg-panel px-4 py-2.5">
-                  <Label>Slash commands</Label>
-                  <span className="font-mono text-[10px] text-muted-foreground">
-                    {slashCommandOptions.length} available
-                  </span>
-                </div>
-                <ul className="scrollbar-thin max-h-64 overflow-auto py-1">
-                  {slashCommandOptions.map((option, index) => (
-                    <li key={`${option.kind}:${option.id}`}>
-                      <button
-                        type="button"
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => executeSlashCommand(option)}
-                        disabled={option.kind === 'builtin' && (Boolean(runId) || creatingSession)}
-                        className={cn(
-                          'flex w-full flex-col gap-1 border-l-2 border-transparent px-4 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45',
-                          index === slashSelection
-                            ? 'border-l-accent bg-accent/10'
-                            : 'hover:bg-muted/70',
-                        )}
-                      >
-                        <span className="flex min-w-0 items-center gap-2.5">
-                          {option.kind === 'builtin' ? (
-                            <MessageSquarePlus className="size-3.5 shrink-0 text-accent" />
-                          ) : (
-                            <Terminal className="size-3.5 shrink-0 text-muted-foreground" />
-                          )}
-                          <span className="shrink-0 font-mono text-[13px] leading-5 font-medium text-accent">
-                            /{option.command}
-                          </span>
-                          {option.kind === 'prompt' && option.argumentHint && (
-                            <span className="truncate font-mono text-[10px] leading-5 text-warning">
-                              {option.argumentHint}
-                            </span>
-                          )}
-                          {option.kind === 'builtin' && (
-                            <Tag tone="outline" className="ml-auto shrink-0">
-                              built-in
-                            </Tag>
-                          )}
-                        </span>
-                        <span className="line-clamp-2 pl-6 text-[12px] leading-4 text-muted-foreground">
-                          {option.description}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <form
-              onSubmit={submit}
-              className="flex items-center gap-2.5 border border-border-strong bg-card p-2.5 focus-within:border-ring"
-            >
-              <button
-                type="button"
-                className="flex size-9 items-center justify-center text-muted-foreground hover:text-foreground"
-                aria-label="Attach file"
-              >
-                <Paperclip className="size-4" />
-              </button>
-              <textarea
-                {...form.register('message')}
-                onKeyDown={(e) => {
-                  if (slashCommandOptions.length > 0) {
-                    if (e.key === 'ArrowDown') {
-                      e.preventDefault()
-                      setSlashSelection((value) => (value + 1) % slashCommandOptions.length)
-                      return
-                    }
-                    if (e.key === 'ArrowUp') {
-                      e.preventDefault()
-                      setSlashSelection(
-                        (value) =>
-                          (value - 1 + slashCommandOptions.length) % slashCommandOptions.length,
-                      )
-                      return
-                    }
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      executeSlashCommand(
-                        slashCommandOptions[slashSelection] ?? slashCommandOptions[0],
-                      )
-                      return
-                    }
-                    if (e.key === 'Escape') {
-                      e.preventDefault()
-                      form.setValue('message', '')
-                      return
-                    }
-                  }
-                  if (
-                    e.key === 'Enter' &&
-                    !e.shiftKey &&
-                    !e.nativeEvent.isComposing &&
-                    e.keyCode !== 229
-                  ) {
-                    e.preventDefault()
-                    if (
-                      canSend &&
-                      !isStartingRun &&
-                      !isRunningRun &&
-                      !abortingRun &&
-                      !creatingSession
-                    ) {
-                      void submit()
-                    }
-                  }
-                }}
-                rows={1}
-                placeholder={
-                  runId
-                    ? 'Add guidance to the active run...'
-                    : 'Reply to the agent...  (Enter to send, Shift+Enter for newline)'
-                }
-                className="max-h-40 min-h-11 flex-1 resize-none bg-transparent py-2 font-mono text-[13px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/60"
-              />
-              <button
-                type={isRunningRun ? 'button' : 'submit'}
-                onClick={isRunningRun ? abort : undefined}
-                disabled={isRunningRun ? abortingRun : isStartingRun || creatingSession || !canSend}
-                className={cn(
-                  'flex h-9 items-center justify-center gap-1.5 border font-mono text-[11px] uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-70',
-                  isRunningRun
-                    ? 'border-destructive/70 bg-destructive/10 px-3 text-destructive hover:bg-destructive hover:text-destructive-foreground'
-                    : 'border-accent bg-accent px-2.5 text-accent-foreground hover:opacity-90',
-                )}
-                aria-label={isRunningRun ? 'Abort run' : 'Send message'}
-              >
-                {abortingRun || isStartingRun || creatingSession ? (
-                  <LoaderCircle className="size-3.5 animate-spin" />
-                ) : isRunningRun ? (
-                  <Square className="size-3 fill-current" />
-                ) : isNewSessionCommand ? (
-                  <MessageSquarePlus className="size-3.5" />
-                ) : (
-                  <Send className="size-3.5" />
-                )}
-                <span>{sendButtonLabel}</span>
-              </button>
-            </form>
-            {isRunningRun && (
-              <div className="mt-2 flex justify-end gap-2">
-                <button
-                  type="button"
-                  disabled={!message.trim() || queueingMessage !== null}
-                  onClick={() => void queueMessage('steer')}
-                  className="border border-border-strong px-2.5 py-1 font-mono text-[10px] text-muted-foreground uppercase hover:border-accent hover:text-foreground disabled:opacity-50"
-                >
-                  {queueingMessage === 'steer' ? 'Queueing…' : 'Steer now'}
-                </button>
-                <button
-                  type="button"
-                  disabled={!message.trim() || queueingMessage !== null}
-                  onClick={() => void queueMessage('follow-up')}
-                  className="border border-border-strong px-2.5 py-1 font-mono text-[10px] text-muted-foreground uppercase hover:border-accent hover:text-foreground disabled:opacity-50"
-                >
-                  {queueingMessage === 'follow-up' ? 'Queueing…' : 'Follow up'}
-                </button>
-              </div>
-            )}
-            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-              <label className="flex items-center gap-1.5">
-                <Cpu className="size-3 text-muted-foreground" />
-                <input type="hidden" {...form.register('providerId')} />
-                <input type="hidden" {...form.register('modelId')} />
-                <select
-                  disabled={availableModelOptions.length === 0 || isRunningRun}
-                  value={
-                    selectedModelOption
-                      ? `${selectedModelOption.provider.id}::${selectedModelOption.model.id}`
-                      : ''
-                  }
-                  onChange={(event) => {
-                    const next = availableModelOptions.find(
-                      ({ provider, model: candidate }) =>
-                        `${provider.id}::${candidate.id}` === event.target.value,
-                    )
-                    if (!next) return
-                    form.setValue('providerId', next.provider.id, {
-                      shouldDirty: true,
-                      shouldValidate: true,
-                    })
-                    form.setValue('modelId', next.model.id, {
-                      shouldDirty: true,
-                      shouldValidate: true,
-                    })
-                  }}
-                  className="bg-transparent font-mono text-[11px] text-muted-foreground outline-none hover:text-foreground"
-                >
-                  {availableModelOptions.length === 0 && (
-                    <option value="">No enabled models</option>
-                  )}
-                  {availableModelOptions.map(({ provider, model: candidate }) => (
-                    <option
-                      key={`${provider.id}:${candidate.id}`}
-                      value={`${provider.id}::${candidate.id}`}
-                    >
-                      {provider.name} / {candidate.name ?? candidate.id}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex items-center gap-1.5">
-                <Brain className="size-3 text-muted-foreground" />
-                <select
-                  {...form.register('thinkingLevel')}
-                  className="bg-transparent font-mono text-[11px] text-muted-foreground outline-none hover:text-foreground"
-                >
-                  {thinkingLevels.map((t) => (
-                    <option key={t} value={t}>
-                      thinking: {t}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <span className="ml-auto font-mono text-[11px] text-muted-foreground/60">
-                {activeSession.cwd}
-              </span>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -1388,6 +1465,14 @@ function Row({ icon, label }: { icon: React.ReactNode; label: string }) {
       {label}
     </div>
   )
+}
+
+function resizeTextarea(textarea: HTMLTextAreaElement | null) {
+  if (!textarea) return 44
+  textarea.style.height = '0px'
+  const contentHeight = Math.max(44, textarea.scrollHeight)
+  textarea.style.height = `${contentHeight}px`
+  return contentHeight
 }
 
 function EmptyConversationState({
