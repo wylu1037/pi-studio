@@ -4,15 +4,7 @@ import { useState } from 'react'
 import { AlertTriangle, Puzzle, Search } from 'lucide-react'
 import type { GlobalExtension } from '@/lib/types'
 import { errorMessage, showToast } from '@/lib/toast'
-import {
-  BracketButton,
-  Label,
-  PageHeader,
-  Panel,
-  Tag,
-  TextInput,
-  Toggle,
-} from '@/components/pi-ui'
+import { BracketButton, Label, PageHeader, Panel, Tag, TextInput, Toggle } from '@/components/pi-ui'
 
 export function ExtensionsView({ extensions }: { extensions: GlobalExtension[] }) {
   const [items, setItems] = useState(extensions)
@@ -87,12 +79,12 @@ export function ExtensionsView({ extensions }: { extensions: GlobalExtension[] }
           {filtered.length} extensions
         </span>
       </div>
-      <div className="flex-1 overflow-y-auto scrollbar-thin p-6">
+      <div className="scrollbar-thin flex-1 overflow-y-auto p-6">
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 py-24 text-center">
             <Puzzle className="size-7 text-muted-foreground/50" />
             <div>
-              <h2 className="font-serif text-xl italic text-foreground">No extensions found</h2>
+              <h2 className="font-serif text-xl text-foreground italic">No extensions found</h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 Install a Pi package containing extensions or switch the scope filter.
               </p>
@@ -108,9 +100,7 @@ export function ExtensionsView({ extensions }: { extensions: GlobalExtension[] }
                       <Puzzle className="size-4 text-accent" />
                     </div>
                     <div className="min-w-0">
-                      <p className="truncate font-mono text-sm text-foreground">
-                        {extension.name}
-                      </p>
+                      <p className="truncate font-mono text-sm text-foreground">{extension.name}</p>
                       <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
                         {extension.source}
                       </p>
@@ -119,15 +109,13 @@ export function ExtensionsView({ extensions }: { extensions: GlobalExtension[] }
                   <Toggle
                     checked={extension.enabled}
                     onChange={() => void toggle(extension)}
-                    disabled={
-                      !extension.packageManaged || pendingSource === extension.source
-                    }
+                    disabled={!extension.packageManaged || pendingSource === extension.source}
                   />
                 </div>
                 <div className="flex-1 space-y-3 p-4">
                   <div>
                     <Label>Path</Label>
-                    <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
+                    <p className="mt-1 font-mono text-[11px] break-all text-muted-foreground">
                       {extension.path}
                     </p>
                   </div>
@@ -136,9 +124,7 @@ export function ExtensionsView({ extensions }: { extensions: GlobalExtension[] }
                       {extension.enabled ? 'enabled' : 'disabled'}
                     </Tag>
                     <Tag tone="outline">{extension.scope}</Tag>
-                    <Tag tone="outline">
-                      {extension.packageManaged ? 'package' : 'local'}
-                    </Tag>
+                    <Tag tone="outline">{extension.packageManaged ? 'package' : 'local'}</Tag>
                     {pendingSource === extension.source && <Tag tone="warning">saving</Tag>}
                   </div>
                 </div>

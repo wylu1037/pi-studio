@@ -4,17 +4,7 @@ import { useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
-import {
-  Plus,
-  Info,
-  Pencil,
-  Copy,
-  Trash2,
-  UserPlus,
-  X,
-  Plug,
-  Server,
-} from 'lucide-react'
+import { Plus, Info, Pencil, Copy, Trash2, UserPlus, X, Plug, Server } from 'lucide-react'
 import type { AgentProfile, GlobalMcpConfig } from '@/lib/types'
 import { deleteApiMcpId } from '@/lib/api/generated/clients/deleteApiMcpId'
 import { postApiAgentsIdAssign } from '@/lib/api/generated/clients/postApiAgentsIdAssign'
@@ -126,12 +116,11 @@ export function McpView({
       <div className="flex items-start gap-2.5 border-b border-border bg-panel px-6 py-2.5">
         <Info className="mt-0.5 size-4 shrink-0 text-accent" />
         <p className="text-[13px] text-muted-foreground">
-          This release manages MCP configuration only. Servers are not launched
-          from Pi Studio yet.
+          This release manages MCP configuration only. Servers are not launched from Pi Studio yet.
         </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto scrollbar-thin p-6">
+      <div className="scrollbar-thin flex-1 overflow-y-auto p-6">
         {configs.length === 0 ? (
           <McpEmptyState onCreate={() => setCreating(true)} />
         ) : (
@@ -152,9 +141,7 @@ export function McpView({
                   <div className="flex items-start gap-2.5">
                     <Server className="mt-0.5 size-4 shrink-0 text-accent" />
                     <div className="min-w-0">
-                      <span className="font-mono text-[13px] text-foreground">
-                        {c.name}
-                      </span>
+                      <span className="font-mono text-[13px] text-foreground">{c.name}</span>
                       <p className="line-clamp-1 text-[13px] text-muted-foreground">
                         {c.description}
                       </p>
@@ -179,17 +166,11 @@ export function McpView({
                   <div>
                     <Toggle
                       checked={c.enabledGlobally}
-                      onChange={(enabledGlobally) =>
-                        saveConfig(c, { enabledGlobally })
-                      }
+                      onChange={(enabledGlobally) => saveConfig(c, { enabledGlobally })}
                     />
                   </div>
                   <div className="flex items-center justify-end gap-0.5">
-                    <ActionButton
-                      variant="ghost"
-                      title="Edit"
-                      onClick={() => setEditing(c)}
-                    >
+                    <ActionButton variant="ghost" title="Edit" onClick={() => setEditing(c)}>
                       <Pencil className="size-3.5" />
                     </ActionButton>
                     <ActionButton
@@ -238,9 +219,7 @@ export function McpView({
         title="Delete MCP config"
         description={`Delete MCP config "${deleteTarget?.name ?? ''}"? This cannot be undone.`}
         confirmLabel="Delete config"
-        busy={
-          deleteTarget ? pendingId === `delete:${deleteTarget.id}` : false
-        }
+        busy={deleteTarget ? pendingId === `delete:${deleteTarget.id}` : false}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => {
           if (deleteTarget) void deleteConfig(deleteTarget)
@@ -250,13 +229,7 @@ export function McpView({
   )
 }
 
-function McpEditor({
-  config,
-  onClose,
-}: {
-  config: GlobalMcpConfig | null
-  onClose: () => void
-}) {
+function McpEditor({ config, onClose }: { config: GlobalMcpConfig | null; onClose: () => void }) {
   const {
     register,
     handleSubmit,
@@ -284,9 +257,17 @@ function McpEditor({
       name: values.name,
       description: values.description,
       command: values.command,
-      args: values.argsText?.split(' ').map((arg) => arg.trim()).filter(Boolean) ?? [],
+      args:
+        values.argsText
+          ?.split(' ')
+          .map((arg) => arg.trim())
+          .filter(Boolean) ?? [],
       env,
-      tags: values.tagsText?.split(',').map((tag) => tag.trim()).filter(Boolean) ?? [],
+      tags:
+        values.tagsText
+          ?.split(',')
+          .map((tag) => tag.trim())
+          .filter(Boolean) ?? [],
       enabledGlobally: values.enabledGlobally,
     })
     refreshAfterMutation()
@@ -305,7 +286,7 @@ function McpEditor({
         className="relative w-full max-w-lg border border-border bg-card shadow-xl"
       >
         <div className="flex items-center justify-between border-b border-border bg-panel px-4 py-3">
-          <h2 className="font-serif text-lg italic text-foreground">
+          <h2 className="font-serif text-lg text-foreground italic">
             {config ? `Edit ${config.name}` : 'New MCP config'}
           </h2>
           <button
@@ -318,21 +299,34 @@ function McpEditor({
         </div>
         <div className="space-y-4 p-4">
           <EditorField label="Name" error={errors.name?.message}>
-            <input {...register('name')} className="w-full border border-input bg-panel px-3 py-1.5 text-[13px] text-foreground outline-none focus:border-ring" />
+            <input
+              {...register('name')}
+              className="w-full border border-input bg-panel px-3 py-1.5 text-[13px] text-foreground outline-none focus:border-ring"
+            />
           </EditorField>
-          <EditorField
-            label="Description"
-          >
-            <input {...register('description')} className="w-full border border-input bg-panel px-3 py-1.5 text-[13px] text-foreground outline-none focus:border-ring" />
+          <EditorField label="Description">
+            <input
+              {...register('description')}
+              className="w-full border border-input bg-panel px-3 py-1.5 text-[13px] text-foreground outline-none focus:border-ring"
+            />
           </EditorField>
           <EditorField label="Command" error={errors.command?.message}>
-            <input {...register('command')} className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring" />
+            <input
+              {...register('command')}
+              className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+            />
           </EditorField>
           <EditorField label="Args (space separated)">
-            <input {...register('argsText')} className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring" />
+            <input
+              {...register('argsText')}
+              className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+            />
           </EditorField>
           <EditorField label="Tags (comma separated)">
-            <input {...register('tagsText')} className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring" />
+            <input
+              {...register('tagsText')}
+              className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+            />
           </EditorField>
           <label className="flex items-center gap-2">
             <input type="checkbox" {...register('enabledGlobally')} />
@@ -373,9 +367,7 @@ function EditorField({
     <div>
       <Label className="mb-1.5 block">{label}</Label>
       {children}
-      {error && (
-        <p className="mt-1 font-mono text-[11px] text-destructive">{error}</p>
-      )}
+      {error && <p className="mt-1 font-mono text-[11px] text-destructive">{error}</p>}
     </div>
   )
 }
@@ -387,12 +379,9 @@ function McpEmptyState({ onCreate }: { onCreate: () => void }) {
         <Plug className="size-6 text-muted-foreground" />
       </div>
       <div>
-        <h2 className="font-serif text-2xl italic text-foreground">
-          No MCP configs yet
-        </h2>
-        <p className="mt-2 text-sm text-muted-foreground text-pretty">
-          Add an MCP server configuration, then assign it to agents that need
-          access to its tools.
+        <h2 className="font-serif text-2xl text-foreground italic">No MCP configs yet</h2>
+        <p className="mt-2 text-sm text-pretty text-muted-foreground">
+          Add an MCP server configuration, then assign it to agents that need access to its tools.
         </p>
       </div>
       <ActionButton variant="accent" onClick={onCreate}>

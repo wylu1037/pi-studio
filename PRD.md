@@ -126,16 +126,16 @@ Sessions 按 Agent 分类。每个 Agent 下有多个 session。每个 session �
 
 ```ts
 interface GlobalSkill {
-  id: string;
-  name: string;
-  description: string;
-  source: "skills.sh" | "local" | "git" | "manual";
-  path: string;
-  version?: string;
-  author?: string;
-  tags: string[];
-  installedAt: string;
-  updatedAt: string;
+  id: string
+  name: string
+  description: string
+  source: 'skills.sh' | 'local' | 'git' | 'manual'
+  path: string
+  version?: string
+  author?: string
+  tags: string[]
+  installedAt: string
+  updatedAt: string
 }
 ```
 
@@ -150,14 +150,14 @@ interface GlobalSkill {
 
 ```ts
 interface GlobalPromptTemplate {
-  id: string;
-  name: string;
-  description?: string;
-  content: string;
-  path: string;
-  tags: string[];
-  createdAt: string;
-  updatedAt: string;
+  id: string
+  name: string
+  description?: string
+  content: string
+  path: string
+  tags: string[]
+  createdAt: string
+  updatedAt: string
 }
 ```
 
@@ -165,16 +165,16 @@ interface GlobalPromptTemplate {
 
 ```ts
 interface GlobalMcpConfig {
-  id: string;
-  name: string;
-  description?: string;
-  command: string;
-  args: string[];
-  env: Record<string, string>;
-  tags: string[];
-  enabledGlobally: boolean;
-  createdAt: string;
-  updatedAt: string;
+  id: string
+  name: string
+  description?: string
+  command: string
+  args: string[]
+  env: Record<string, string>
+  tags: string[]
+  enabledGlobally: boolean
+  createdAt: string
+  updatedAt: string
 }
 ```
 
@@ -187,15 +187,15 @@ interface GlobalMcpConfig {
 
 ```ts
 interface GlobalModelProvider {
-  id: string;
-  name: string;
-  baseUrl: string;
-  api: "openai-completions" | "openai-responses" | "anthropic-messages" | "google-generative-ai";
-  apiKey?: string;
-  headers?: Record<string, string>;
-  models: GlobalModel[];
-  createdAt: string;
-  updatedAt: string;
+  id: string
+  name: string
+  baseUrl: string
+  api: 'openai-completions' | 'openai-responses' | 'anthropic-messages' | 'google-generative-ai'
+  apiKey?: string
+  headers?: Record<string, string>
+  models: GlobalModel[]
+  createdAt: string
+  updatedAt: string
 }
 ```
 
@@ -203,12 +203,12 @@ interface GlobalModelProvider {
 
 ```ts
 interface GlobalModel {
-  id: string;
-  name?: string;
-  reasoning?: boolean;
-  input: Array<"text" | "image">;
-  contextWindow?: number;
-  maxTokens?: number;
+  id: string
+  name?: string
+  reasoning?: boolean
+  input: Array<'text' | 'image'>
+  contextWindow?: number
+  maxTokens?: number
 }
 ```
 
@@ -216,26 +216,26 @@ interface GlobalModel {
 
 ```ts
 interface AgentProfile {
-  id: string;
-  name: string;
-  description?: string;
-  tags: string[];
-  icon?: string;
-  color?: string;
-  defaultCwd?: string;
+  id: string
+  name: string
+  description?: string
+  tags: string[]
+  icon?: string
+  color?: string
+  defaultCwd?: string
 
-  selectedSkillIds: string[];
-  selectedPromptIds: string[];
-  selectedMcpConfigIds: string[];
+  selectedSkillIds: string[]
+  selectedPromptIds: string[]
+  selectedMcpConfigIds: string[]
 
-  selectedProviderIds: string[];
-  selectedModelIds: string[];
-  defaultProviderId?: string;
-  defaultModelId?: string;
-  defaultThinkingLevel: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+  selectedProviderIds: string[]
+  selectedModelIds: string[]
+  defaultProviderId?: string
+  defaultModelId?: string
+  defaultThinkingLevel: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string
+  updatedAt: string
 }
 ```
 
@@ -243,19 +243,19 @@ interface AgentProfile {
 
 ```ts
 interface AgentSessionSummary {
-  id: string;
-  agentId: string;
-  name?: string;
-  filePath: string;
-  cwd: string;
-  createdAt: string;
-  updatedAt: string;
-  messageCount: number;
-  firstUserMessage?: string;
-  lastMessagePreview?: string;
-  totalTokens?: number;
-  totalCost?: number;
-  tags: string[];
+  id: string
+  agentId: string
+  name?: string
+  filePath: string
+  cwd: string
+  createdAt: string
+  updatedAt: string
+  messageCount: number
+  firstUserMessage?: string
+  lastMessagePreview?: string
+  totalTokens?: number
+  totalCost?: number
+  tags: string[]
 }
 ```
 
@@ -263,15 +263,22 @@ interface AgentSessionSummary {
 
 ```ts
 interface SessionTreeNode {
-  id: string;
-  parentId: string | null;
-  type: "message" | "model_change" | "thinking_level_change" | "compaction" | "branch_summary" | "label" | "custom";
-  role?: "user" | "assistant" | "toolResult" | "bashExecution" | "custom";
-  preview: string;
-  timestamp: string;
-  children: SessionTreeNode[];
-  label?: string;
-  isCurrent?: boolean;
+  id: string
+  parentId: string | null
+  type:
+    | 'message'
+    | 'model_change'
+    | 'thinking_level_change'
+    | 'compaction'
+    | 'branch_summary'
+    | 'label'
+    | 'custom'
+  role?: 'user' | 'assistant' | 'toolResult' | 'bashExecution' | 'custom'
+  preview: string
+  timestamp: string
+  children: SessionTreeNode[]
+  label?: string
+  isCurrent?: boolean
 }
 ```
 

@@ -14,7 +14,8 @@ export function safePromptName(value: string) {
 
 export function studioPromptPath(name: string) {
   const safeName = safePromptName(name)
-  if (!safeName) throw new Error('Prompt name may only contain letters, numbers, dots, dashes, and underscores.')
+  if (!safeName)
+    throw new Error('Prompt name may only contain letters, numbers, dots, dashes, and underscores.')
   return join(studioPromptsDir(), `${safeName}.md`)
 }
 
@@ -45,7 +46,12 @@ export function writeStoredPrompt(
   const target = studioPromptPath(prompt.name)
   mkdirSync(studioPromptsDir(), { recursive: true })
   writeFileSync(target, serializePromptTemplate(prompt), 'utf8')
-  if (previousPath && previousPath !== target && insideStudioPrompts(previousPath) && existsSync(previousPath)) {
+  if (
+    previousPath &&
+    previousPath !== target &&
+    insideStudioPrompts(previousPath) &&
+    existsSync(previousPath)
+  ) {
     rmSync(previousPath, { force: true })
   }
   return target

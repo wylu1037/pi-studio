@@ -111,10 +111,7 @@ function createManager(cwd: string) {
   }
 }
 
-export async function listRuntimePackages(
-  cwd: string,
-  gallery: GalleryPackage[] = [],
-) {
+export async function listRuntimePackages(cwd: string, gallery: GalleryPackage[] = []) {
   const { packageManager } = createManager(cwd)
   const diagnostics = new Set<string>()
   const resolved = await packageManager.resolve(async (source) => {
@@ -172,11 +169,7 @@ function packageSourceValue(entry: PackageSource) {
   return typeof entry === 'string' ? entry : entry.source
 }
 
-function setPackageExtensionsEnabled(
-  entries: PackageSource[],
-  source: string,
-  enabled: boolean,
-) {
+function setPackageExtensionsEnabled(entries: PackageSource[], source: string, enabled: boolean) {
   return entries.map((entry): PackageSource => {
     if (packageSourceValue(entry) !== source) return entry
     if (!enabled) {
@@ -236,10 +229,7 @@ export async function installRuntimePackage(input: {
   await refreshSessions()
 }
 
-export async function updateRuntimePackage(input: {
-  source?: string
-  cwd: string
-}) {
+export async function updateRuntimePackage(input: { source?: string; cwd: string }) {
   const { packageManager } = createManager(input.cwd)
   await packageManager.update(input.source)
   await refreshSessions()

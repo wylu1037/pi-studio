@@ -12,11 +12,7 @@ import type {
   GlobalSkill,
   SessionTreeNode,
 } from '@/lib/types'
-import {
-  ensureStoredPrompt,
-  removeStoredPrompt,
-  writeStoredPrompt,
-} from '@/lib/prompts/store'
+import { ensureStoredPrompt, removeStoredPrompt, writeStoredPrompt } from '@/lib/prompts/store'
 import { db, sqlite } from './client'
 import {
   agentMcpConfigs,
@@ -80,10 +76,7 @@ function selectedModelResourceIds(agentId: string) {
     .map(({ modelId }) => {
       const model = db.select().from(models).where(eq(models.id, modelId)).get()
       return model
-        ? modelStorageId(
-            model.providerId,
-            externalModelId(model.providerId, model.id),
-          )
+        ? modelStorageId(model.providerId, externalModelId(model.providerId, model.id))
         : modelId
     })
 }
@@ -110,18 +103,8 @@ export function listAgents(): AgentProfile[] {
     tags: tags('agent_tags', 'agent_id', agent.id),
     selectedSkillIds: ids('agent_skills', 'agent_id', 'skill_id', agent.id),
     selectedPromptIds: ids('agent_prompts', 'agent_id', 'prompt_id', agent.id),
-    selectedMcpConfigIds: ids(
-      'agent_mcp_configs',
-      'agent_id',
-      'mcp_config_id',
-      agent.id,
-    ),
-    selectedProviderIds: ids(
-      'agent_model_providers',
-      'agent_id',
-      'provider_id',
-      agent.id,
-    ),
+    selectedMcpConfigIds: ids('agent_mcp_configs', 'agent_id', 'mcp_config_id', agent.id),
+    selectedProviderIds: ids('agent_model_providers', 'agent_id', 'provider_id', agent.id),
     selectedModelIds: selectedModelResourceIds(agent.id),
     sessionCount: count('sessions', 'agent_id', agent.id),
     lastUsed: agent.lastUsed ?? agent.updatedAt,
@@ -203,27 +186,29 @@ export function updateAgentResources(
     defaultThinkingLevel?: AgentProfile['defaultThinkingLevel']
   },
 ) {
-  const replace = (
-    table: typeof agentSkills,
-    column: 'skillId',
-    values: string[] | undefined,
-  ) => {
+  const replace = (table: typeof agentSkills, column: 'skillId', values: string[] | undefined) => {
     if (!values) return
     db.delete(table).where(eq(table.agentId, id)).run()
-    for (const value of values) db.insert(table).values({ agentId: id, [column]: value }).run()
+    for (const value of values)
+      db.insert(table)
+        .values({ agentId: id, [column]: value })
+        .run()
   }
   replace(agentSkills, 'skillId', input.selectedSkillIds)
   if (input.selectedPromptIds) {
     db.delete(agentPrompts).where(eq(agentPrompts.agentId, id)).run()
-    for (const promptId of input.selectedPromptIds) db.insert(agentPrompts).values({ agentId: id, promptId }).run()
+    for (const promptId of input.selectedPromptIds)
+      db.insert(agentPrompts).values({ agentId: id, promptId }).run()
   }
   if (input.selectedMcpConfigIds) {
     db.delete(agentMcpConfigs).where(eq(agentMcpConfigs.agentId, id)).run()
-    for (const mcpConfigId of input.selectedMcpConfigIds) db.insert(agentMcpConfigs).values({ agentId: id, mcpConfigId }).run()
+    for (const mcpConfigId of input.selectedMcpConfigIds)
+      db.insert(agentMcpConfigs).values({ agentId: id, mcpConfigId }).run()
   }
   if (input.selectedProviderIds) {
     db.delete(agentModelProviders).where(eq(agentModelProviders.agentId, id)).run()
-    for (const providerId of input.selectedProviderIds) db.insert(agentModelProviders).values({ agentId: id, providerId }).run()
+    for (const providerId of input.selectedProviderIds)
+      db.insert(agentModelProviders).values({ agentId: id, providerId }).run()
   }
   if (input.selectedModelIds) {
     db.delete(agentModels).where(eq(agentModels.agentId, id)).run()
@@ -300,7 +285,9 @@ export function listSkills(): GlobalSkill[] {
     }))
 }
 
-export function createSkill(input: Omit<GlobalSkill, 'id' | 'usedByAgents' | 'installedAt' | 'updatedAt'>) {
+export function createSkill(
+  input: Omit<GlobalSkill, 'id' | 'usedByAgents' | 'installedAt' | 'updatedAt'>,
+) {
   const id = `sk-${randomUUID()}`
   const at = now()
   db.insert(globalSkills)
@@ -310,13 +297,15 @@ export function createSkill(input: Omit<GlobalSkill, 'id' | 'usedByAgents' | 'in
   return listSkills().find((skill) => skill.id === id) ?? null
 }
 
-export function upsertSkill(input: Partial<GlobalSkill> & {
-  id?: string
-  name: string
-  description?: string
-  source?: GlobalSkill['source']
-  path: string
-}) {
+export function upsertSkill(
+  input: Partial<GlobalSkill> & {
+    id?: string
+    name: string
+    description?: string
+    source?: GlobalSkill['source']
+    path: string
+  },
+) {
   const id = input.id ?? `sk-${randomUUID()}`
   const at = now()
   const existing = db.select().from(globalSkills).where(eq(globalSkills.id, id)).get()
@@ -380,7 +369,9 @@ export function listPrompts(): GlobalPromptTemplate[] {
     })
 }
 
-export function upsertPrompt(input: Partial<GlobalPromptTemplate> & { id?: string; name: string; content: string }) {
+export function upsertPrompt(
+  input: Partial<GlobalPromptTemplate> & { id?: string; name: string; content: string },
+) {
   const at = now()
   const id = input.id ?? `pr-${randomUUID()}`
   const existing = db.select().from(globalPrompts).where(eq(globalPrompts.id, id)).get()
@@ -460,7 +451,9 @@ export function listMcpConfigs(): GlobalMcpConfig[] {
     }))
 }
 
-export function upsertMcp(input: Partial<GlobalMcpConfig> & { id?: string; name: string; command: string }) {
+export function upsertMcp(
+  input: Partial<GlobalMcpConfig> & { id?: string; name: string; command: string },
+) {
   const id = input.id ?? `mcp-${randomUUID()}`
   const at = now()
   const values = {
@@ -477,7 +470,9 @@ export function upsertMcp(input: Partial<GlobalMcpConfig> & { id?: string; name:
     db.update(mcpConfigs).set(values).where(eq(mcpConfigs.id, id)).run()
     db.delete(mcpTags).where(eq(mcpTags.mcpConfigId, id)).run()
   } else {
-    db.insert(mcpConfigs).values({ ...values, id, createdAt: at }).run()
+    db.insert(mcpConfigs)
+      .values({ ...values, id, createdAt: at })
+      .run()
   }
   for (const tag of input.tags ?? []) db.insert(mcpTags).values({ mcpConfigId: id, tag }).run()
   return listMcpConfigs().find((mcp) => mcp.id === id) ?? null
@@ -537,7 +532,9 @@ export function listModels(providerId: string): GlobalModel[] {
     }))
 }
 
-export function upsertProvider(input: Partial<GlobalModelProvider> & { id?: string; name: string; baseUrl: string; api: string }) {
+export function upsertProvider(
+  input: Partial<GlobalModelProvider> & { id?: string; name: string; baseUrl: string; api: string },
+) {
   const id = input.id ?? `pv-${randomUUID()}`
   const at = now()
   const values = {
@@ -552,24 +549,26 @@ export function upsertProvider(input: Partial<GlobalModelProvider> & { id?: stri
   }
   const existing = db.select().from(modelProviders).where(eq(modelProviders.id, id)).get()
   if (existing) db.update(modelProviders).set(values).where(eq(modelProviders.id, id)).run()
-  else db.insert(modelProviders).values({ ...values, id, createdAt: at }).run()
+  else
+    db.insert(modelProviders)
+      .values({ ...values, id, createdAt: at })
+      .run()
   return listProviders().find((provider) => provider.id === id) ?? null
 }
 
-export function upsertModel(
-  providerId: string,
-  input: GlobalModel & { originalId?: string },
-) {
+export function upsertModel(providerId: string, input: GlobalModel & { originalId?: string }) {
   const provider = getProvider(providerId)
   if (!provider) return null
   const originalId = input.originalId ?? input.id
   const originalStorageId = modelStorageId(providerId, originalId)
   const nextStorageId = modelStorageId(providerId, input.id)
-  const existing = db
-    .select()
-    .from(models)
-    .where(and(eq(models.providerId, providerId), eq(models.id, originalStorageId)))
-    .get() ?? db
+  const existing =
+    db
+      .select()
+      .from(models)
+      .where(and(eq(models.providerId, providerId), eq(models.id, originalStorageId)))
+      .get() ??
+    db
       .select()
       .from(models)
       .where(and(eq(models.providerId, providerId), eq(models.id, originalId)))
@@ -587,26 +586,25 @@ export function upsertModel(
     const conflict = db.select().from(models).where(eq(models.id, nextStorageId)).get()
     if (conflict) throw new Error(`Model ID "${input.id}" already exists.`)
     sqlite.transaction(() => {
-      db.insert(models).values({ id: nextStorageId, ...values }).run()
+      db.insert(models)
+        .values({ id: nextStorageId, ...values })
+        .run()
       db.update(agentModels)
         .set({ modelId: nextStorageId })
         .where(eq(agentModels.modelId, existingStorageId))
         .run()
       db.update(agents)
         .set({ defaultModelId: input.id })
-        .where(
-          and(
-            eq(agents.defaultProviderId, providerId),
-            eq(agents.defaultModelId, originalId),
-          ),
-        )
+        .where(and(eq(agents.defaultProviderId, providerId), eq(agents.defaultModelId, originalId)))
         .run()
       db.delete(models).where(eq(models.id, existingStorageId)).run()
     })()
   } else if (existing) {
     db.update(models).set(values).where(eq(models.id, existingStorageId)).run()
   } else {
-    db.insert(models).values({ id: nextStorageId, ...values }).run()
+    db.insert(models)
+      .values({ id: nextStorageId, ...values })
+      .run()
   }
   db.update(modelProviders).set({ updatedAt: now() }).where(eq(modelProviders.id, providerId)).run()
   return listProviders().find((item) => item.id === providerId) ?? null
@@ -614,8 +612,13 @@ export function upsertModel(
 
 export function deleteModel(providerId: string, id: string) {
   const storageId = modelStorageId(providerId, id)
-  const existing = db.select().from(models).where(eq(models.id, storageId)).get() ??
-    db.select().from(models).where(and(eq(models.providerId, providerId), eq(models.id, id))).get()
+  const existing =
+    db.select().from(models).where(eq(models.id, storageId)).get() ??
+    db
+      .select()
+      .from(models)
+      .where(and(eq(models.providerId, providerId), eq(models.id, id)))
+      .get()
   if (!existing) return null
   db.delete(models).where(eq(models.id, existing.id)).run()
   db.update(modelProviders)
@@ -645,7 +648,10 @@ export async function testProviderConnection(id: string) {
   const provider = db.select().from(modelProviders).where(eq(modelProviders.id, id)).get()
   if (!provider) return null
   if (!provider.apiKey) {
-    db.update(modelProviders).set({ status: 'untested', updatedAt: now() }).where(eq(modelProviders.id, id)).run()
+    db.update(modelProviders)
+      .set({ status: 'untested', updatedAt: now() })
+      .where(eq(modelProviders.id, id))
+      .run()
     return {
       ok: false,
       status: 'missing-api-key',
@@ -788,10 +794,7 @@ export function updateSessionFilePath(id: string, filePath: string) {
   db.update(sessions).set({ filePath, updatedAt: now() }).where(eq(sessions.id, id)).run()
 }
 
-export function updateSession(
-  id: string,
-  input: { name: string; cwd: string },
-) {
+export function updateSession(id: string, input: { name: string; cwd: string }) {
   const existing = db.select().from(sessions).where(eq(sessions.id, id)).get()
   if (!existing) return null
   db.update(sessions)
@@ -801,10 +804,7 @@ export function updateSession(
   return getSession(id)
 }
 
-export function createForkedSessionRecord(input: {
-  sourceSessionId: string
-  filePath: string
-}) {
+export function createForkedSessionRecord(input: { sourceSessionId: string; filePath: string }) {
   const source = db.select().from(sessions).where(eq(sessions.id, input.sourceSessionId)).get()
   if (!source) return null
   const id = randomUUID()
@@ -900,7 +900,11 @@ export function getRun(id: string) {
   return db.select().from(chatRuns).where(eq(chatRuns.id, id)).get() ?? null
 }
 
-export function markRun(id: string, status: 'running' | 'completed' | 'failed' | 'aborted', error?: string) {
+export function markRun(
+  id: string,
+  status: 'running' | 'completed' | 'failed' | 'aborted',
+  error?: string,
+) {
   db.update(chatRuns)
     .set({
       status,
@@ -914,7 +918,13 @@ export function markRun(id: string, status: 'running' | 'completed' | 'failed' |
 
 export function appendRunEvent(runId: string, type: string, payload: unknown) {
   db.insert(chatRunEvents)
-    .values({ id: randomUUID(), runId, type, payloadJson: JSON.stringify(payload), createdAt: now() })
+    .values({
+      id: randomUUID(),
+      runId,
+      type,
+      payloadJson: JSON.stringify(payload),
+      createdAt: now(),
+    })
     .run()
 }
 
@@ -928,9 +938,7 @@ export function appendMessage(input: {
 }) {
   const id = randomUUID()
   const createdAt = now()
-  const tokens =
-    input.tokens ??
-    (input.usage ? input.usage.input + input.usage.output : undefined)
+  const tokens = input.tokens ?? (input.usage ? input.usage.input + input.usage.output : undefined)
   db.insert(chatMessages)
     .values({
       id,
@@ -963,18 +971,12 @@ export function appendMessage(input: {
       createdAt,
     })
     .run()
-  const session = db
-    .select()
-    .from(sessions)
-    .where(eq(sessions.id, input.sessionId))
-    .get()
+  const session = db.select().from(sessions).where(eq(sessions.id, input.sessionId)).get()
   db.update(sessions)
     .set({
       updatedAt: createdAt,
       activeNodeId: `node-${id}`,
-      totalTokens: tokens
-        ? (session?.totalTokens ?? 0) + tokens
-        : session?.totalTokens,
+      totalTokens: tokens ? (session?.totalTokens ?? 0) + tokens : session?.totalTokens,
       totalCost: input.usage?.cost?.total
         ? (session?.totalCost ?? 0) + input.usage.cost.total
         : session?.totalCost,
@@ -984,9 +986,7 @@ export function appendMessage(input: {
   return id
 }
 
-function messageUsage(
-  message: typeof chatMessages.$inferSelect,
-): ChatMessage['usage'] | undefined {
+function messageUsage(message: typeof chatMessages.$inferSelect): ChatMessage['usage'] | undefined {
   const hasUsage =
     message.usageInputTokens != null ||
     message.usageOutputTokens != null ||
@@ -1035,11 +1035,11 @@ export function resolveAgentRunConfig(agentId: string, providerId?: string | nul
     .filter((provider) => selectedProviderSet.has(provider.id))
     .map((provider) => ({
       ...provider,
-      models:
-        provider.models.filter((model) =>
+      models: provider.models.filter(
+        (model) =>
           selectedModelSet.has(modelStorageId(provider.id, model.id)) ||
           selectedModelSet.has(model.id),
-        ),
+      ),
     }))
   const selectedProvider =
     agentProviders.find((provider) => provider.id === providerId) ??

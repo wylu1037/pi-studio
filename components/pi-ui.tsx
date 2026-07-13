@@ -4,20 +4,9 @@ import type React from 'react'
 import { cn } from '@/lib/utils'
 
 /* Uppercase tracked mono label used for section headers */
-export function Label({
-  children,
-  className,
-}: {
-  children: React.ReactNode
-  className?: string
-}) {
+export function Label({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <span
-      className={cn(
-        'font-mono-label text-[11px] text-muted-foreground',
-        className,
-      )}
-    >
+    <span className={cn('font-mono-label text-[11px] text-muted-foreground', className)}>
       {children}
     </span>
   )
@@ -47,8 +36,8 @@ export function BracketButton({
       disabled={disabled}
       className={cn(
         'inline-flex items-center gap-1.5 border border-border-strong bg-card px-3 py-1.5 font-mono text-xs tracking-wide text-foreground transition-colors',
-        'hover:bg-muted disabled:opacity-40 disabled:pointer-events-none',
-        active && 'bg-primary text-primary-foreground border-primary',
+        'hover:bg-muted disabled:pointer-events-none disabled:opacity-40',
+        active && 'border-primary bg-primary text-primary-foreground',
         className,
       )}
     >
@@ -84,10 +73,9 @@ export function ActionButton({
       title={title}
       disabled={disabled}
       className={cn(
-        'inline-flex items-center justify-center gap-2 border px-3 py-1.5 font-mono text-xs uppercase tracking-wide transition-colors',
+        'inline-flex items-center justify-center gap-2 border px-3 py-1.5 font-mono text-xs tracking-wide uppercase transition-colors',
         'disabled:pointer-events-none disabled:opacity-45',
-        variant === 'default' &&
-          'border-border-strong bg-card text-foreground hover:bg-muted',
+        variant === 'default' && 'border-border-strong bg-card text-foreground hover:bg-muted',
         variant === 'accent' &&
           'border-primary bg-primary text-primary-foreground hover:opacity-90',
         variant === 'ghost' &&
@@ -115,7 +103,7 @@ export function Tag({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider leading-none',
+        'inline-flex items-center gap-1 px-1.5 py-0.5 font-mono text-[10px] leading-none tracking-wider uppercase',
         tone === 'default' && 'bg-muted text-muted-foreground',
         tone === 'accent' && 'bg-accent/12 text-accent',
         tone === 'success' && 'bg-success/12 text-success',
@@ -140,11 +128,7 @@ export function Panel({
   className?: string
   as?: React.ElementType
 }) {
-  return (
-    <Comp className={cn('border border-border bg-card', className)}>
-      {children}
-    </Comp>
-  )
+  return <Comp className={cn('border border-border bg-card', className)}>{children}</Comp>
 }
 
 export function PanelHeader({
@@ -185,9 +169,7 @@ export function TextInput({
   return (
     <div className={cn('relative flex items-center', className)}>
       {icon && (
-        <span className="pointer-events-none absolute left-2.5 text-muted-foreground">
-          {icon}
-        </span>
+        <span className="pointer-events-none absolute left-2.5 text-muted-foreground">{icon}</span>
       )}
       <input
         value={value}
@@ -204,13 +186,7 @@ export function TextInput({
 }
 
 /* Terminal-style install command box */
-export function CommandBox({
-  command,
-  className,
-}: {
-  command: string
-  className?: string
-}) {
+export function CommandBox({ command, className }: { command: string; className?: string }) {
   return (
     <div
       className={cn(
@@ -224,7 +200,7 @@ export function CommandBox({
       </code>
       <button
         type="button"
-        className="shrink-0 border border-border-strong px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:bg-muted hover:text-foreground"
+        className="shrink-0 border border-border-strong px-2 py-0.5 font-mono text-[10px] tracking-wider text-muted-foreground uppercase hover:bg-muted hover:text-foreground"
       >
         [ Copy ]
       </button>
@@ -251,9 +227,7 @@ export function Toggle({
       disabled={disabled}
       className={cn(
         'relative h-4.5 w-8 shrink-0 border transition-colors disabled:cursor-not-allowed disabled:opacity-40',
-        checked
-          ? 'border-accent bg-accent/80'
-          : 'border-border-strong bg-muted',
+        checked ? 'border-accent bg-accent/80' : 'border-border-strong bg-muted',
       )}
     >
       <span
@@ -278,13 +252,11 @@ export function PageHeader({
   return (
     <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border px-6 py-5">
       <div className="min-w-0">
-        <h1 className="font-serif text-3xl italic leading-none text-foreground text-balance">
+        <h1 className="font-serif text-3xl leading-none text-balance text-foreground italic">
           {title}
         </h1>
         {subtitle && (
-          <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground text-pretty">
-            {subtitle}
-          </p>
+          <p className="mt-1.5 max-w-2xl text-sm text-pretty text-muted-foreground">{subtitle}</p>
         )}
       </div>
       {children && <div className="flex items-center gap-2">{children}</div>}
@@ -329,10 +301,7 @@ export function ConfirmDialog({
       />
       <div className="relative w-full max-w-md border border-border bg-card shadow-xl">
         <div className="border-b border-border bg-panel px-4 py-3">
-          <h2
-            id="confirm-dialog-title"
-            className="font-serif text-lg italic text-foreground"
-          >
+          <h2 id="confirm-dialog-title" className="font-serif text-lg text-foreground italic">
             {title}
           </h2>
         </div>

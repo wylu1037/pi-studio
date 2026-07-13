@@ -35,10 +35,7 @@ function findNpxCli() {
   return null
 }
 
-export async function runNpx(
-  args: string[],
-  options: RunNpxOptions = {},
-): Promise<RunNpxResult> {
+export async function runNpx(args: string[], options: RunNpxOptions = {}): Promise<RunNpxResult> {
   const npxCli = findNpxCli()
   const command = npxCli ? execPath : 'npx'
   const commandArgs = npxCli ? [npxCli, ...args] : args

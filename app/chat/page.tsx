@@ -42,9 +42,8 @@ export default async function ChatPage({
   let messages = activeSession ? listSessionMessages(activeSession.id) : []
   let tree = activeSession ? getSessionTree(activeSession.id) : null
   if (activeSession) {
-    const { readSdkSessionContext, readSdkSessionTree } = await import(
-      '@/lib/chat/session-branches'
-    )
+    const { readSdkSessionContext, readSdkSessionTree } =
+      await import('@/lib/chat/session-branches')
     const sdkTree = readSdkSessionTree(activeSession.filePath)
     const sdkContext = readSdkSessionContext(activeSession.filePath)
     tree = sdkTree?.roots[0] ?? tree

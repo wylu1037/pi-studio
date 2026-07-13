@@ -30,14 +30,7 @@ import type { PostApiModelProvidersIdModelsMutationRequest } from '@/lib/api/gen
 import { postApiModelProvidersIdModelsMutationRequestSchema } from '@/lib/api/generated/zod/postApiModelProvidersIdModelsSchema'
 import { refreshAfterMutation } from '@/lib/api/refresh'
 import { errorMessage, showToast } from '@/lib/toast'
-import {
-  ActionButton,
-  ConfirmDialog,
-  Label,
-  PageHeader,
-  Panel,
-  Tag,
-} from '@/components/pi-ui'
+import { ActionButton, ConfirmDialog, Label, PageHeader, Panel, Tag } from '@/components/pi-ui'
 import { cn } from '@/lib/utils'
 
 const providerFormSchema = z.object({
@@ -57,15 +50,18 @@ const addModelFormSchema = z.object({
   id: z.string().min(1),
   name: z.string().optional(),
   reasoning: z.boolean(),
-  inputText: z.string().min(1).refine(
-    (value) =>
-      value
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean)
-        .every((item) => item === 'text' || item === 'image'),
-    'Use text, image, or both separated by commas.',
-  ),
+  inputText: z
+    .string()
+    .min(1)
+    .refine(
+      (value) =>
+        value
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .every((item) => item === 'text' || item === 'image'),
+      'Use text, image, or both separated by commas.',
+    ),
   contextWindow: z
     .string()
     .optional()
@@ -83,10 +79,7 @@ const providerApis: ProviderApi[] = [
   'google-generative-ai',
 ]
 
-const providerBrand: Record<
-  ProviderApi,
-  { label: string }
-> = {
+const providerBrand: Record<ProviderApi, { label: string }> = {
   'openai-completions': {
     label: 'OPENAI',
   },
@@ -101,11 +94,7 @@ const providerBrand: Record<
   },
 }
 
-export function ModelsView({
-  providers,
-}: {
-  providers: GlobalModelProvider[]
-}) {
+export function ModelsView({ providers }: { providers: GlobalModelProvider[] }) {
   const [providerList, setProviderList] = useState(providers)
   const [selectedId, setSelectedId] = useState(providers[0]?.id)
   const selected = providerList.find((p) => p.id === selectedId)
@@ -148,11 +137,7 @@ export function ModelsView({
         title="Models"
         subtitle="Providers and models available to your agents. Backed by pi's models.json."
       >
-        <ActionButton
-          variant="accent"
-          onClick={addProvider}
-          disabled={pending === 'new-provider'}
-        >
+        <ActionButton variant="accent" onClick={addProvider} disabled={pending === 'new-provider'}>
           <Plus className="size-3.5" />
           Add Provider
         </ActionButton>
@@ -168,76 +153,70 @@ export function ModelsView({
       {providerList.length === 0 ? (
         <ModelsEmptyState onAdd={addProvider} disabled={pending === 'new-provider'} />
       ) : (
-      <div className="grid flex-1 grid-cols-[300px_1fr] overflow-hidden">
-        {/* Provider list */}
-        <div className="flex flex-col border-r border-border">
-          <div className="border-b border-border bg-panel px-4 py-2.5">
-            <Label>Providers</Label>
-          </div>
-          <ul className="flex-1 overflow-y-auto scrollbar-thin">
-            {providerList.map((p) => (
-              <li key={p.id}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedId(p.id)}
-                  className={cn(
-                    'flex w-full flex-col gap-1.5 border-b border-border px-4 py-3 text-left transition-colors',
-                    selectedId === p.id ? 'bg-card' : 'hover:bg-panel',
-                  )}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <ProviderLogo api={p.api} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={cn(
-                            'truncate font-mono text-[13px]',
-                            selectedId === p.id
-                              ? 'text-accent'
-                              : 'text-foreground',
+        <div className="grid flex-1 grid-cols-[300px_1fr] overflow-hidden">
+          {/* Provider list */}
+          <div className="flex flex-col border-r border-border">
+            <div className="border-b border-border bg-panel px-4 py-2.5">
+              <Label>Providers</Label>
+            </div>
+            <ul className="scrollbar-thin flex-1 overflow-y-auto">
+              {providerList.map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(p.id)}
+                    className={cn(
+                      'flex w-full flex-col gap-1.5 border-b border-border px-4 py-3 text-left transition-colors',
+                      selectedId === p.id ? 'bg-card' : 'hover:bg-panel',
+                    )}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <ProviderLogo api={p.api} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={cn(
+                              'truncate font-mono text-[13px]',
+                              selectedId === p.id ? 'text-accent' : 'text-foreground',
+                            )}
+                          >
+                            {p.name}
+                          </span>
+                          {p.isDefault && (
+                            <Star className="size-3 shrink-0 fill-warning text-warning" />
                           )}
-                        >
-                          {p.name}
-                        </span>
-                        {p.isDefault && (
-                          <Star className="size-3 shrink-0 fill-warning text-warning" />
-                        )}
-                      </div>
-                      <div className="mt-1.5 flex items-center gap-2">
-                        <StatusDot status={p.status} />
-                        <span className="font-mono text-[10px] text-muted-foreground">
-                          {p.models.length} models
-                        </span>
+                        </div>
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <StatusDot status={p.status} />
+                          <span className="font-mono text-[10px] text-muted-foreground">
+                            {p.models.length} models
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* Detail */}
-        {selected && (
-          <div className="overflow-y-auto scrollbar-thin p-6">
-            <ProviderDetail
-              key={selected.id}
-              provider={selected}
-              onProviderUpdate={updateProvider}
-            />
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
-        )}
-      </div>
+
+          {/* Detail */}
+          {selected && (
+            <div className="scrollbar-thin overflow-y-auto p-6">
+              <ProviderDetail
+                key={selected.id}
+                provider={selected}
+                onProviderUpdate={updateProvider}
+              />
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
 }
 
-function StatusDot({
-  status,
-}: {
-  status: GlobalModelProvider['status']
-}) {
+function StatusDot({ status }: { status: GlobalModelProvider['status'] }) {
   if (status === 'connected')
     return (
       <span className="flex items-center gap-1 font-mono text-[10px] text-success">
@@ -260,25 +239,17 @@ function StatusDot({
   )
 }
 
-function ModelsEmptyState({
-  onAdd,
-  disabled,
-}: {
-  onAdd: () => void
-  disabled?: boolean
-}) {
+function ModelsEmptyState({ onAdd, disabled }: { onAdd: () => void; disabled?: boolean }) {
   return (
     <div className="mx-auto flex max-w-md flex-1 flex-col items-center justify-center gap-4 py-24 text-center">
       <div className="flex size-14 items-center justify-center border border-border-strong bg-card">
         <Cpu className="size-6 text-muted-foreground" />
       </div>
       <div>
-        <h2 className="font-serif text-2xl italic text-foreground">
-          No model providers yet
-        </h2>
-        <p className="mt-2 text-sm text-muted-foreground text-pretty">
-          Add a provider with its base URL, API key, and model ids before agents
-          can use local Pi chat runs.
+        <h2 className="font-serif text-2xl text-foreground italic">No model providers yet</h2>
+        <p className="mt-2 text-sm text-pretty text-muted-foreground">
+          Add a provider with its base URL, API key, and model ids before agents can use local Pi
+          chat runs.
         </p>
       </div>
       <ActionButton variant="accent" onClick={onAdd} disabled={disabled}>
@@ -292,10 +263,7 @@ function ModelsEmptyState({
 function ProviderLogo({ api }: { api: ProviderApi }) {
   const brand = providerBrand[api]
   return (
-    <span
-      title={brand.label}
-      className="flex size-8 shrink-0 items-center justify-center"
-    >
+    <span title={brand.label} className="flex size-8 shrink-0 items-center justify-center">
       {api === 'anthropic-messages' ? (
         <ClaudeLogo />
       ) : api === 'google-generative-ai' ? (
@@ -322,13 +290,11 @@ function OpenAILogo() {
 
 function ClaudeLogo() {
   return (
-    <svg
-      viewBox="0 -.01 39.5 39.53"
-      aria-hidden="true"
-      focusable="false"
-      className="size-5"
-    >
-      <path d="m7.75 26.27 7.77-4.36.13-.38-.13-.21h-.38l-1.3-.08-4.44-.12-3.85-.16-3.73-.2-.94-.2-.88-1.16.09-.58.79-.53 1.13.1 2.5.17 3.75.26 2.72.16 4.03.42h.64l.09-.26-.22-.16-.17-.16-3.88-2.63-4.2-2.78-2.2-1.6-1.19-.81-.6-.76-.26-1.66 1.08-1.19 1.45.1.37.1 1.47 1.13 3.14 2.43 4.1 3.02.6.5.24-.17.03-.12-.27-.45-2.23-4.03-2.38-4.1-1.06-1.7-.28-1.02c-.1-.42-.17-.77-.17-1.2l1.23-1.67.68-.22 1.64.22.69.6 1.02 2.33 1.65 3.67 2.56 4.99.75 1.48.4 1.37.15.42h.26v-.24l.21-2.81.39-3.45.38-4.44.13-1.25.62-1.5 1.23-.81.96.46.79 1.13-.11.73-.47 3.05-.92 4.78-.6 3.2h.35l.4-.4 1.62-2.15 2.72-3.4 1.2-1.35 1.4-1.49.9-.71h1.7l1.25 1.86-.56 1.92-1.75 2.22-1.45 1.88-2.08 2.8-1.3 2.24.12.18.31-.03 4.7-1 2.54-.46 3.03-.52 1.37.64.15.65-.54 1.33-3.24.8-3.8.76-5.66 1.34-.07.05.08.1 2.55.24 1.09.06h2.67l4.97.37 1.3.86.78 1.05-.13.8-2 1.02-2.7-.64-6.3-1.5-2.16-.54h-.3v.18l1.8 1.76 3.3 2.98 4.13 3.84.21.95-.53.75-.56-.08-3.63-2.73-1.4-1.23-3.17-2.67h-.21v.28l.73 1.07 3.86 5.8.2 1.78-.28.58-1 .35-1.1-.2-2.26-3.17-2.33-3.57-1.88-3.2-.23.13-1.11 11.95-.52.61-1.2.46-1-.76-.53-1.23.53-2.43.64-3.17.52-2.52.47-3.13.28-1.04-.02-.07-.23.03-2.36 3.24-3.59 4.85-2.84 3.04-.68.27-1.18-.61.11-1.09.66-.97 3.93-5 2.37-3.1 1.53-1.79-.01-.26h-.09l-10.44 6.78-1.86.24-.8-.75.1-1.23.38-.4 3.14-2.16z" fill="#d97757" />
+    <svg viewBox="0 -.01 39.5 39.53" aria-hidden="true" focusable="false" className="size-5">
+      <path
+        d="m7.75 26.27 7.77-4.36.13-.38-.13-.21h-.38l-1.3-.08-4.44-.12-3.85-.16-3.73-.2-.94-.2-.88-1.16.09-.58.79-.53 1.13.1 2.5.17 3.75.26 2.72.16 4.03.42h.64l.09-.26-.22-.16-.17-.16-3.88-2.63-4.2-2.78-2.2-1.6-1.19-.81-.6-.76-.26-1.66 1.08-1.19 1.45.1.37.1 1.47 1.13 3.14 2.43 4.1 3.02.6.5.24-.17.03-.12-.27-.45-2.23-4.03-2.38-4.1-1.06-1.7-.28-1.02c-.1-.42-.17-.77-.17-1.2l1.23-1.67.68-.22 1.64.22.69.6 1.02 2.33 1.65 3.67 2.56 4.99.75 1.48.4 1.37.15.42h.26v-.24l.21-2.81.39-3.45.38-4.44.13-1.25.62-1.5 1.23-.81.96.46.79 1.13-.11.73-.47 3.05-.92 4.78-.6 3.2h.35l.4-.4 1.62-2.15 2.72-3.4 1.2-1.35 1.4-1.49.9-.71h1.7l1.25 1.86-.56 1.92-1.75 2.22-1.45 1.88-2.08 2.8-1.3 2.24.12.18.31-.03 4.7-1 2.54-.46 3.03-.52 1.37.64.15.65-.54 1.33-3.24.8-3.8.76-5.66 1.34-.07.05.08.1 2.55.24 1.09.06h2.67l4.97.37 1.3.86.78 1.05-.13.8-2 1.02-2.7-.64-6.3-1.5-2.16-.54h-.3v.18l1.8 1.76 3.3 2.98 4.13 3.84.21.95-.53.75-.56-.08-3.63-2.73-1.4-1.23-3.17-2.67h-.21v.28l.73 1.07 3.86 5.8.2 1.78-.28.58-1 .35-1.1-.2-2.26-3.17-2.33-3.57-1.88-3.2-.23.13-1.11 11.95-.52.61-1.2.46-1-.76-.53-1.23.53-2.43.64-3.17.52-2.52.47-3.13.28-1.04-.02-.07-.23.03-2.36 3.24-3.59 4.85-2.84 3.04-.68.27-1.18-.61.11-1.09.66-.97 3.93-5 2.37-3.1 1.53-1.79-.01-.26h-.09l-10.44 6.78-1.86.24-.8-.75.1-1.23.38-.4 3.14-2.16z"
+        fill="#d97757"
+      />
     </svg>
   )
 }
@@ -336,12 +302,7 @@ function ClaudeLogo() {
 function GeminiLogo() {
   const gradientId = useId().replace(/:/g, '')
   return (
-    <svg
-      viewBox="0 0 28.01 28"
-      aria-hidden="true"
-      focusable="false"
-      className="size-5"
-    >
+    <svg viewBox="0 0 28.01 28" aria-hidden="true" focusable="false" className="size-5">
       <radialGradient
         id={gradientId}
         cx="-576.08"
@@ -354,7 +315,10 @@ function GeminiLogo() {
         <stop offset=".34" stopColor="#5684d1" />
         <stop offset=".67" stopColor="#1ba1e3" />
       </radialGradient>
-      <path d="M14 28c0-1.94-.37-3.76-1.12-5.46-.72-1.7-1.72-3.19-2.98-4.45s-2.74-2.25-4.44-2.97C3.76 14.37 1.94 14 0 14c1.94 0 3.76-.36 5.46-1.09 1.7-.75 3.19-1.75 4.44-3.01 1.26-1.26 2.25-2.74 2.98-4.44C13.63 3.76 14 1.94 14 0c0 1.94.36 3.76 1.09 5.46.75 1.7 1.75 3.19 3.01 4.44 1.26 1.26 2.74 2.26 4.45 3.01 1.7.72 3.52 1.09 5.46 1.09-1.94 0-3.76.37-5.46 1.12-1.7.72-3.19 1.71-4.45 2.97s-2.26 2.74-3.01 4.45A13.86 13.86 0 0 0 14 28z" fill={`url(#${gradientId})`} />
+      <path
+        d="M14 28c0-1.94-.37-3.76-1.12-5.46-.72-1.7-1.72-3.19-2.98-4.45s-2.74-2.25-4.44-2.97C3.76 14.37 1.94 14 0 14c1.94 0 3.76-.36 5.46-1.09 1.7-.75 3.19-1.75 4.44-3.01 1.26-1.26 2.25-2.74 2.98-4.44C13.63 3.76 14 1.94 14 0c0 1.94.36 3.76 1.09 5.46.75 1.7 1.75 3.19 3.01 4.44 1.26 1.26 2.74 2.26 4.45 3.01 1.7.72 3.52 1.09 5.46 1.09-1.94 0-3.76.37-5.46 1.12-1.7.72-3.19 1.71-4.45 2.97s-2.26 2.74-3.01 4.45A13.86 13.86 0 0 0 14 28z"
+        fill={`url(#${gradientId})`}
+      />
     </svg>
   )
 }
@@ -382,9 +346,7 @@ function ProviderDetail({
     },
   })
   const [pending, setPending] = useState<string | null>(null)
-  const [displayModels, setDisplayModels] = useState<GlobalModel[]>(
-    provider.models,
-  )
+  const [displayModels, setDisplayModels] = useState<GlobalModel[]>(provider.models)
   const [confirmProviderDelete, setConfirmProviderDelete] = useState(false)
   const [modelDeleteTarget, setModelDeleteTarget] = useState<string | null>(null)
   const [showAddModel, setShowAddModel] = useState(false)
@@ -429,7 +391,11 @@ function ProviderDetail({
         message: result.message,
       })
     } catch (error) {
-      showToast({ tone: 'error', title: 'Connection failed', message: errorMessage(error, 'Connection test failed.') })
+      showToast({
+        tone: 'error',
+        title: 'Connection failed',
+        message: errorMessage(error, 'Connection test failed.'),
+      })
     } finally {
       setPending(null)
     }
@@ -439,8 +405,11 @@ function ProviderDetail({
     setShowAddModel(true)
     setLoadingModels(true)
     try {
-      const response = await fetch(`/api/model-providers/${encodeURIComponent(provider.id)}/available-models`)
-      const body = (await response.json()) as Array<{ id: string; name: string }> | { error?: string }
+      const response = await fetch(
+        `/api/model-providers/${encodeURIComponent(provider.id)}/available-models`,
+      )
+      const body = (await response.json()) as
+        Array<{ id: string; name: string }> | { error?: string }
       if (!response.ok || !Array.isArray(body)) {
         throw new Error(Array.isArray(body) ? 'Unable to load models.' : body.error)
       }
@@ -460,7 +429,9 @@ function ProviderDetail({
       onProviderUpdate(updated)
       showToast({
         tone: 'success',
-        message: updated.isDefault ? `${provider.name} set as default.` : `${provider.name} is no longer default.`,
+        message: updated.isDefault
+          ? `${provider.name} set as default.`
+          : `${provider.name} is no longer default.`,
       })
     } catch (error) {
       showToast({ tone: 'error', message: errorMessage(error) })
@@ -484,9 +455,7 @@ function ProviderDetail({
     model: PostApiModelProvidersIdModelsMutationRequest,
     mode: 'add' | 'edit',
   ) => {
-    setPending(
-      mode === 'add' ? 'model:add' : `model:edit:${model.originalId ?? model.id}`,
-    )
+    setPending(mode === 'add' ? 'model:add' : `model:edit:${model.originalId ?? model.id}`)
     try {
       const updated = await postApiModelProvidersIdModels(provider.id, model)
       setDisplayModels(updated.models as GlobalModel[])
@@ -520,247 +489,240 @@ function ProviderDetail({
 
   return (
     <>
-    <form onSubmit={handleSubmit(saveProvider)} className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h2 className="font-serif text-2xl italic text-foreground">
-            {provider.name}
-          </h2>
-          {provider.isDefault && <Tag tone="warning">default</Tag>}
+      <form onSubmit={handleSubmit(saveProvider)} className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h2 className="font-serif text-2xl text-foreground italic">{provider.name}</h2>
+            {provider.isDefault && <Tag tone="warning">default</Tag>}
+          </div>
+          <div className="flex items-center gap-2">
+            <ActionButton onClick={testProvider} disabled={pending === 'test'}>
+              <Zap className="size-3.5" />
+              {pending === 'test' ? 'Testing' : 'Test connection'}
+            </ActionButton>
+            <ActionButton onClick={setDefault} disabled={pending === 'default'}>
+              <Star className="size-3.5" />
+              {provider.isDefault ? 'Unset default' : 'Set default'}
+            </ActionButton>
+            <ActionButton variant="accent" type="submit" disabled={isSubmitting}>
+              <Save className="size-3.5" />
+              Save
+            </ActionButton>
+            <ActionButton
+              variant="danger"
+              onClick={() => setConfirmProviderDelete(true)}
+              disabled={pending === 'delete' || isSubmitting}
+            >
+              <Trash2 className="size-3.5" />
+            </ActionButton>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <ActionButton onClick={testProvider} disabled={pending === 'test'}>
-            <Zap className="size-3.5" />
-            {pending === 'test' ? 'Testing' : 'Test connection'}
-          </ActionButton>
-          <ActionButton onClick={setDefault} disabled={pending === 'default'}>
-            <Star className="size-3.5" />
-            {provider.isDefault ? 'Unset default' : 'Set default'}
-          </ActionButton>
-          <ActionButton variant="accent" type="submit" disabled={isSubmitting}>
-            <Save className="size-3.5" />
-            Save
-          </ActionButton>
-          <ActionButton
-            variant="danger"
-            onClick={() => setConfirmProviderDelete(true)}
-            disabled={pending === 'delete' || isSubmitting}
-          >
-            <Trash2 className="size-3.5" />
-          </ActionButton>
-        </div>
-      </div>
 
-      {/* Config */}
-      <Panel className="p-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Config label="Name" error={errors.name?.message}>
-            <input {...register('name')} className="w-full border border-input bg-panel px-3 py-1.5 text-[13px] text-foreground outline-none focus:border-ring" />
-          </Config>
-          <Config label="Base URL" error={errors.baseUrl?.message}>
-            <input {...register('baseUrl')} className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring" />
-          </Config>
-          <Config label="API type">
-            <select {...register('api')} className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring">
-              {providerApis.map((api) => (
-                <option key={api} value={api}>
-                  {api}
-                </option>
-              ))}
-            </select>
-          </Config>
-          <Config label="API key">
-            <div className="flex border border-input bg-panel focus-within:border-ring">
-              <Controller
-                control={control}
-                name="apiKey"
-                render={({ field }) => (
-                  <input
-                    ref={field.ref}
-                    name={field.name}
-                    type="text"
-                    value={
-                      showApiKey
-                        ? (field.value ?? '')
-                        : field.value
-                          ? '*'.repeat(field.value.length)
-                          : ''
-                    }
-                    readOnly={!showApiKey}
-                    onBlur={field.onBlur}
-                    onChange={showApiKey ? field.onChange : undefined}
-                    className={cn(
-                      'min-w-0 flex-1 bg-transparent px-3 py-1.5 font-mono text-[13px] outline-none',
-                      showApiKey
-                        ? 'text-foreground'
-                        : 'cursor-default text-muted-foreground',
-                    )}
-                  />
-                )}
+        {/* Config */}
+        <Panel className="p-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Config label="Name" error={errors.name?.message}>
+              <input
+                {...register('name')}
+                className="w-full border border-input bg-panel px-3 py-1.5 text-[13px] text-foreground outline-none focus:border-ring"
               />
-              <button
-                type="button"
-                onClick={() => setShowApiKey((value) => !value)}
-                className="flex w-9 items-center justify-center text-muted-foreground hover:text-foreground"
-                aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
+            </Config>
+            <Config label="Base URL" error={errors.baseUrl?.message}>
+              <input
+                {...register('baseUrl')}
+                className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+              />
+            </Config>
+            <Config label="API type">
+              <select
+                {...register('api')}
+                className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
               >
-                {showApiKey ? (
-                  <EyeOff className="size-3.5" />
-                ) : (
-                  <Eye className="size-3.5" />
-                )}
-              </button>
-            </div>
-          </Config>
-        </div>
-        <div className="mt-4">
-          <Label className="mb-1.5 block">Custom headers</Label>
-          <textarea
-            {...register('headersText')}
-            rows={5}
-            className="w-full resize-none border border-input bg-panel px-3 py-1.5 font-mono text-[12px] text-foreground outline-none focus:border-ring"
-          />
-        </div>
-      </Panel>
+                {providerApis.map((api) => (
+                  <option key={api} value={api}>
+                    {api}
+                  </option>
+                ))}
+              </select>
+            </Config>
+            <Config label="API key">
+              <div className="flex border border-input bg-panel focus-within:border-ring">
+                <Controller
+                  control={control}
+                  name="apiKey"
+                  render={({ field }) => (
+                    <input
+                      ref={field.ref}
+                      name={field.name}
+                      type="text"
+                      value={
+                        showApiKey
+                          ? (field.value ?? '')
+                          : field.value
+                            ? '*'.repeat(field.value.length)
+                            : ''
+                      }
+                      readOnly={!showApiKey}
+                      onBlur={field.onBlur}
+                      onChange={showApiKey ? field.onChange : undefined}
+                      className={cn(
+                        'min-w-0 flex-1 bg-transparent px-3 py-1.5 font-mono text-[13px] outline-none',
+                        showApiKey ? 'text-foreground' : 'cursor-default text-muted-foreground',
+                      )}
+                    />
+                  )}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey((value) => !value)}
+                  className="flex w-9 items-center justify-center text-muted-foreground hover:text-foreground"
+                  aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
+                >
+                  {showApiKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                </button>
+              </div>
+            </Config>
+          </div>
+          <div className="mt-4">
+            <Label className="mb-1.5 block">Custom headers</Label>
+            <textarea
+              {...register('headersText')}
+              rows={5}
+              className="w-full resize-none border border-input bg-panel px-3 py-1.5 font-mono text-[12px] text-foreground outline-none focus:border-ring"
+            />
+          </div>
+        </Panel>
 
-      {/* Models table */}
-      <Panel>
-        <div className="flex items-center justify-between border-b border-border bg-panel px-4 py-2.5">
-          <Label>Models</Label>
-          <ActionButton
-            variant="ghost"
-            onClick={() => void openAddModel()}
-            disabled={pending === 'model:add'}
-          >
-            <Plus className="size-3.5" />
-            Add model
-          </ActionButton>
-        </div>
-        <div className="grid grid-cols-[1.4fr_90px_90px_110px_90px_84px] items-center gap-4 border-b border-border px-4 py-2 font-mono-label text-[10px] text-muted-foreground">
-          <span>Model</span>
-          <span>Reasoning</span>
-          <span>Input</span>
-          <span>Context</span>
-          <span>Max out</span>
-          <span className="text-right">Actions</span>
-        </div>
-        {displayModels.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 px-4 py-12 text-center">
-            <Cpu className="size-6 text-muted-foreground/50" />
-            <div>
-              <p className="font-mono text-sm text-muted-foreground">
-                No models configured for this provider
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground/70">
-                Add a model id before assigning this provider to agents.
-              </p>
-            </div>
-            <ActionButton onClick={() => void openAddModel()}>
+        {/* Models table */}
+        <Panel>
+          <div className="flex items-center justify-between border-b border-border bg-panel px-4 py-2.5">
+            <Label>Models</Label>
+            <ActionButton
+              variant="ghost"
+              onClick={() => void openAddModel()}
+              disabled={pending === 'model:add'}
+            >
               <Plus className="size-3.5" />
               Add model
             </ActionButton>
           </div>
-        ) : (
-        <ul className="divide-y divide-border">
-          {displayModels.map((m) => (
-            <li
-              key={m.id}
-              className="grid grid-cols-[1.4fr_90px_90px_110px_90px_84px] items-center gap-4 px-4 py-2.5"
-            >
-              <div className="min-w-0">
-                <span className="font-mono text-[13px] text-foreground">
-                  {m.name}
-                </span>
-                <p className="truncate font-mono text-[11px] text-muted-foreground">
-                  {m.id}
+          <div className="font-mono-label grid grid-cols-[1.4fr_90px_90px_110px_90px_84px] items-center gap-4 border-b border-border px-4 py-2 text-[10px] text-muted-foreground">
+            <span>Model</span>
+            <span>Reasoning</span>
+            <span>Input</span>
+            <span>Context</span>
+            <span>Max out</span>
+            <span className="text-right">Actions</span>
+          </div>
+          {displayModels.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 px-4 py-12 text-center">
+              <Cpu className="size-6 text-muted-foreground/50" />
+              <div>
+                <p className="font-mono text-sm text-muted-foreground">
+                  No models configured for this provider
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground/70">
+                  Add a model id before assigning this provider to agents.
                 </p>
               </div>
-              <span>
-                {m.reasoning ? (
-                  <Tag tone="accent">yes</Tag>
-                ) : (
-                  <span className="font-mono text-[11px] text-muted-foreground">
-                    no
+              <ActionButton onClick={() => void openAddModel()}>
+                <Plus className="size-3.5" />
+                Add model
+              </ActionButton>
+            </div>
+          ) : (
+            <ul className="divide-y divide-border">
+              {displayModels.map((m) => (
+                <li
+                  key={m.id}
+                  className="grid grid-cols-[1.4fr_90px_90px_110px_90px_84px] items-center gap-4 px-4 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <span className="font-mono text-[13px] text-foreground">{m.name}</span>
+                    <p className="truncate font-mono text-[11px] text-muted-foreground">{m.id}</p>
+                  </div>
+                  <span>
+                    {m.reasoning ? (
+                      <Tag tone="accent">yes</Tag>
+                    ) : (
+                      <span className="font-mono text-[11px] text-muted-foreground">no</span>
+                    )}
                   </span>
-                )}
-              </span>
-              <div className="flex gap-1">
-                {m.input.map((i) => (
-                  <Tag key={i} tone="outline">
-                    {i}
-                  </Tag>
-                ))}
-              </div>
-              <span className="font-mono text-[12px] text-muted-foreground">
-                {m.contextWindow?.toLocaleString()}
-              </span>
-              <span className="font-mono text-[12px] text-muted-foreground">
-                {m.maxTokens?.toLocaleString()}
-              </span>
-              <div className="flex items-center justify-end gap-1">
-                <ActionButton
-                  variant="ghost"
-                  title="Edit model"
-                  onClick={() => setEditingModel(m)}
-                  disabled={pending === `model:edit:${m.id}`}
-                >
-                  <Pencil className="size-3.5" />
-                </ActionButton>
-                <ActionButton
-                  variant="ghost"
-                  title="Delete model"
-                  onClick={() => setModelDeleteTarget(m.id)}
-                  disabled={pending === `model:${m.id}`}
-                >
-                  <Trash2 className="size-3.5" />
-                </ActionButton>
-              </div>
-            </li>
-          ))}
-        </ul>
-        )}
-      </Panel>
-    </form>
-    <ConfirmDialog
-      open={confirmProviderDelete}
-      title="Delete provider"
-      description={`Delete provider "${provider.name}"? This cannot be undone.`}
-      confirmLabel="Delete provider"
-      busy={pending === 'delete'}
-      onCancel={() => setConfirmProviderDelete(false)}
-      onConfirm={() => void deleteProvider()}
-    />
-    <ConfirmDialog
-      open={Boolean(modelDeleteTarget)}
-      title="Delete model"
-      description={`Delete model "${modelDeleteTarget ?? ''}"? This cannot be undone.`}
-      confirmLabel="Delete model"
-      busy={
-        modelDeleteTarget ? pending === `model:${modelDeleteTarget}` : false
-      }
-      onCancel={() => setModelDeleteTarget(null)}
-      onConfirm={() => {
-        if (modelDeleteTarget) void deleteModel(modelDeleteTarget)
-      }}
-    />
-    <ModelDialog
-      open={showAddModel}
-      busy={pending === 'model:add'}
-      mode="add"
-      availableModels={availableModels}
-      loadingModels={loadingModels}
-      onCancel={() => setShowAddModel(false)}
-      onSubmit={(model) => void upsertModel(model, 'add')}
-    />
-    <ModelDialog
-      key={editingModel?.id ?? 'edit-model'}
-      open={Boolean(editingModel)}
-      busy={editingModel ? pending === `model:edit:${editingModel.id}` : false}
-      mode="edit"
-      model={editingModel ?? undefined}
-      onCancel={() => setEditingModel(null)}
-      onSubmit={(model) => void upsertModel(model, 'edit')}
-    />
+                  <div className="flex gap-1">
+                    {m.input.map((i) => (
+                      <Tag key={i} tone="outline">
+                        {i}
+                      </Tag>
+                    ))}
+                  </div>
+                  <span className="font-mono text-[12px] text-muted-foreground">
+                    {m.contextWindow?.toLocaleString()}
+                  </span>
+                  <span className="font-mono text-[12px] text-muted-foreground">
+                    {m.maxTokens?.toLocaleString()}
+                  </span>
+                  <div className="flex items-center justify-end gap-1">
+                    <ActionButton
+                      variant="ghost"
+                      title="Edit model"
+                      onClick={() => setEditingModel(m)}
+                      disabled={pending === `model:edit:${m.id}`}
+                    >
+                      <Pencil className="size-3.5" />
+                    </ActionButton>
+                    <ActionButton
+                      variant="ghost"
+                      title="Delete model"
+                      onClick={() => setModelDeleteTarget(m.id)}
+                      disabled={pending === `model:${m.id}`}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </ActionButton>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+      </form>
+      <ConfirmDialog
+        open={confirmProviderDelete}
+        title="Delete provider"
+        description={`Delete provider "${provider.name}"? This cannot be undone.`}
+        confirmLabel="Delete provider"
+        busy={pending === 'delete'}
+        onCancel={() => setConfirmProviderDelete(false)}
+        onConfirm={() => void deleteProvider()}
+      />
+      <ConfirmDialog
+        open={Boolean(modelDeleteTarget)}
+        title="Delete model"
+        description={`Delete model "${modelDeleteTarget ?? ''}"? This cannot be undone.`}
+        confirmLabel="Delete model"
+        busy={modelDeleteTarget ? pending === `model:${modelDeleteTarget}` : false}
+        onCancel={() => setModelDeleteTarget(null)}
+        onConfirm={() => {
+          if (modelDeleteTarget) void deleteModel(modelDeleteTarget)
+        }}
+      />
+      <ModelDialog
+        open={showAddModel}
+        busy={pending === 'model:add'}
+        mode="add"
+        availableModels={availableModels}
+        loadingModels={loadingModels}
+        onCancel={() => setShowAddModel(false)}
+        onSubmit={(model) => void upsertModel(model, 'add')}
+      />
+      <ModelDialog
+        key={editingModel?.id ?? 'edit-model'}
+        open={Boolean(editingModel)}
+        busy={editingModel ? pending === `model:edit:${editingModel.id}` : false}
+        mode="edit"
+        model={editingModel ?? undefined}
+        onCancel={() => setEditingModel(null)}
+        onSubmit={(model) => void upsertModel(model, 'edit')}
+      />
     </>
   )
 }
@@ -810,9 +772,7 @@ function ModelDialog({
         .split(',')
         .map((item) => item.trim())
         .filter(Boolean),
-      contextWindow: values.contextWindow
-        ? Number(values.contextWindow)
-        : undefined,
+      contextWindow: values.contextWindow ? Number(values.contextWindow) : undefined,
       maxTokens: values.maxTokens ? Number(values.maxTokens) : undefined,
     })
     onSubmit(payload)
@@ -838,10 +798,7 @@ function ModelDialog({
         className="relative w-full max-w-lg border border-border bg-card shadow-xl"
       >
         <div className="border-b border-border bg-panel px-4 py-3">
-          <h2
-            id="model-dialog-title"
-            className="font-serif text-lg italic text-foreground"
-          >
+          <h2 id="model-dialog-title" className="font-serif text-lg text-foreground italic">
             {mode === 'add' ? 'Add model' : 'Edit model'}
           </h2>
         </div>
@@ -853,11 +810,11 @@ function ModelDialog({
                 disabled={loadingModels}
                 className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring disabled:opacity-60"
               >
-                <option value="">
-                  {loadingModels ? 'Loading models…' : 'Select a model'}
-                </option>
+                <option value="">{loadingModels ? 'Loading models…' : 'Select a model'}</option>
                 {availableModels.map((item) => (
-                  <option key={item.id} value={item.id}>{item.name === item.id ? item.id : `${item.name} · ${item.id}`}</option>
+                  <option key={item.id} value={item.id}>
+                    {item.name === item.id ? item.id : `${item.name} · ${item.id}`}
+                  </option>
                 ))}
               </select>
             ) : (
@@ -927,9 +884,7 @@ function Config({
     <div>
       <Label className="mb-1.5 block">{label}</Label>
       {children}
-      {error && (
-        <p className="mt-1 font-mono text-[11px] text-destructive">{error}</p>
-      )}
+      {error && <p className="mt-1 font-mono text-[11px] text-destructive">{error}</p>}
     </div>
   )
 }

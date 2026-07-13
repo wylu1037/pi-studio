@@ -45,4 +45,3 @@ Pi Studio currently uses Pi's standard agent directory returned by
 `getAgentDir()` (normally `~/.pi/agent`) for settings, models, packages, skills,
 prompts, and extensions. Chat session JSONL files are stored under
 `data/pi-sessions`.
-

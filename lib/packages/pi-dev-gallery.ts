@@ -12,7 +12,12 @@ function decodeHtml(value: string) {
 }
 
 function stripHtml(value: string) {
-  return decodeHtml(value.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim())
+  return decodeHtml(
+    value
+      .replace(/<[^>]*>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  )
 }
 
 function packageId(name: string) {
@@ -35,13 +40,9 @@ export async function listPiDevPackages(): Promise<GlobalPackage[]> {
   for (const match of articles) {
     const attributes = match[1]
     const body = match[2]
-    const name = decodeHtml(
-      /data-package-name="([^"]+)"/.exec(attributes)?.[1] ?? '',
-    )
+    const name = decodeHtml(/data-package-name="([^"]+)"/.exec(attributes)?.[1] ?? '')
     if (!name) continue
-    const description = stripHtml(
-      /<p class="packages-desc">([\s\S]*?)<\/p>/.exec(body)?.[1] ?? '',
-    )
+    const description = stripHtml(/<p class="packages-desc">([\s\S]*?)<\/p>/.exec(body)?.[1] ?? '')
     const metaBody = /<div class="packages-meta">([\s\S]*?)<\/div>/.exec(body)?.[1] ?? ''
     const meta = [...metaBody.matchAll(/<span>([\s\S]*?)<\/span>/g)].map((item) =>
       stripHtml(item[1]),

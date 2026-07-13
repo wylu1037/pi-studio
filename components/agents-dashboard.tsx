@@ -38,10 +38,7 @@ export function AgentsDashboard({ agents }: { agents: AgentProfile[] }) {
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<AgentProfile | null>(null)
 
-  const tags = useMemo(
-    () => Array.from(new Set(agents.flatMap((a) => a.tags))),
-    [agents],
-  )
+  const tags = useMemo(() => Array.from(new Set(agents.flatMap((a) => a.tags))), [agents])
 
   const filtered = agents.filter((a) => {
     const matchesQuery =
@@ -94,11 +91,7 @@ export function AgentsDashboard({ agents }: { agents: AgentProfile[] }) {
         title="Agents"
         subtitle="Named configuration profiles. Each agent bundles its own skills, prompts, MCP servers, and model range."
       >
-        <ActionButton
-          variant="accent"
-          onClick={createNewAgent}
-          disabled={pendingId === 'new'}
-        >
+        <ActionButton variant="accent" onClick={createNewAgent} disabled={pendingId === 'new'}>
           <Plus className="size-3.5" />
           New Agent
         </ActionButton>
@@ -115,18 +108,11 @@ export function AgentsDashboard({ agents }: { agents: AgentProfile[] }) {
         />
         <div className="flex items-center gap-1.5">
           <Label className="mr-1">Tags</Label>
-          <BracketButton
-            active={activeTag === null}
-            onClick={() => setActiveTag(null)}
-          >
+          <BracketButton active={activeTag === null} onClick={() => setActiveTag(null)}>
             All
           </BracketButton>
           {tags.map((t) => (
-            <BracketButton
-              key={t}
-              active={activeTag === t}
-              onClick={() => setActiveTag(t)}
-            >
+            <BracketButton key={t} active={activeTag === t} onClick={() => setActiveTag(t)}>
               {t}
             </BracketButton>
           ))}
@@ -137,7 +123,7 @@ export function AgentsDashboard({ agents }: { agents: AgentProfile[] }) {
       </div>
 
       {/* Grid */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin p-6">
+      <div className="scrollbar-thin flex-1 overflow-y-auto p-6">
         {filtered.length === 0 ? (
           <EmptyState onCreate={createNewAgent} disabled={pendingId === 'new'} />
         ) : (
@@ -159,9 +145,7 @@ export function AgentsDashboard({ agents }: { agents: AgentProfile[] }) {
         title="Delete agent"
         description={`Delete agent "${deleteTarget?.name ?? ''}"? This cannot be undone.`}
         confirmLabel="Delete agent"
-        busy={
-          deleteTarget ? pendingId === `delete:${deleteTarget.id}` : false
-        }
+        busy={deleteTarget ? pendingId === `delete:${deleteTarget.id}` : false}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => {
           if (deleteTarget) void removeAgent(deleteTarget)
@@ -200,9 +184,7 @@ function AgentCard({
             color: agent.color,
           }}
         >
-          <span className="font-serif text-lg italic">
-            {agent.name.charAt(0)}
-          </span>
+          <span className="font-serif text-lg italic">{agent.name.charAt(0)}</span>
         </div>
         <div className="min-w-0 flex-1">
           <Link
@@ -240,8 +222,8 @@ function AgentCard({
             {agent.defaultModelId ?? 'Automatic selection'}
           </p>
           <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
-            {agent.defaultProviderId ?? 'Default provider'} ·{' '}
-            {agent.selectedModelIds.length} enabled
+            {agent.defaultProviderId ?? 'Default provider'} · {agent.selectedModelIds.length}{' '}
+            enabled
           </p>
         </div>
         <div className="border-l border-border px-4 py-3">
@@ -249,12 +231,10 @@ function AgentCard({
             <Brain className="size-3.5" />
             <Label>Reasoning</Label>
           </div>
-          <p className="mt-1.5 font-mono text-[12px] capitalize text-foreground">
+          <p className="mt-1.5 font-mono text-[12px] text-foreground capitalize">
             {agent.defaultThinkingLevel}
           </p>
-          <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
-            default level
-          </p>
+          <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">default level</p>
         </div>
       </div>
 
@@ -268,12 +248,8 @@ function AgentCard({
               className="flex flex-col items-center gap-1 border-r border-border py-2.5 last:border-r-0"
             >
               <Icon className="size-3.5 text-muted-foreground" />
-              <span className="font-mono text-sm text-foreground">
-                {s.value}
-              </span>
-              <span className="font-mono-label text-[9px] text-muted-foreground">
-                {s.label}
-              </span>
+              <span className="font-mono text-sm text-foreground">{s.value}</span>
+              <span className="font-mono-label text-[9px] text-muted-foreground">{s.label}</span>
             </div>
           )
         })}
@@ -319,25 +295,17 @@ function AgentCard({
   )
 }
 
-function EmptyState({
-  onCreate,
-  disabled,
-}: {
-  onCreate: () => void
-  disabled?: boolean
-}) {
+function EmptyState({ onCreate, disabled }: { onCreate: () => void; disabled?: boolean }) {
   return (
     <div className="mx-auto flex max-w-md flex-col items-center justify-center gap-4 py-24 text-center">
       <div className="flex size-14 items-center justify-center border border-border-strong bg-card">
         <Plus className="size-6 text-muted-foreground" />
       </div>
       <div>
-        <h2 className="font-serif text-2xl italic text-foreground">
-          No agents yet
-        </h2>
-        <p className="mt-2 text-sm text-muted-foreground text-pretty">
-          Create your first agent by combining global skills, prompts, MCP
-          servers, and a model. Agents keep your workflows organized.
+        <h2 className="font-serif text-2xl text-foreground italic">No agents yet</h2>
+        <p className="mt-2 text-sm text-pretty text-muted-foreground">
+          Create your first agent by combining global skills, prompts, MCP servers, and a model.
+          Agents keep your workflows organized.
         </p>
       </div>
       <ActionButton variant="accent" onClick={onCreate} disabled={disabled}>

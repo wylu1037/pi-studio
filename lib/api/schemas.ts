@@ -316,19 +316,23 @@ export const ChatMessageSchema = z.object({
   title: z.string().optional(),
   timestamp: z.string(),
   tokens: z.number().optional(),
-  usage: z.object({
-    input: z.number(),
-    output: z.number(),
-    cacheRead: z.number(),
-    cacheWrite: z.number(),
-    cost: z.object({
-      input: z.number().optional(),
-      output: z.number().optional(),
-      cacheRead: z.number().optional(),
-      cacheWrite: z.number().optional(),
-      total: z.number().optional(),
-    }).optional(),
-  }).optional(),
+  usage: z
+    .object({
+      input: z.number(),
+      output: z.number(),
+      cacheRead: z.number(),
+      cacheWrite: z.number(),
+      cost: z
+        .object({
+          input: z.number().optional(),
+          output: z.number().optional(),
+          cacheRead: z.number().optional(),
+          cacheWrite: z.number().optional(),
+          total: z.number().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
 })
 
 export const SessionTreeNodeSchema = z.object({
@@ -387,9 +391,7 @@ export const AgentSessionStateSchema = z.object({
   running: z.boolean(),
   isStreaming: z.boolean(),
   isCompacting: z.boolean(),
-  model: z
-    .object({ provider: z.string(), modelId: z.string() })
-    .nullable(),
+  model: z.object({ provider: z.string(), modelId: z.string() }).nullable(),
   thinkingLevel: z.string().nullable(),
   sessionFile: z.string().nullable(),
   sdkSessionId: z.string().nullable(),

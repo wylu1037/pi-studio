@@ -56,9 +56,7 @@ class StudioAgentSession {
 
 declare global {
   var __piStudioSdkSessions: Map<string, StudioAgentSession> | undefined
-  var __piStudioSdkSessionLocks:
-    | Map<string, Promise<StudioAgentSession>>
-    | undefined
+  var __piStudioSdkSessionLocks: Map<string, Promise<StudioAgentSession>> | undefined
   var __piStudioPendingBranches: Map<string, string> | undefined
 }
 
@@ -88,15 +86,13 @@ export async function getOrCreateSdkSession(input: {
   promptPaths?: string[]
 }) {
   const resourceSignature = JSON.stringify(
-    [...(input.promptPaths ?? [])]
-      .sort()
-      .map((path) => {
-        try {
-          return [path, statSync(path).mtimeMs]
-        } catch {
-          return [path, 0]
-        }
-      }),
+    [...(input.promptPaths ?? [])].sort().map((path) => {
+      try {
+        return [path, statSync(path).mtimeMs]
+      } catch {
+        return [path, 0]
+      }
+    }),
   )
   const existing = sessions().get(input.studioSessionId)
   if (existing?.isAlive() && existing.resourceSignature === resourceSignature) {
@@ -159,11 +155,7 @@ export async function getOrCreateSdkSession(input: {
         error instanceof Error ? error.message : error,
       )
     }
-    const wrapped = new StudioAgentSession(
-      input.studioSessionId,
-      session,
-      resourceSignature,
-    )
+    const wrapped = new StudioAgentSession(input.studioSessionId, session, resourceSignature)
     sessions().set(input.studioSessionId, wrapped)
     return wrapped
   })().finally(() => locks().delete(input.studioSessionId))

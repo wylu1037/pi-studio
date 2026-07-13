@@ -1,0 +1,10 @@
+node_modules
+.next
+dist
+coverage
+data
+public
+pnpm-lock.yaml
+openapi.json
+lib/api/generated
+drizzle/meta

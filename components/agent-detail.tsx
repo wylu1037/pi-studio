@@ -46,15 +46,7 @@ import {
 } from '@/components/pi-ui'
 import { cn } from '@/lib/utils'
 
-const TABS = [
-  'Overview',
-  'Skills',
-  'Prompts',
-  'MCP',
-  'Models',
-  'Sessions',
-  'Settings',
-] as const
+const TABS = ['Overview', 'Skills', 'Prompts', 'MCP', 'Models', 'Sessions', 'Settings'] as const
 type TabName = (typeof TABS)[number]
 const thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 const settingsSchema = z.object({
@@ -128,14 +120,10 @@ export function AgentDetail({
                 color: agent.color,
               }}
             >
-              <span className="font-serif text-2xl italic">
-                {agent.name.charAt(0)}
-              </span>
+              <span className="font-serif text-2xl italic">{agent.name.charAt(0)}</span>
             </div>
             <div>
-              <h1 className="font-serif text-2xl italic text-foreground">
-                {agent.name}
-              </h1>
+              <h1 className="font-serif text-2xl text-foreground italic">{agent.name}</h1>
               <div className="mt-1 flex items-center gap-1.5">
                 {agent.tags.map((t) => (
                   <Tag key={t} tone="outline">
@@ -167,7 +155,7 @@ export function AgentDetail({
             type="button"
             onClick={() => setTab(t)}
             className={cn(
-              'border-b-2 px-4 py-2.5 font-mono text-xs uppercase tracking-wider transition-colors',
+              'border-b-2 px-4 py-2.5 font-mono text-xs tracking-wider uppercase transition-colors',
               tab === t
                 ? 'border-accent text-foreground'
                 : 'border-transparent text-muted-foreground hover:text-foreground',
@@ -179,7 +167,7 @@ export function AgentDetail({
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin p-6">
+      <div className="scrollbar-thin flex-1 overflow-y-auto p-6">
         {tab === 'Overview' && <OverviewTab agent={agent} sessions={sessions} />}
         {tab === 'Skills' && (
           <ResourcePicker
@@ -276,16 +264,14 @@ function OverviewTab({
 
   return (
     <div className="grid gap-6 lg:grid-cols-3">
-      <div className="lg:col-span-2 space-y-6">
+      <div className="space-y-6 lg:col-span-2">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           {stats.map((s) => {
             const Icon = s.icon
             return (
               <Panel key={s.label} className="flex flex-col gap-1.5 p-3">
                 <Icon className="size-4 text-accent" />
-                <span className="font-serif text-2xl italic text-foreground">
-                  {s.value}
-                </span>
+                <span className="font-serif text-2xl text-foreground italic">{s.value}</span>
                 <Label>{s.label}</Label>
               </Panel>
             )
@@ -298,16 +284,11 @@ function OverviewTab({
           </div>
           <dl className="divide-y divide-border">
             {meta.map(([k, v]) => (
-              <div
-                key={k}
-                className="grid grid-cols-3 gap-4 px-4 py-2.5 text-sm"
-              >
-                <dt className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+              <div key={k} className="grid grid-cols-3 gap-4 px-4 py-2.5 text-sm">
+                <dt className="font-mono text-xs tracking-wider text-muted-foreground uppercase">
                   {k}
                 </dt>
-                <dd className="col-span-2 font-mono text-[13px] text-foreground">
-                  {v}
-                </dd>
+                <dd className="col-span-2 font-mono text-[13px] text-foreground">{v}</dd>
               </div>
             ))}
           </dl>
@@ -326,9 +307,7 @@ function OverviewTab({
           )}
           {sessions.map((s) => (
             <li key={s.id} className="px-4 py-3">
-              <p className="truncate font-mono text-[13px] text-foreground">
-                {s.name}
-              </p>
+              <p className="truncate font-mono text-[13px] text-foreground">{s.name}</p>
               <p className="mt-1 flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
                 <span>{s.updatedAt}</span>
                 <span>·</span>
@@ -425,10 +404,7 @@ function ResourcePicker({
           {filtered.map((item) => {
             const on = selected.has(item.id)
             return (
-              <li
-                key={item.id}
-                className="flex items-start gap-3 px-4 py-3 hover:bg-panel"
-              >
+              <li key={item.id} className="flex items-start gap-3 px-4 py-3 hover:bg-panel">
                 <button
                   type="button"
                   onClick={() => toggle(item.id)}
@@ -445,9 +421,7 @@ function ResourcePicker({
                 </button>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-[13px] text-foreground">
-                      {item.name}
-                    </span>
+                    <span className="font-mono text-[13px] text-foreground">{item.name}</span>
                     <Tag tone="outline">{item.meta}</Tag>
                   </div>
                   <p className="mt-0.5 line-clamp-1 text-[13px] text-muted-foreground">
@@ -473,13 +447,8 @@ function ResourcePicker({
         ) : (
           <ul className="divide-y divide-border">
             {enabled.map((item) => (
-              <li
-                key={item.id}
-                className="flex items-center justify-between gap-2 px-4 py-2.5"
-              >
-                <span className="truncate font-mono text-[13px] text-foreground">
-                  {item.name}
-                </span>
+              <li key={item.id} className="flex items-center justify-between gap-2 px-4 py-2.5">
+                <span className="truncate font-mono text-[13px] text-foreground">{item.name}</span>
                 <button
                   type="button"
                   onClick={() => toggle(item.id)}
@@ -505,12 +474,8 @@ function ModelsTab({
   agent: AgentProfile
   providers: GlobalModelProvider[]
 }) {
-  const [enabledProviders, setEnabledProviders] = useState(
-    new Set(agent.selectedProviderIds),
-  )
-  const [enabledModels, setEnabledModels] = useState(
-    new Set(agent.selectedModelIds),
-  )
+  const [enabledProviders, setEnabledProviders] = useState(new Set(agent.selectedProviderIds))
+  const [enabledModels, setEnabledModels] = useState(new Set(agent.selectedModelIds))
   const [thinking, setThinking] = useState(agent.defaultThinkingLevel)
   const [pending, setPending] = useState<string | null>(null)
 
@@ -578,22 +543,13 @@ function ModelsTab({
                     <Toggle
                       checked={pOn}
                       onChange={() =>
-                        toggleResource(
-                          'provider',
-                          p.id,
-                          enabledProviders,
-                          setEnabledProviders,
-                        )
+                        toggleResource('provider', p.id, enabledProviders, setEnabledProviders)
                       }
                     />
-                    <span className="font-mono text-[13px] text-foreground">
-                      {p.name}
-                    </span>
+                    <span className="font-mono text-[13px] text-foreground">{p.name}</span>
                     <Tag tone="outline">{p.api}</Tag>
                   </div>
-                  {agent.defaultProviderId === p.id && (
-                    <Tag tone="accent">default</Tag>
-                  )}
+                  {agent.defaultProviderId === p.id && <Tag tone="accent">default</Tag>}
                 </div>
                 {pOn && (
                   <div className="grid pl-4 sm:grid-cols-2">
@@ -608,12 +564,7 @@ function ModelsTab({
                           <button
                             type="button"
                             onClick={() =>
-                              toggleResource(
-                                'model',
-                                resourceId,
-                                enabledModels,
-                                setEnabledModels,
-                              )
+                              toggleResource('model', resourceId, enabledModels, setEnabledModels)
                             }
                             disabled={pending === `model:${resourceId}`}
                             className={cn(
@@ -625,9 +576,7 @@ function ModelsTab({
                           >
                             {mOn && <Check className="size-2.5" />}
                           </button>
-                          <span className="font-mono text-xs text-foreground">
-                            {m.name}
-                          </span>
+                          <span className="font-mono text-xs text-foreground">{m.name}</span>
                           {m.reasoning && <Tag tone="accent">reasoning</Tag>}
                         </label>
                       )
@@ -671,9 +620,7 @@ function SessionsTab({
     <Panel>
       <div className="flex items-center justify-between border-b border-border bg-panel px-4 py-2.5">
         <Label>Sessions for {agent.name}</Label>
-        <span className="font-mono text-xs text-muted-foreground">
-          {list.length} total
-        </span>
+        <span className="font-mono text-xs text-muted-foreground">{list.length} total</span>
       </div>
       {list.length === 0 ? (
         <p className="px-4 py-10 text-center font-mono text-xs text-muted-foreground">
@@ -687,9 +634,7 @@ function SessionsTab({
               className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-panel"
             >
               <div className="min-w-0">
-                <p className="truncate font-mono text-[13px] text-foreground">
-                  {s.name}
-                </p>
+                <p className="truncate font-mono text-[13px] text-foreground">{s.name}</p>
                 <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground">
                   <span>{s.cwd}</span>
                   <span className="flex items-center gap-1">
@@ -752,7 +697,7 @@ function SettingsTab({
 
   return (
     <form onSubmit={handleSubmit(save)} className="max-w-2xl space-y-5">
-      <Panel className="p-4 space-y-4">
+      <Panel className="space-y-4 p-4">
         <Field label="Agent name" error={errors.name?.message}>
           <input
             {...register('name')}
@@ -780,11 +725,7 @@ function SettingsTab({
         </Field>
       </Panel>
       <div className="flex items-center justify-between">
-        <ActionButton
-          variant="danger"
-          onClick={onDelete}
-          disabled={deleting || isSubmitting}
-        >
+        <ActionButton variant="danger" onClick={onDelete} disabled={deleting || isSubmitting}>
           Delete agent
         </ActionButton>
         <ActionButton variant="accent" type="submit" disabled={isSubmitting}>
@@ -808,9 +749,7 @@ function Field({
     <div>
       <Label className="mb-1.5 block">{label}</Label>
       {children}
-      {error && (
-        <p className="mt-1 font-mono text-[11px] text-destructive">{error}</p>
-      )}
+      {error && <p className="mt-1 font-mono text-[11px] text-destructive">{error}</p>}
     </div>
   )
 }

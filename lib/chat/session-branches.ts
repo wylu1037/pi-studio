@@ -19,14 +19,16 @@ function textContent(value: unknown): string {
 
 function entryPreview(entry: SessionEntry) {
   if (entry.type === 'message') {
-    const content = 'content' in entry.message
-      ? textContent(entry.message.content)
-      : JSON.stringify(entry.message)
+    const content =
+      'content' in entry.message
+        ? textContent(entry.message.content)
+        : JSON.stringify(entry.message)
     return content.slice(0, 120) || entry.message.role
   }
   if (entry.type === 'model_change') return `${entry.provider} / ${entry.modelId}`
   if (entry.type === 'thinking_level_change') return `Thinking: ${entry.thinkingLevel}`
-  if (entry.type === 'compaction' || entry.type === 'branch_summary') return entry.summary.slice(0, 120)
+  if (entry.type === 'compaction' || entry.type === 'branch_summary')
+    return entry.summary.slice(0, 120)
   if (entry.type === 'session_info') return entry.name ?? 'Session info'
   if (entry.type === 'label') return entry.label ?? 'Label removed'
   if (entry.type === 'custom_message') return textContent(entry.content).slice(0, 120)
@@ -54,9 +56,17 @@ function mapTreeNode(node: PiSessionTreeNode, leafId: string | null): SessionTre
   }
 }
 
-function mapMessage(message: ReturnType<typeof buildSessionContext>['messages'][number], index: number): ChatMessage | null {
+function mapMessage(
+  message: ReturnType<typeof buildSessionContext>['messages'][number],
+  index: number,
+): ChatMessage | null {
   if (message.role === 'user') {
-    return { id: `sdk-user-${index}`, type: 'user', content: textContent(message.content), timestamp: String(message.timestamp) }
+    return {
+      id: `sdk-user-${index}`,
+      type: 'user',
+      content: textContent(message.content),
+      timestamp: String(message.timestamp),
+    }
   }
   if (message.role === 'toolResult') {
     return {
@@ -96,7 +106,9 @@ export function readSdkSessionContext(filePath: string, leafId?: string | null) 
   const context = buildSessionContext(entries, leafId ?? manager.getLeafId())
   return {
     leafId: leafId ?? manager.getLeafId(),
-    messages: context.messages.map(mapMessage).filter((message): message is ChatMessage => Boolean(message)),
+    messages: context.messages
+      .map(mapMessage)
+      .filter((message): message is ChatMessage => Boolean(message)),
     model: context.model,
     thinkingLevel: context.thinkingLevel,
   }

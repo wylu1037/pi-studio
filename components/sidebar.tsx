@@ -51,17 +51,13 @@ export function Sidebar({ piVersion }: { piVersion: string }) {
           </svg>
         </div>
         <div className="leading-none">
-          <div className="font-serif text-lg italic text-foreground">
-            Pi Studio
-          </div>
-          <div className="font-mono-label text-[9px] text-muted-foreground">
-            control panel
-          </div>
+          <div className="font-serif text-lg text-foreground italic">Pi Studio</div>
+          <div className="font-mono-label text-[9px] text-muted-foreground">control panel</div>
         </div>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto scrollbar-thin px-2 py-3">
+      <nav className="scrollbar-thin flex-1 overflow-y-auto px-2 py-3">
         <ul className="space-y-0.5">
           {nav.map((item) => {
             const active =
@@ -97,9 +93,7 @@ export function Sidebar({ piVersion }: { piVersion: string }) {
       {/* Footer */}
       <div className="px-4 py-3">
         <div className="flex items-center justify-between">
-          <span className="font-mono text-[11px] text-muted-foreground">
-            {piVersion}
-          </span>
+          <span className="font-mono text-[11px] text-muted-foreground">{piVersion}</span>
           <span className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
             <span className="size-1.5 rounded-full bg-success" />
             connected

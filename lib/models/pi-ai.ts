@@ -34,10 +34,7 @@ export function supportedThinkingLevels(
 }
 
 export async function testPiModel(
-  provider: Pick<
-    GlobalModelProvider,
-    'id' | 'baseUrl' | 'api' | 'apiKey' | 'headers'
-  >,
+  provider: Pick<GlobalModelProvider, 'id' | 'baseUrl' | 'api' | 'apiKey' | 'headers'>,
   model: GlobalModel,
 ) {
   const result = await completeSimple(

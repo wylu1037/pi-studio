@@ -13,11 +13,5 @@ export default defineConfig({
     path: './lib/api/generated',
     clean: true,
   },
-  plugins: [
-    pluginOas(),
-    pluginTs(),
-    pluginZod(),
-    pluginClient(),
-    pluginReactQuery(),
-  ],
+  plugins: [pluginOas(), pluginTs(), pluginZod(), pluginClient(), pluginReactQuery()],
 })

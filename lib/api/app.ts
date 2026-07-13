@@ -3,21 +3,11 @@
 import { mkdirSync } from 'node:fs'
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
 import { streamSSE } from 'hono/streaming'
-import {
-  abortRun as abortRegisteredRun,
-} from '@/lib/chat/run-registry'
-import {
-  defaultPiSessionDir,
-  runPiCli,
-  type PiUsage,
-} from '@/lib/chat/pi-adapter'
+import { abortRun as abortRegisteredRun } from '@/lib/chat/run-registry'
+import { defaultPiSessionDir, runPiCli, type PiUsage } from '@/lib/chat/pi-adapter'
 import { runNpx } from '@/lib/npx'
 import { loadPackageGallery } from '@/lib/packages/pi-dev-gallery'
-import {
-  materializeInstalledSkill,
-  removeStoredSkill,
-  studioRootDir,
-} from '@/lib/skills/store'
+import { materializeInstalledSkill, removeStoredSkill, studioRootDir } from '@/lib/skills/store'
 import {
   appendMessage,
   appendRunEvent,
@@ -124,17 +114,21 @@ const ANSI_RE = /\x1B\[[0-9;]*m/g
 const SKILLS_SEARCH_API_BASE = process.env.SKILLS_API_URL || 'https://skills.sh'
 const SKILLS_SEARCH_LIMIT = 50
 
-const skillsShSearchSkillSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  skillId: z.string().optional(),
-  source: z.string().optional(),
-  installs: z.number().optional(),
-}).passthrough()
+const skillsShSearchSkillSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    skillId: z.string().optional(),
+    source: z.string().optional(),
+    installs: z.number().optional(),
+  })
+  .passthrough()
 
-const skillsShSearchResponseSchema = z.object({
-  skills: z.array(skillsShSearchSkillSchema).default([]),
-}).passthrough()
+const skillsShSearchResponseSchema = z
+  .object({
+    skills: z.array(skillsShSearchSkillSchema).default([]),
+  })
+  .passthrough()
 
 function formatInstallCount(installs?: number) {
   if (typeof installs !== 'number') return null
@@ -153,13 +147,7 @@ function parseFormattedInstalls(value: string) {
   const parsed = Number(match[1])
   if (!Number.isFinite(parsed)) return undefined
   const multiplier =
-    match[2] === 'B'
-      ? 1_000_000_000
-      : match[2] === 'M'
-        ? 1_000_000
-        : match[2] === 'K'
-          ? 1_000
-          : 1
+    match[2] === 'B' ? 1_000_000_000 : match[2] === 'M' ? 1_000_000 : match[2] === 'K' ? 1_000 : 1
   return parsed * multiplier
 }
 
@@ -199,19 +187,18 @@ async function searchSkillsApi(query: string) {
   return payload.skills.map((skill) => {
     const skillName = skill.skillId || skill.name
     return {
-    id: skill.id,
-    name: skillName,
-    author: skill.source?.split('/')[0] || 'skills.sh',
-    description: [
-      skill.source || skill.id,
-      formatInstallCount(skill.installs),
-    ].filter(Boolean).join(' · '),
-    tags: [],
-    source: skill.source || skill.id,
-    sourceType: 'skills.sh',
-    installUrl: packageSpec(skill.source, skillName, skill.id),
-    url: `${SKILLS_SEARCH_API_BASE}/${skill.id}`,
-    installs: skill.installs,
+      id: skill.id,
+      name: skillName,
+      author: skill.source?.split('/')[0] || 'skills.sh',
+      description: [skill.source || skill.id, formatInstallCount(skill.installs)]
+        .filter(Boolean)
+        .join(' · '),
+      tags: [],
+      source: skill.source || skill.id,
+      sourceType: 'skills.sh',
+      installUrl: packageSpec(skill.source, skillName, skill.id),
+      url: `${SKILLS_SEARCH_API_BASE}/${skill.id}`,
+      installs: skill.installs,
     }
   })
 }
@@ -270,14 +257,11 @@ async function fetchSkillsShRegistry(query: string) {
 async function installSkillsShPackage(pkg: string) {
   mkdirSync(studioRootDir(), { recursive: true })
   try {
-    await runNpx(
-      ['skills', 'add', pkg.trim(), '-y', '--copy'],
-      {
-        timeout: 60_000,
-        cwd: studioRootDir(),
-        env: { ...process.env, FORCE_COLOR: '0' },
-      },
-    )
+    await runNpx(['skills', 'add', pkg.trim(), '-y', '--copy'], {
+      timeout: 60_000,
+      cwd: studioRootDir(),
+      env: { ...process.env, FORCE_COLOR: '0' },
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     throw new Error(cleanSkillsCliError(message), { cause: error })
@@ -366,7 +350,10 @@ api.openapi(
       if (!models) return c.json({ error: 'Provider not found' }, 404)
       return c.json(models)
     } catch (error) {
-      return c.json({ error: error instanceof Error ? error.message : 'Unable to load models.' }, 502)
+      return c.json(
+        { error: error instanceof Error ? error.message : 'Unable to load models.' },
+        502,
+      )
     }
   },
 )
@@ -429,9 +416,7 @@ for (const behavior of ['steer', 'follow-up'] as const) {
       },
     }),
     async (c) => {
-      const { followUpSdkSession, steerSdkSession } = await import(
-        '@/lib/chat/sdk-session-manager'
-      )
+      const { followUpSdkSession, steerSdkSession } = await import('@/lib/chat/sdk-session-manager')
       const id = c.req.valid('param').id
       const { message } = c.req.valid('json')
       const ok =
@@ -605,7 +590,7 @@ api.openapi(
                 ? installError.message
                 : materializeError instanceof Error
                   ? materializeError.message
-                : 'Unable to install skills.sh package',
+                  : 'Unable to install skills.sh package',
           },
           400,
         )
@@ -689,10 +674,7 @@ api.openapi(
     } catch (error) {
       return c.json(
         {
-          error:
-            error instanceof Error
-              ? error.message
-              : 'Unable to load skills.sh registry',
+          error: error instanceof Error ? error.message : 'Unable to load skills.sh registry',
         },
         502,
       )
@@ -865,10 +847,7 @@ api.openapi(
     responses: { 200: json(ProviderSchema), 404: json(ErrorSchema) },
   }),
   (c) => {
-    const provider = deleteModel(
-      c.req.valid('query').providerId,
-      c.req.valid('param').id,
-    )
+    const provider = deleteModel(c.req.valid('query').providerId, c.req.valid('param').id)
     if (!provider) return c.json({ error: 'Model not found' }, 404)
     return c.json(provider)
   },

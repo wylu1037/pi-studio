@@ -140,12 +140,7 @@ export function removeStoredSkill(skill: Pick<GlobalSkill, 'name' | 'path'>) {
   }
 
   const candidates = Array.from(
-    new Set(
-      [
-        skillSourcePath(skill),
-        studioSkillPath(skill.name),
-      ].filter(Boolean),
-    ),
+    new Set([skillSourcePath(skill), studioSkillPath(skill.name)].filter(Boolean)),
   )
 
   for (const candidate of candidates) {

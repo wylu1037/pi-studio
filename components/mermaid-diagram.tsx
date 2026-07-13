@@ -59,14 +59,14 @@ export function MermaidDiagram({ chart }: { chart: string }) {
   if (error) {
     return (
       <div className="overflow-hidden border border-warning/50 bg-warning/8">
-        <div className="border-b border-warning/30 px-3 py-1 font-mono text-[10px] uppercase text-warning">
+        <div className="border-b border-warning/30 px-3 py-1 font-mono text-[10px] text-warning uppercase">
           Mermaid render failed
         </div>
-        <pre className="max-w-full overflow-hidden whitespace-pre-wrap wrap-break-word p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
+        <pre className="max-w-full overflow-hidden p-3 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-foreground/90">
           <code>{chart}</code>
         </pre>
       </div>
-    );
+    )
   }
 
   if (!svg) {
@@ -82,5 +82,5 @@ export function MermaidDiagram({ chart }: { chart: string }) {
       className="max-w-full overflow-hidden border border-border bg-card p-3 [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-full"
       dangerouslySetInnerHTML={{ __html: svg }}
     />
-  );
+  )
 }

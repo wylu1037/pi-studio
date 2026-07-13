@@ -92,7 +92,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground font-serif;
+    @apply bg-background font-serif text-foreground;
     background-image:
       linear-gradient(oklch(0.5 0.02 265 / 0.04) 1px, transparent 1px),
       linear-gradient(90deg, oklch(0.5 0.02 265 / 0.04) 1px, transparent 1px);

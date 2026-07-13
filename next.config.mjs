@@ -1,9 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  serverExternalPackages: [
-    '@earendil-works/pi-coding-agent',
-    '@earendil-works/pi-ai',
-  ],
+  serverExternalPackages: ['@earendil-works/pi-coding-agent', '@earendil-works/pi-ai'],
   typescript: {
     ignoreBuildErrors: true,
   },

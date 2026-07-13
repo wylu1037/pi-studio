@@ -229,9 +229,7 @@ export function syncUserAgentDir(input: PiRunInput) {
   const modelsJson = readJsonObject(join(agentDir, 'models.json'))
   const existingProviders = asRecord(modelsJson.providers) ?? {}
   const providers = Object.fromEntries(
-    Object.entries(existingProviders).filter(
-      ([name]) => !name.startsWith('pi-studio-'),
-    ),
+    Object.entries(existingProviders).filter(([name]) => !name.startsWith('pi-studio-')),
   )
 
   for (const providerConfig of input.providerConfigs ?? []) {
@@ -288,8 +286,7 @@ function syncSettingsJson(agentDir: string, input: PiRunInput) {
       ...settings,
       defaultProvider: provider ?? settings.defaultProvider,
       defaultModel: model ?? settings.defaultModel,
-      defaultThinkingLevel:
-        input.thinkingLevel ?? settings.defaultThinkingLevel,
+      defaultThinkingLevel: input.thinkingLevel ?? settings.defaultThinkingLevel,
       skills: input.skills.map((skill) => skill.name),
       prompts: input.prompts,
       piStudioActiveAgent: {
@@ -425,7 +422,8 @@ function extractToolCalls(value: unknown): Array<{ content: string; title?: stri
   const type = String(record.type ?? '')
   const calls: Array<{ content: string; title?: string }> = []
   if (type === 'toolCall' || type === 'tool_call') {
-    const title = stringValue(record.toolName) ?? stringValue(record.name) ?? stringValue(record.tool)
+    const title =
+      stringValue(record.toolName) ?? stringValue(record.name) ?? stringValue(record.tool)
     const input = record.input ?? record.args ?? record.arguments ?? {}
     calls.push({
       title,
@@ -493,9 +491,7 @@ function extractUsage(value: unknown): PiUsage | undefined {
 
 function formatToolPayload(title: string | undefined, input: unknown) {
   const body =
-    input && typeof input === 'object'
-      ? JSON.stringify(input, null, 2)
-      : String(input ?? '')
+    input && typeof input === 'object' ? JSON.stringify(input, null, 2) : String(input ?? '')
   return title ? `${title}\n${body}` : body
 }
 
@@ -508,9 +504,7 @@ function numberValue(value: unknown) {
 }
 
 function asRecord(value: unknown) {
-  return value && typeof value === 'object'
-    ? (value as Record<string, unknown>)
-    : null
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : null
 }
 
 export function defaultPiSessionDir() {

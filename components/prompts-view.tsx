@@ -12,21 +12,13 @@ import type { PostApiPromptsMutationRequest } from '@/lib/api/generated/types/Po
 import { postApiPromptsMutationRequestSchema } from '@/lib/api/generated/zod/postApiPromptsSchema'
 import { refreshAfterMutation } from '@/lib/api/refresh'
 import { errorMessage, showToast } from '@/lib/toast'
-import {
-  ActionButton,
-  ConfirmDialog,
-  Label,
-  Tag,
-  TextInput,
-} from '@/components/pi-ui'
+import { ActionButton, ConfirmDialog, Label, Tag, TextInput } from '@/components/pi-ui'
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
 import { MarkdownContent } from '@/components/markdown-content'
 
-function promptDefaults(
-  prompt?: GlobalPromptTemplate,
-): PostApiPromptsMutationRequest {
+function promptDefaults(prompt?: GlobalPromptTemplate): PostApiPromptsMutationRequest {
   return {
     id: prompt?.id,
     name: prompt?.name ?? '',
@@ -124,9 +116,7 @@ export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-border px-6 py-5">
         <div>
-          <h1 className="font-serif text-3xl italic text-foreground">
-            Prompts
-          </h1>
+          <h1 className="font-serif text-3xl text-foreground italic">Prompts</h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
             Pi prompt templates invoked with slash commands and enabled per agent.
           </p>
@@ -136,211 +126,205 @@ export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
       {prompts.length === 0 ? (
         <PromptsEmptyState onCreate={createPrompt} disabled={pending === 'new'} />
       ) : (
-
-      <div className="grid flex-1 grid-cols-[280px_1fr] overflow-hidden">
-        {/* List */}
-        <div className="flex flex-col border-r border-border">
-          <div className="flex items-center gap-2 border-b border-border p-3">
-            <TextInput
-              value={query}
-              onChange={setQuery}
-              placeholder="Search…"
-              icon={<Search className="size-3.5" />}
-              className="flex-1"
-            />
-            <ActionButton
-              variant="accent"
-              title="New prompt"
-              onClick={createPrompt}
-              disabled={pending === 'new'}
-            >
-              <Plus className="size-3.5" />
-            </ActionButton>
-          </div>
-          <ScrollArea className="min-h-0 flex-1" viewportClassName="pr-3">
-            <ul>
-              {filtered.length === 0 ? (
-                <li className="px-4 py-12 text-center font-mono text-xs text-muted-foreground">
-                  No prompts match your filters
-                </li>
-              ) : filtered.map((p) => (
-                <li key={p.id}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedId(p.id)}
-                  className={cn(
-                    'flex w-full flex-col gap-1 border-b border-border px-4 py-3 text-left transition-colors',
-                    selectedId === p.id
-                      ? 'bg-card'
-                      : 'hover:bg-panel',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'font-mono text-[13px]',
-                      selectedId === p.id
-                        ? 'text-accent'
-                        : 'text-foreground',
-                    )}
-                  >
-                    /{p.name}
-                  </span>
-                  <span className="line-clamp-1 text-xs text-muted-foreground">
-                    {p.description}
-                  </span>
-                  <div className="mt-0.5 flex gap-1">
-                    {p.tags.map((t) => (
-                      <Tag key={t} tone="outline">
-                        {t}
-                      </Tag>
-                    ))}
-                  </div>
-                </button>
-                </li>
-              ))}
-            </ul>
-          </ScrollArea>
-        </div>
-
-        {/* Editor */}
-        {selected ? (
-          <form
-            onSubmit={form.handleSubmit(savePrompt)}
-            className="flex flex-col overflow-hidden"
-          >
-            <div className="flex items-center justify-between border-b border-border bg-panel px-4 py-2.5">
-              <input
-                {...form.register('name')}
-                aria-label="Prompt command name"
-                className="border-none bg-transparent font-mono text-sm text-foreground outline-none"
+        <div className="grid flex-1 grid-cols-[280px_1fr] overflow-hidden">
+          {/* List */}
+          <div className="flex flex-col border-r border-border">
+            <div className="flex items-center gap-2 border-b border-border p-3">
+              <TextInput
+                value={query}
+                onChange={setQuery}
+                placeholder="Search…"
+                icon={<Search className="size-3.5" />}
+                className="flex-1"
               />
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 items-center">
-                  <Switch
-                    checked={mode === 'preview'}
-                    onCheckedChange={(checked) =>
-                      setMode(checked ? 'preview' : 'edit')
-                    }
-                    icons={{
-                      unchecked: <Pencil className="size-3.5" />,
-                      checked: <Eye className="size-3.5" />,
-                    }}
-                    aria-label={
-                      mode === 'preview'
-                        ? 'Switch to prompt editor'
-                        : 'Switch to prompt preview'
-                    }
-                    title={mode === 'preview' ? 'Preview mode' : 'Edit mode'}
-                  />
-                </div>
-                <ActionButton
-                  variant="accent"
-                  type="submit"
-                  className="h-8 py-0"
-                  disabled={form.formState.isSubmitting}
-                >
-                  <Save className="size-3.5" />
-                  Save
-                </ActionButton>
-                <ActionButton
-                  variant="danger"
-                  className="size-8 p-0"
-                  title="Delete"
-                  onClick={() => setConfirmDelete(true)}
-                  disabled={pending === 'delete' || form.formState.isSubmitting}
-                >
-                  <Trash2 className="size-3.5" />
-                </ActionButton>
-              </div>
-            </div>
-
-            <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_260px] overflow-hidden">
-              <ScrollArea
-                className="h-full min-h-0"
-                viewportClassName="p-4 pr-6"
-                contentClassName="h-full"
+              <ActionButton
+                variant="accent"
+                title="New prompt"
+                onClick={createPrompt}
+                disabled={pending === 'new'}
               >
-                {mode === 'edit' ? (
-                  <textarea
-                    {...form.register('content')}
-                    className="h-full min-h-0 w-full resize-none border border-input bg-panel p-4 font-mono text-[13px] leading-relaxed text-foreground outline-none focus:border-ring"
-                  />
+                <Plus className="size-3.5" />
+              </ActionButton>
+            </div>
+            <ScrollArea className="min-h-0 flex-1" viewportClassName="pr-3">
+              <ul>
+                {filtered.length === 0 ? (
+                  <li className="px-4 py-12 text-center font-mono text-xs text-muted-foreground">
+                    No prompts match your filters
+                  </li>
                 ) : (
-                  <div className="min-h-full border border-border bg-panel p-5">
-                    {content.trim() ? (
-                      <MarkdownContent content={content} accentBorder={false} />
-                    ) : (
-                      <p className="font-mono text-[12px] text-muted-foreground">
-                        Nothing to preview.
-                      </p>
-                    )}
-                  </div>
+                  filtered.map((p) => (
+                    <li key={p.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedId(p.id)}
+                        className={cn(
+                          'flex w-full flex-col gap-1 border-b border-border px-4 py-3 text-left transition-colors',
+                          selectedId === p.id ? 'bg-card' : 'hover:bg-panel',
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'font-mono text-[13px]',
+                            selectedId === p.id ? 'text-accent' : 'text-foreground',
+                          )}
+                        >
+                          /{p.name}
+                        </span>
+                        <span className="line-clamp-1 text-xs text-muted-foreground">
+                          {p.description}
+                        </span>
+                        <div className="mt-0.5 flex gap-1">
+                          {p.tags.map((t) => (
+                            <Tag key={t} tone="outline">
+                              {t}
+                            </Tag>
+                          ))}
+                        </div>
+                      </button>
+                    </li>
+                  ))
                 )}
-              </ScrollArea>
+              </ul>
+            </ScrollArea>
+          </div>
 
-              <div className="border-l border-border p-4">
-                <Label className="mb-2 block">Command</Label>
-                <div className="mb-4 border border-border bg-panel px-3 py-2 font-mono text-[12px] text-accent">
-                  /{form.watch('name') || 'prompt'} {form.watch('argumentHint')}
+          {/* Editor */}
+          {selected ? (
+            <form
+              onSubmit={form.handleSubmit(savePrompt)}
+              className="flex flex-col overflow-hidden"
+            >
+              <div className="flex items-center justify-between border-b border-border bg-panel px-4 py-2.5">
+                <input
+                  {...form.register('name')}
+                  aria-label="Prompt command name"
+                  className="border-none bg-transparent font-mono text-sm text-foreground outline-none"
+                />
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 items-center">
+                    <Switch
+                      checked={mode === 'preview'}
+                      onCheckedChange={(checked) => setMode(checked ? 'preview' : 'edit')}
+                      icons={{
+                        unchecked: <Pencil className="size-3.5" />,
+                        checked: <Eye className="size-3.5" />,
+                      }}
+                      aria-label={
+                        mode === 'preview' ? 'Switch to prompt editor' : 'Switch to prompt preview'
+                      }
+                      title={mode === 'preview' ? 'Preview mode' : 'Edit mode'}
+                    />
+                  </div>
+                  <ActionButton
+                    variant="accent"
+                    type="submit"
+                    className="h-8 py-0"
+                    disabled={form.formState.isSubmitting}
+                  >
+                    <Save className="size-3.5" />
+                    Save
+                  </ActionButton>
+                  <ActionButton
+                    variant="danger"
+                    className="size-8 p-0"
+                    title="Delete"
+                    onClick={() => setConfirmDelete(true)}
+                    disabled={pending === 'delete' || form.formState.isSubmitting}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </ActionButton>
                 </div>
-                <Label className="mb-2 block">Description</Label>
-                <textarea
-                  {...form.register('description')}
-                  rows={3}
-                  className="mb-4 w-full resize-none border border-input bg-panel px-3 py-2 text-[13px] text-foreground outline-none focus:border-ring"
-                />
-                <Label className="mb-2 block">Argument hint</Label>
-                <input
-                  {...form.register('argumentHint')}
-                  placeholder="[focus] or <file>"
-                  className="mb-4 w-full border border-input bg-panel px-3 py-2 font-mono text-[13px] text-foreground outline-none focus:border-ring"
-                />
-                <Label className="mb-2 block">Tags</Label>
-                <input
-                  {...form.register('tags', {
-                    setValueAs: (value) =>
-                      String(value)
-                        .split(',')
-                        .map((tag) => tag.trim())
-                        .filter(Boolean),
-                  })}
-                  className="mb-4 w-full border border-input bg-panel px-3 py-2 font-mono text-[13px] text-foreground outline-none focus:border-ring"
-                />
-                <div className="mb-4 grid grid-cols-2 gap-3">
-                  <div>
-                    <Label className="mb-2 block">Source</Label>
-                    <input type="hidden" {...form.register('source')} />
-                    <div className="border border-border bg-panel px-2 py-2 font-mono text-[11px] text-muted-foreground">
-                      {form.watch('source')}
+              </div>
+
+              <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_260px] overflow-hidden">
+                <ScrollArea
+                  className="h-full min-h-0"
+                  viewportClassName="p-4 pr-6"
+                  contentClassName="h-full"
+                >
+                  {mode === 'edit' ? (
+                    <textarea
+                      {...form.register('content')}
+                      className="h-full min-h-0 w-full resize-none border border-input bg-panel p-4 font-mono text-[13px] leading-relaxed text-foreground outline-none focus:border-ring"
+                    />
+                  ) : (
+                    <div className="min-h-full border border-border bg-panel p-5">
+                      {content.trim() ? (
+                        <MarkdownContent content={content} accentBorder={false} />
+                      ) : (
+                        <p className="font-mono text-[12px] text-muted-foreground">
+                          Nothing to preview.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </ScrollArea>
+
+                <div className="border-l border-border p-4">
+                  <Label className="mb-2 block">Command</Label>
+                  <div className="mb-4 border border-border bg-panel px-3 py-2 font-mono text-[12px] text-accent">
+                    /{form.watch('name') || 'prompt'} {form.watch('argumentHint')}
+                  </div>
+                  <Label className="mb-2 block">Description</Label>
+                  <textarea
+                    {...form.register('description')}
+                    rows={3}
+                    className="mb-4 w-full resize-none border border-input bg-panel px-3 py-2 text-[13px] text-foreground outline-none focus:border-ring"
+                  />
+                  <Label className="mb-2 block">Argument hint</Label>
+                  <input
+                    {...form.register('argumentHint')}
+                    placeholder="[focus] or <file>"
+                    className="mb-4 w-full border border-input bg-panel px-3 py-2 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+                  />
+                  <Label className="mb-2 block">Tags</Label>
+                  <input
+                    {...form.register('tags', {
+                      setValueAs: (value) =>
+                        String(value)
+                          .split(',')
+                          .map((tag) => tag.trim())
+                          .filter(Boolean),
+                    })}
+                    className="mb-4 w-full border border-input bg-panel px-3 py-2 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+                  />
+                  <div className="mb-4 grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="mb-2 block">Source</Label>
+                      <input type="hidden" {...form.register('source')} />
+                      <div className="border border-border bg-panel px-2 py-2 font-mono text-[11px] text-muted-foreground">
+                        {form.watch('source')}
+                      </div>
+                    </div>
+                    <div>
+                      <Label className="mb-2 block">Scope</Label>
+                      <select
+                        {...form.register('scope')}
+                        className="w-full border border-input bg-panel px-2 py-2 font-mono text-[11px] text-foreground outline-none focus:border-ring"
+                      >
+                        <option value="global">Global</option>
+                        <option value="project">Project</option>
+                      </select>
                     </div>
                   </div>
-                  <div>
-                    <Label className="mb-2 block">Scope</Label>
-                    <select {...form.register('scope')} className="w-full border border-input bg-panel px-2 py-2 font-mono text-[11px] text-foreground outline-none focus:border-ring">
-                      <option value="global">Global</option>
-                      <option value="project">Project</option>
-                    </select>
-                  </div>
+                  <Label className="mb-2 block">Path</Label>
+                  <code className="mb-4 block font-mono text-[11px] break-all text-muted-foreground">
+                    {selected.path}
+                  </code>
+                  <Label className="mb-2 block">Used by {selected.usedByAgents} agents</Label>
+                  <p className="font-mono text-[11px] text-muted-foreground">
+                    Updated {selected.updatedAt}
+                  </p>
                 </div>
-                <Label className="mb-2 block">Path</Label>
-                <code className="mb-4 block break-all font-mono text-[11px] text-muted-foreground">
-                  {selected.path}
-                </code>
-                <Label className="mb-2 block">
-                  Used by {selected.usedByAgents} agents
-                </Label>
-                <p className="font-mono text-[11px] text-muted-foreground">
-                  Updated {selected.updatedAt}
-                </p>
               </div>
+            </form>
+          ) : (
+            <div className="flex items-center justify-center font-mono text-sm text-muted-foreground">
+              Select a prompt
             </div>
-          </form>
-        ) : (
-          <div className="flex items-center justify-center font-mono text-sm text-muted-foreground">
-            Select a prompt
-          </div>
-        )}
-      </div>
+          )}
+        </div>
       )}
       <ConfirmDialog
         open={confirmDelete}
@@ -355,25 +339,17 @@ export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
   )
 }
 
-function PromptsEmptyState({
-  onCreate,
-  disabled,
-}: {
-  onCreate: () => void
-  disabled?: boolean
-}) {
+function PromptsEmptyState({ onCreate, disabled }: { onCreate: () => void; disabled?: boolean }) {
   return (
     <div className="mx-auto flex max-w-md flex-1 flex-col items-center justify-center gap-4 py-24 text-center">
       <div className="flex size-14 items-center justify-center border border-border-strong bg-card">
         <FileText className="size-6 text-muted-foreground" />
       </div>
       <div>
-        <h2 className="font-serif text-2xl italic text-foreground">
-          No prompts yet
-        </h2>
-        <p className="mt-2 text-sm text-muted-foreground text-pretty">
-          Create a reusable prompt template, then enable it on agents that need
-          the same instruction pattern.
+        <h2 className="font-serif text-2xl text-foreground italic">No prompts yet</h2>
+        <p className="mt-2 text-sm text-pretty text-muted-foreground">
+          Create a reusable prompt template, then enable it on agents that need the same instruction
+          pattern.
         </p>
       </div>
       <ActionButton variant="accent" onClick={onCreate} disabled={disabled}>

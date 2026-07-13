@@ -1,11 +1,4 @@
-export type ThinkingLevel =
-  | 'off'
-  | 'minimal'
-  | 'low'
-  | 'medium'
-  | 'high'
-  | 'xhigh'
-  | 'max'
+export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export type SkillSource = 'skills.sh' | 'local' | 'git' | 'manual'
 
@@ -53,10 +46,7 @@ export interface GlobalMcpConfig {
 }
 
 export type ProviderApi =
-  | 'openai-completions'
-  | 'openai-responses'
-  | 'anthropic-messages'
-  | 'google-generative-ai'
+  'openai-completions' | 'openai-responses' | 'anthropic-messages' | 'google-generative-ai'
 
 export interface GlobalModel {
   id: string
@@ -155,19 +145,9 @@ export interface AgentSessionSummary {
 }
 
 export type TreeNodeType =
-  | 'message'
-  | 'model_change'
-  | 'thinking_level_change'
-  | 'compaction'
-  | 'branch_summary'
-  | 'label'
+  'message' | 'model_change' | 'thinking_level_change' | 'compaction' | 'branch_summary' | 'label'
 
-export type TreeNodeRole =
-  | 'user'
-  | 'assistant'
-  | 'toolResult'
-  | 'bashExecution'
-  | 'custom'
+export type TreeNodeRole = 'user' | 'assistant' | 'toolResult' | 'bashExecution' | 'custom'
 
 export interface SessionTreeNode {
   id: string
@@ -182,14 +162,7 @@ export interface SessionTreeNode {
 }
 
 export type ChatMessageType =
-  | 'user'
-  | 'assistant'
-  | 'thinking'
-  | 'tool_call'
-  | 'tool_result'
-  | 'bash'
-  | 'error'
-  | 'compaction'
+  'user' | 'assistant' | 'thinking' | 'tool_call' | 'tool_result' | 'bash' | 'error' | 'compaction'
 
 export interface ChatMessage {
   id: string

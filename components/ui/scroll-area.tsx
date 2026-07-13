@@ -49,7 +49,7 @@ function ScrollBar({
       data-slot="scroll-area-scrollbar"
       orientation="vertical"
       className={cn(
-        'absolute inset-y-0 right-0 flex w-2.5 touch-none select-none p-px opacity-70 transition-opacity hover:opacity-100',
+        'absolute inset-y-0 right-0 flex w-2.5 touch-none p-px opacity-70 transition-opacity select-none hover:opacity-100',
         className,
       )}
       {...props}

@@ -74,13 +74,7 @@ function registrySkillKey(skill: RegistrySkill) {
   return skill.installUrl || skill.id || `${skill.source}/${skill.name}`
 }
 
-export function SkillsView({
-  agents,
-  skills,
-}: {
-  agents: AgentProfile[]
-  skills: GlobalSkill[]
-}) {
+export function SkillsView({ agents, skills }: { agents: AgentProfile[]; skills: GlobalSkill[] }) {
   const [query, setQuery] = useState('')
   const [source, setSource] = useState<SkillSource | 'all'>('all')
   const [showBrowser, setShowBrowser] = useState(false)
@@ -105,13 +99,7 @@ export function SkillsView({
     return q && src
   })
 
-  const sources: (SkillSource | 'all')[] = [
-    'all',
-    'skills.sh',
-    'local',
-    'git',
-    'manual',
-  ]
+  const sources: (SkillSource | 'all')[] = ['all', 'skills.sh', 'local', 'git', 'manual']
 
   useEffect(() => {
     if (!showBrowser) return
@@ -126,9 +114,7 @@ export function SkillsView({
         if (!alive) return
         setRegistry([])
         setRegistryError(
-          error instanceof Error
-            ? error.message
-            : 'Unable to load skills.sh registry',
+          error instanceof Error ? error.message : 'Unable to load skills.sh registry',
         )
       })
       .finally(() => {
@@ -179,11 +165,7 @@ export function SkillsView({
     }
   }
 
-  const assignSkill = async (
-    skill: GlobalSkill,
-    agent: AgentProfile,
-    enabled: boolean,
-  ) => {
+  const assignSkill = async (skill: GlobalSkill, agent: AgentProfile, enabled: boolean) => {
     const key = `assign:${skill.id}:${agent.id}`
     setPendingId(key)
     try {
@@ -225,32 +207,21 @@ export function SkillsView({
         <div className="flex items-center gap-1.5">
           <Label className="mr-1">Source</Label>
           {sources.map((s) => (
-            <BracketButton
-              key={s}
-              active={source === s}
-              onClick={() => setSource(s)}
-            >
+            <BracketButton key={s} active={source === s} onClick={() => setSource(s)}>
               {s}
             </BracketButton>
           ))}
         </div>
-        <ActionButton
-          variant="ghost"
-          className="ml-auto"
-          onClick={refreshAfterMutation}
-        >
+        <ActionButton variant="ghost" className="ml-auto" onClick={refreshAfterMutation}>
           <RefreshCw className="size-3.5" />
           Refresh
         </ActionButton>
       </div>
 
       {/* Table */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin p-6">
+      <div className="scrollbar-thin flex-1 overflow-y-auto p-6">
         {skills.length === 0 ? (
-          <SkillsEmptyState
-            onBrowse={() => setShowBrowser(true)}
-            onImport={importManualSkill}
-          />
+          <SkillsEmptyState onBrowse={() => setShowBrowser(true)} onImport={importManualSkill} />
         ) : (
           <Panel>
             <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_112px_176px] items-center gap-4 border-b border-border bg-panel px-4 py-2.5">
@@ -272,9 +243,7 @@ export function SkillsView({
                   >
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-[13px] text-foreground">
-                          {s.name}
-                        </span>
+                        <span className="font-mono text-[13px] text-foreground">{s.name}</span>
                         {s.version && (
                           <span className="font-mono text-[11px] text-muted-foreground">
                             v{s.version}
@@ -316,11 +285,7 @@ export function SkillsView({
                       >
                         <UserPlus className="size-3.5" />
                       </ActionButton>
-                      <ActionButton
-                        variant="ghost"
-                        title="Edit"
-                        onClick={() => setEditing(s)}
-                      >
+                      <ActionButton variant="ghost" title="Edit" onClick={() => setEditing(s)}>
                         <Pencil className="size-3.5" />
                       </ActionButton>
                       <ActionButton
@@ -351,9 +316,7 @@ export function SkillsView({
           <div className="relative flex h-full w-full max-w-md flex-col border-l border-border bg-card shadow-xl">
             <div className="flex items-center justify-between border-b border-border bg-panel px-4 py-3">
               <div>
-                <h2 className="font-serif text-lg italic text-foreground">
-                  skills.sh
-                </h2>
+                <h2 className="font-serif text-lg text-foreground italic">skills.sh</h2>
                 <Label>community skill registry</Label>
               </div>
               <button
@@ -372,7 +335,7 @@ export function SkillsView({
                 icon={<Search className="size-3.5" />}
               />
             </div>
-            <div className="flex-1 space-y-3 overflow-y-auto scrollbar-thin p-4">
+            <div className="scrollbar-thin flex-1 space-y-3 overflow-y-auto p-4">
               {registryLoading ? (
                 <RegistrySkeleton />
               ) : registryError ? (
@@ -399,41 +362,39 @@ export function SkillsView({
                 registry.map((m) => {
                   const importKey = registrySkillKey(m)
                   return (
-                  <Panel key={importKey} className="p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-[13px] text-foreground">
-                        {m.name}
-                      </span>
-                      {m.installed ? (
-                        <Tag tone="success">
-                          <Check className="size-2.5" />
-                          installed
-                        </Tag>
-                      ) : (
-                        <ActionButton
-                          variant="accent"
-                          onClick={() => importRegistrySkill(m)}
-                          disabled={pendingId === `import:${importKey}`}
-                        >
-                          <Download className="size-3" />
-                          {pendingId === `import:${importKey}` ? 'Importing' : 'Import'}
-                        </ActionButton>
-                      )}
-                    </div>
-                    <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-                      by {m.author}
-                    </p>
-                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground">
-                      <span className="inline-flex min-w-0 items-center gap-1.5">
-                        <Package className="size-3 shrink-0" />
-                        <span className="truncate">{m.source}</span>
-                      </span>
-                      <span className="inline-flex items-center gap-1.5">
-                        <Download className="size-3 shrink-0" />
-                        {formatRegistryInstalls(m.installs)}
-                      </span>
-                    </div>
-                  </Panel>
+                    <Panel key={importKey} className="p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-[13px] text-foreground">{m.name}</span>
+                        {m.installed ? (
+                          <Tag tone="success">
+                            <Check className="size-2.5" />
+                            installed
+                          </Tag>
+                        ) : (
+                          <ActionButton
+                            variant="accent"
+                            onClick={() => importRegistrySkill(m)}
+                            disabled={pendingId === `import:${importKey}`}
+                          >
+                            <Download className="size-3" />
+                            {pendingId === `import:${importKey}` ? 'Importing' : 'Import'}
+                          </ActionButton>
+                        )}
+                      </div>
+                      <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                        by {m.author}
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground">
+                        <span className="inline-flex min-w-0 items-center gap-1.5">
+                          <Package className="size-3 shrink-0" />
+                          <span className="truncate">{m.source}</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1.5">
+                          <Download className="size-3 shrink-0" />
+                          {formatRegistryInstalls(m.installs)}
+                        </span>
+                      </div>
+                    </Panel>
                   )
                 })
               )}
@@ -443,11 +404,7 @@ export function SkillsView({
       )}
 
       {viewing && (
-        <SkillDetailsDialog
-          skill={viewing}
-          agents={agents}
-          onClose={() => setViewing(null)}
-        />
+        <SkillDetailsDialog skill={viewing} agents={agents} onClose={() => setViewing(null)} />
       )}
       {assigning && (
         <AssignSkillDialog
@@ -472,9 +429,7 @@ export function SkillsView({
         title="Delete skill"
         description={`Delete skill "${deleteTarget?.name ?? ''}" from Pi Studio and remove its installed files from pi's skills directory when present? This cannot be undone.`}
         confirmLabel="Delete skill"
-        busy={
-          deleteTarget ? pendingId === `delete:${deleteTarget.id}` : false
-        }
+        busy={deleteTarget ? pendingId === `delete:${deleteTarget.id}` : false}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => {
           if (deleteTarget) void deleteSkill(deleteTarget)
@@ -484,13 +439,7 @@ export function SkillsView({
   )
 }
 
-function SkillEditor({
-  skill,
-  onClose,
-}: {
-  skill: GlobalSkill | null
-  onClose: () => void
-}) {
+function SkillEditor({ skill, onClose }: { skill: GlobalSkill | null; onClose: () => void }) {
   const {
     register,
     handleSubmit,
@@ -527,7 +476,7 @@ function SkillEditor({
         className="relative w-full max-w-lg border border-border bg-card shadow-xl"
       >
         <div className="flex items-center justify-between border-b border-border bg-panel px-4 py-3">
-          <h2 className="font-serif text-lg italic text-foreground">
+          <h2 className="font-serif text-lg text-foreground italic">
             {skill ? `Edit ${skill.name}` : 'Import skill'}
           </h2>
           <button
@@ -540,17 +489,30 @@ function SkillEditor({
         </div>
         <div className="space-y-4 p-4">
           <EditorField label="Name" error={errors.name?.message}>
-            <input {...register('name')} className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring" />
+            <input
+              {...register('name')}
+              className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+            />
           </EditorField>
           <EditorField label="Description">
-            <textarea {...register('description')} rows={3} className="w-full resize-none border border-input bg-panel px-3 py-1.5 text-[13px] text-foreground outline-none focus:border-ring" />
+            <textarea
+              {...register('description')}
+              rows={3}
+              className="w-full resize-none border border-input bg-panel px-3 py-1.5 text-[13px] text-foreground outline-none focus:border-ring"
+            />
           </EditorField>
           <EditorField label="Path" error={errors.path?.message}>
-            <input {...register('path')} className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring" />
+            <input
+              {...register('path')}
+              className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+            />
           </EditorField>
           <div className="grid gap-3 sm:grid-cols-2">
             <EditorField label="Source">
-              <select {...register('source')} className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring">
+              <select
+                {...register('source')}
+                className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+              >
                 <option value="manual">manual</option>
                 <option value="skills.sh">skills.sh</option>
                 <option value="local">local</option>
@@ -558,11 +520,17 @@ function SkillEditor({
               </select>
             </EditorField>
             <EditorField label="Version">
-              <input {...register('version')} className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring" />
+              <input
+                {...register('version')}
+                className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+              />
             </EditorField>
           </div>
           <EditorField label="Author">
-            <input {...register('author')} className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring" />
+            <input
+              {...register('author')}
+              className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+            />
           </EditorField>
           <EditorField label="Tags (comma separated)">
             <input
@@ -601,9 +569,7 @@ function EditorField({
     <div>
       <Label className="mb-1.5 block">{label}</Label>
       {children}
-      {error && (
-        <p className="mt-1 font-mono text-[11px] text-destructive">{error}</p>
-      )}
+      {error && <p className="mt-1 font-mono text-[11px] text-destructive">{error}</p>}
     </div>
   )
 }
@@ -617,9 +583,7 @@ function SkillDetailsDialog({
   agents: AgentProfile[]
   onClose: () => void
 }) {
-  const assignedAgents = agents.filter((agent) =>
-    agent.selectedSkillIds.includes(skill.id),
-  )
+  const assignedAgents = agents.filter((agent) => agent.selectedSkillIds.includes(skill.id))
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -632,9 +596,7 @@ function SkillDetailsDialog({
       <div className="relative w-full max-w-2xl border border-border bg-card shadow-xl">
         <div className="flex items-center justify-between border-b border-border bg-panel px-4 py-3">
           <div>
-            <h2 className="font-serif text-lg italic text-foreground">
-              {skill.name}
-            </h2>
+            <h2 className="font-serif text-lg text-foreground italic">{skill.name}</h2>
             <Label>skill details</Label>
           </div>
           <button
@@ -688,21 +650,11 @@ function SkillDetailsDialog({
   )
 }
 
-function SkillField({
-  label,
-  value,
-  wide,
-}: {
-  label: string
-  value: string
-  wide?: boolean
-}) {
+function SkillField({ label, value, wide }: { label: string; value: string; wide?: boolean }) {
   return (
     <Panel className={wide ? 'p-3 sm:col-span-2' : 'p-3'}>
       <Label>{label}</Label>
-      <p className="mt-1 break-words font-mono text-xs text-foreground">
-        {value}
-      </p>
+      <p className="mt-1 font-mono text-xs break-words text-foreground">{value}</p>
     </Panel>
   )
 }
@@ -718,11 +670,7 @@ function AssignSkillDialog({
   agents: AgentProfile[]
   pendingId: string | null
   onClose: () => void
-  onToggle: (
-    skill: GlobalSkill,
-    agent: AgentProfile,
-    enabled: boolean,
-  ) => void
+  onToggle: (skill: GlobalSkill, agent: AgentProfile, enabled: boolean) => void
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -735,9 +683,7 @@ function AssignSkillDialog({
       <div className="relative w-full max-w-xl border border-border bg-card shadow-xl">
         <div className="flex items-center justify-between border-b border-border bg-panel px-4 py-3">
           <div>
-            <h2 className="font-serif text-lg italic text-foreground">
-              Assign {skill.name}
-            </h2>
+            <h2 className="font-serif text-lg text-foreground italic">Assign {skill.name}</h2>
             <Label>enable skill per agent</Label>
           </div>
           <button
@@ -788,11 +734,7 @@ function AssignSkillDialog({
                       disabled={pendingId === key}
                       onClick={() => onToggle(skill, agent, !enabled)}
                     >
-                      {pendingId === key
-                        ? 'Saving'
-                        : enabled
-                          ? 'Disable'
-                          : 'Enable'}
+                      {pendingId === key ? 'Saving' : enabled ? 'Disable' : 'Enable'}
                     </ActionButton>
                   </li>
                 )
@@ -850,25 +792,17 @@ function RegistryEmptyState({ query }: { query: string }) {
   )
 }
 
-function SkillsEmptyState({
-  onBrowse,
-  onImport,
-}: {
-  onBrowse: () => void
-  onImport: () => void
-}) {
+function SkillsEmptyState({ onBrowse, onImport }: { onBrowse: () => void; onImport: () => void }) {
   return (
     <div className="mx-auto flex max-w-md flex-col items-center justify-center gap-4 py-24 text-center">
       <div className="flex size-14 items-center justify-center border border-border-strong bg-card">
         <Sparkles className="size-6 text-muted-foreground" />
       </div>
       <div>
-        <h2 className="font-serif text-2xl italic text-foreground">
-          No skills yet
-        </h2>
-        <p className="mt-2 text-sm text-muted-foreground text-pretty">
-          Import a local skill or browse skills.sh to build a reusable global
-          skill pool for your agents.
+        <h2 className="font-serif text-2xl text-foreground italic">No skills yet</h2>
+        <p className="mt-2 text-sm text-pretty text-muted-foreground">
+          Import a local skill or browse skills.sh to build a reusable global skill pool for your
+          agents.
         </p>
       </div>
       <div className="flex items-center gap-2">

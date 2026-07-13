@@ -37,11 +37,11 @@ export function MarkdownContent({
   const blocks = parseMarkdown(content)
   return (
     <div
-      className={`min-w-0 max-w-full space-y-3 overflow-hidden text-sm leading-relaxed text-foreground wrap-break-word ${accentBorder ? 'border-l-2 border-accent/50 pl-3.5' : ''}`}
+      className={`max-w-full min-w-0 space-y-3 overflow-hidden text-sm leading-relaxed wrap-break-word text-foreground ${accentBorder ? 'border-l-2 border-accent/50 pl-3.5' : ''}`}
     >
       {blocks.map((block, index) => renderBlock(block, index))}
     </div>
-  );
+  )
 }
 
 function parseMarkdown(content: string) {
@@ -160,20 +160,17 @@ function renderBlock(block: MarkdownBlock, key: number) {
         return <MermaidDiagram key={key} chart={block.content} />
       }
       return (
-        <div
-          key={key}
-          className="max-w-full overflow-hidden border border-border bg-code"
-        >
+        <div key={key} className="bg-code max-w-full overflow-hidden border border-border">
           {block.language && (
-            <div className="border-b border-border px-3 py-1 font-mono text-[10px] uppercase text-muted-foreground">
+            <div className="border-b border-border px-3 py-1 font-mono text-[10px] text-muted-foreground uppercase">
               {block.language}
             </div>
           )}
-          <pre className="max-w-full overflow-hidden whitespace-pre-wrap wrap-break-word p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
+          <pre className="max-w-full overflow-hidden p-3 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-foreground/90">
             <code>{block.content}</code>
           </pre>
         </div>
-      );
+      )
     case 'heading': {
       const level = Math.min(6, Math.max(1, block.level))
       return (
@@ -189,14 +186,20 @@ function renderBlock(block: MarkdownBlock, key: number) {
     }
     case 'quote':
       return (
-        <blockquote key={key} className="border-l-2 border-border-strong pl-3 font-mono text-[12px] italic text-muted-foreground">
+        <blockquote
+          key={key}
+          className="border-l-2 border-border-strong pl-3 font-mono text-[12px] text-muted-foreground italic"
+        >
           {renderInlineWithBreaks(block.content)}
         </blockquote>
       )
     case 'list': {
       const Tag = block.ordered ? 'ol' : 'ul'
       return (
-        <Tag key={key} className={block.ordered ? 'list-decimal space-y-1 pl-5' : 'list-disc space-y-1 pl-5'}>
+        <Tag
+          key={key}
+          className={block.ordered ? 'list-decimal space-y-1 pl-5' : 'list-disc space-y-1 pl-5'}
+        >
           {block.items.map((item, index) => (
             <li key={`${key}-${index}`}>{renderInline(item)}</li>
           ))}
@@ -205,17 +208,14 @@ function renderBlock(block: MarkdownBlock, key: number) {
     }
     case 'table':
       return (
-        <div
-          key={key}
-          className="max-w-full overflow-x-auto border border-border bg-panel/40"
-        >
+        <div key={key} className="max-w-full overflow-x-auto border border-border bg-panel/40">
           <table className="min-w-full border-collapse text-left text-[12px] leading-relaxed">
             <thead className="bg-muted/60">
               <tr>
                 {block.headers.map((header, index) => (
                   <th
                     key={`${key}-head-${index}`}
-                    className="border-b border-r border-border px-3 py-2 font-mono text-[11px] font-semibold text-foreground last:border-r-0"
+                    className="border-r border-b border-border px-3 py-2 font-mono text-[11px] font-semibold text-foreground last:border-r-0"
                     style={{ textAlign: block.alignments[index] }}
                   >
                     {renderInline(header)}
@@ -232,7 +232,7 @@ function renderBlock(block: MarkdownBlock, key: number) {
                   {block.headers.map((_, cellIndex) => (
                     <td
                       key={`${key}-cell-${rowIndex}-${cellIndex}`}
-                      className="max-w-[18rem] border-r border-border px-3 py-2 align-top text-muted-foreground wrap-break-word last:border-r-0"
+                      className="max-w-[18rem] border-r border-border px-3 py-2 align-top wrap-break-word text-muted-foreground last:border-r-0"
                       style={{ textAlign: block.alignments[cellIndex] }}
                     >
                       {renderInline(row[cellIndex] ?? '')}
@@ -256,10 +256,10 @@ function isTableStart(lines: string[], index: number) {
   const delimiter = lines[index + 1]
   return Boolean(
     line &&
-      delimiter &&
-      hasTablePipes(line) &&
-      isTableDelimiter(delimiter) &&
-      splitTableRow(line).length >= 2,
+    delimiter &&
+    hasTablePipes(line) &&
+    isTableDelimiter(delimiter) &&
+    splitTableRow(line).length >= 2,
   )
 }
 
@@ -299,11 +299,7 @@ function renderInlineWithBreaks(content: string) {
   content.split('\n').forEach((line, lineIndex) => {
     if (lineIndex > 0) nodes.push(<br key={`br-${lineIndex}`} />)
     renderInline(line).forEach((node, nodeIndex) => {
-      nodes.push(
-        <Fragment key={`line-${lineIndex}-${nodeIndex}`}>
-          {node}
-        </Fragment>,
-      )
+      nodes.push(<Fragment key={`line-${lineIndex}-${nodeIndex}`}>{node}</Fragment>)
     })
   })
   return nodes
@@ -328,7 +324,10 @@ function renderInline(content: string): ReactNode[] {
 function renderInlineToken(token: string, key: number) {
   if (token.startsWith('`')) {
     return (
-      <code key={key} className="border border-border bg-muted px-1 py-0.5 font-mono text-[0.92em] text-foreground">
+      <code
+        key={key}
+        className="border border-border bg-muted px-1 py-0.5 font-mono text-[0.92em] text-foreground"
+      >
         {token.slice(1, -1)}
       </code>
     )
@@ -344,7 +343,13 @@ function renderInlineToken(token: string, key: number) {
   if (link) {
     const href = safeHref(link[2].trim())
     return (
-      <a key={key} href={href} target="_blank" rel="noreferrer" className="text-accent underline underline-offset-2">
+      <a
+        key={key}
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="text-accent underline underline-offset-2"
+      >
         {link[1]}
       </a>
     )

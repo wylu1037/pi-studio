@@ -2,8 +2,12 @@ import { relations, sql } from 'drizzle-orm'
 import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
 const timestamps = {
-  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
-  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdAt: text('created_at')
+    .notNull()
+    .default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at')
+    .notNull()
+    .default(sql`CURRENT_TIMESTAMP`),
 }
 
 export const agents = sqliteTable('agents', {
@@ -84,9 +88,7 @@ export const mcpConfigs = sqliteTable('mcp_configs', {
   command: text('command').notNull(),
   argsJson: text('args_json').notNull().default('[]'),
   envJson: text('env_json').notNull().default('{}'),
-  enabledGlobally: integer('enabled_globally', { mode: 'boolean' })
-    .notNull()
-    .default(false),
+  enabledGlobally: integer('enabled_globally', { mode: 'boolean' }).notNull().default(false),
   ...timestamps,
 })
 
@@ -143,7 +145,9 @@ export const packages = sqliteTable('packages', {
   hasExtensions: integer('has_extensions', { mode: 'boolean' }).notNull().default(false),
   status: text('status').notNull().default('installed'),
   isGallery: integer('is_gallery', { mode: 'boolean' }).notNull().default(false),
-  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at')
+    .notNull()
+    .default(sql`CURRENT_TIMESTAMP`),
 })
 
 export const agentSkills = sqliteTable(
@@ -256,7 +260,9 @@ export const sessionTreeNodes = sqliteTable(
     preview: text('preview').notNull(),
     label: text('label'),
     isCurrent: integer('is_current', { mode: 'boolean' }).notNull().default(false),
-    createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [
     index('tree_nodes_session_idx').on(table.sessionId),
@@ -288,7 +294,9 @@ export const chatMessages = sqliteTable(
     usageCostCacheRead: real('usage_cost_cache_read'),
     usageCostCacheWrite: real('usage_cost_cache_write'),
     usageCostTotal: real('usage_cost_total'),
-    createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [index('chat_messages_session_idx').on(table.sessionId)],
 )
@@ -312,7 +320,9 @@ export const chatRuns = sqliteTable(
     error: text('error'),
     startedAt: text('started_at'),
     completedAt: text('completed_at'),
-    createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [index('chat_runs_session_idx').on(table.sessionId)],
 )
@@ -326,7 +336,9 @@ export const chatRunEvents = sqliteTable(
       .references(() => chatRuns.id, { onDelete: 'cascade' }),
     type: text('type').notNull(),
     payloadJson: text('payload_json').notNull().default('{}'),
-    createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [index('chat_run_events_run_idx').on(table.runId)],
 )

@@ -29,13 +29,7 @@ import {
   ArrowDown,
   ArrowUp,
 } from 'lucide-react'
-import {
-  Label,
-  Tag,
-  BracketButton,
-  Panel,
-  PanelHeader,
-} from '@/components/pi-ui'
+import { Label, Tag, BracketButton, Panel, PanelHeader } from '@/components/pi-ui'
 import { MarkdownContent } from '@/components/markdown-content'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { getApiRunsId } from '@/lib/api/generated/clients/getApiRunsId'
@@ -115,8 +109,7 @@ export function ChatView({
   const [streamStartedAt, setStreamStartedAt] = useState<number | null>(null)
   const [streamDone, setStreamDone] = useState(false)
   const [streamPhase, setStreamPhase] = useState<StreamPhase>('idle')
-  const [optimisticMessage, setOptimisticMessage] =
-    useState<ChatMessage | null>(null)
+  const [optimisticMessage, setOptimisticMessage] = useState<ChatMessage | null>(null)
   const [runId, setRunId] = useState<string | null>(null)
   const [abortingRun, setAbortingRun] = useState(false)
   const [streamError, setStreamError] = useState<string | null>(null)
@@ -130,14 +123,10 @@ export function ChatView({
   const [slashSelection, setSlashSelection] = useState(0)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(() =>
     findCurrentTreeNodeId(tree),
-  );
-  const [branchMessages, setBranchMessages] = useState<ChatMessage[] | null>(
-    null,
-  );
-  const [branchPending, setBranchPending] = useState<
-    "navigate" | "fork" | null
-  >(null);
-  const [branchError, setBranchError] = useState<string | null>(null);
+  )
+  const [branchMessages, setBranchMessages] = useState<ChatMessage[] | null>(null)
+  const [branchPending, setBranchPending] = useState<'navigate' | 'fork' | null>(null)
+  const [branchError, setBranchError] = useState<string | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
   const activeRunIdRef = useRef<string | null>(null)
   const reconcileTimerRef = useRef<number | null>(null)
@@ -151,8 +140,7 @@ export function ChatView({
         provider.models
           .filter(
             (model) =>
-              enabledModels.has(`${provider.id}::${model.id}`) ||
-              enabledModels.has(model.id),
+              enabledModels.has(`${provider.id}::${model.id}`) || enabledModels.has(model.id),
           )
           .map((model) => ({ provider, model })),
       )
@@ -160,8 +148,7 @@ export function ChatView({
   const defaultModelOption =
     availableModelOptions.find(
       ({ provider, model }) =>
-        provider.id === activeAgent?.defaultProviderId &&
-        model.id === activeAgent?.defaultModelId,
+        provider.id === activeAgent?.defaultProviderId && model.id === activeAgent?.defaultModelId,
     ) ?? availableModelOptions[0]
 
   const form = useForm<ComposerValues>({
@@ -189,10 +176,9 @@ export function ChatView({
   )
   const canSend = Boolean(
     selectedModelOption &&
-      postApiSessionsIdRunsMutationRequestSchema.safeParse(composerValues).success,
+    postApiSessionsIdRunsMutationRequestSchema.safeParse(composerValues).success,
   )
-  const activeModelName =
-    selectedModelOption?.model.name ?? selectedModelOption?.model.id ?? model
+  const activeModelName = selectedModelOption?.model.name ?? selectedModelOption?.model.id ?? model
 
   useEffect(() => {
     const currentProviderId = form.getValues('providerId')
@@ -215,15 +201,16 @@ export function ChatView({
     return prompts.filter((prompt) => selected.has(prompt.id))
   }, [activeAgent?.selectedPromptIds, prompts])
   const slashQuery = message.match(/^\/([^\s]*)$/)?.[1]?.toLowerCase()
-  const slashPromptOptions = slashQuery === undefined
-    ? []
-    : selectedPrompts
-        .filter(
-          (prompt) =>
-            prompt.name.toLowerCase().includes(slashQuery) ||
-            prompt.description?.toLowerCase().includes(slashQuery),
-        )
-        .slice(0, 8)
+  const slashPromptOptions =
+    slashQuery === undefined
+      ? []
+      : selectedPrompts
+          .filter(
+            (prompt) =>
+              prompt.name.toLowerCase().includes(slashQuery) ||
+              prompt.description?.toLowerCase().includes(slashQuery),
+          )
+          .slice(0, 8)
 
   useEffect(() => {
     setSlashSelection(0)
@@ -237,7 +224,7 @@ export function ChatView({
     const selected = new Set(activeAgent?.selectedMcpConfigIds ?? [])
     return mcpConfigs.filter((mcp) => selected.has(mcp.id)).map((mcp) => mcp.name)
   }, [activeAgent?.selectedMcpConfigIds, mcpConfigs])
-  const sourceMessages = branchMessages ?? messages;
+  const sourceMessages = branchMessages ?? messages
 
   useEffect(() => {
     return () => {
@@ -277,57 +264,54 @@ export function ChatView({
   }, [router, streamBuffer.length, streamDone, streamingMessage.length])
 
   useEffect(() => {
-    if (!streamDone || !streamingMessage.trim()) return;
+    if (!streamDone || !streamingMessage.trim()) return
     const persisted = sourceMessages.some(
       (message) =>
-        message.type === "assistant" &&
-        message.content.trim() === streamingMessage.trim(),
-    );
-    if (!persisted) return;
+        message.type === 'assistant' && message.content.trim() === streamingMessage.trim(),
+    )
+    if (!persisted) return
 
-    setStreamingMessage("");
-    setStreamBuffer("");
-    setStreamProcessMessages([]);
-    setStreamingTokens(null);
-    setStreamingUsage(null);
-    setStreamStartedAt(null);
-    setStreamDone(false);
-    setOptimisticMessage(null);
-    setStreamPhase("idle");
-    setBranchMessages(null);
-  }, [sourceMessages, streamDone, streamingMessage]);
+    setStreamingMessage('')
+    setStreamBuffer('')
+    setStreamProcessMessages([])
+    setStreamingTokens(null)
+    setStreamingUsage(null)
+    setStreamStartedAt(null)
+    setStreamDone(false)
+    setOptimisticMessage(null)
+    setStreamPhase('idle')
+    setBranchMessages(null)
+  }, [sourceMessages, streamDone, streamingMessage])
 
   const baseMessages =
     optimisticMessage &&
     !sourceMessages.some(
-      (message) =>
-        message.type === "user" &&
-        message.content === optimisticMessage.content,
+      (message) => message.type === 'user' && message.content === optimisticMessage.content,
     )
       ? [...sourceMessages, optimisticMessage]
-      : sourceMessages;
+      : sourceMessages
 
   const hasPersistedStreamingAssistant =
     streamingMessage.trim().length > 0 &&
     sourceMessages.some(
       (message) =>
-        message.type === "assistant" &&
-        message.content.trim() === streamingMessage.trim(),
-    );
+        message.type === 'assistant' && message.content.trim() === streamingMessage.trim(),
+    )
 
-  const displayMessages = streamingMessage && !hasPersistedStreamingAssistant
-    ? [
-        ...baseMessages,
-        ...streamProcessMessages,
-        {
-          id: 'streaming-assistant',
-          type: 'assistant' as const,
-          content: streamingMessage,
-          timestamp: 'streaming',
-          tokens: streamingTokens ?? undefined,
-        },
-      ]
-    : [...baseMessages, ...streamProcessMessages]
+  const displayMessages =
+    streamingMessage && !hasPersistedStreamingAssistant
+      ? [
+          ...baseMessages,
+          ...streamProcessMessages,
+          {
+            id: 'streaming-assistant',
+            type: 'assistant' as const,
+            content: streamingMessage,
+            timestamp: 'streaming',
+            tokens: streamingTokens ?? undefined,
+          },
+        ]
+      : [...baseMessages, ...streamProcessMessages]
   const displayItems = buildDisplayItems(displayMessages)
 
   useEffect(() => {
@@ -335,8 +319,7 @@ export function ChatView({
     if (!viewport) return
 
     const updateScrollState = () => {
-      const distanceFromBottom =
-        viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
+      const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
       const nearBottom = distanceFromBottom < 96
       shouldFollowMessagesRef.current = nearBottom
       setCanScrollUp(viewport.scrollTop > 96)
@@ -395,11 +378,7 @@ export function ChatView({
     return true
   }
 
-  const failActiveStream = (
-    currentRunId: string,
-    message: string,
-    source?: EventSource | null,
-  ) => {
+  const failActiveStream = (currentRunId: string, message: string, source?: EventSource | null) => {
     if (activeRunIdRef.current !== currentRunId) return false
     clearReconciliation()
     source?.close()
@@ -461,10 +440,7 @@ export function ChatView({
 
       const last = current.at(-1)
       if (last?.type === type && last.title === title && type === 'bash') {
-        return [
-          ...current.slice(0, -1),
-          { ...last, content: last.content + content },
-        ]
+        return [...current.slice(0, -1), { ...last, content: last.content + content }]
       }
 
       return [
@@ -582,7 +558,11 @@ export function ChatView({
           title?: string
         }
         setStreamPhase('thinking')
-        appendStreamProcessMessage('tool_result', payload.content ?? '', payload.title ?? 'Tool result')
+        appendStreamProcessMessage(
+          'tool_result',
+          payload.content ?? '',
+          payload.title ?? 'Tool result',
+        )
       })
       eventSource.addEventListener('bash_output', (event) => {
         if (activeRunIdRef.current !== currentRunId) return
@@ -628,9 +608,7 @@ export function ChatView({
       setRunId(null)
       setAbortingRun(false)
       activeRunIdRef.current = null
-      setStreamError(
-        error instanceof Error ? error.message : 'Unable to start pi run.',
-      )
+      setStreamError(error instanceof Error ? error.message : 'Unable to start pi run.')
       return
     }
   })
@@ -649,9 +627,7 @@ export function ChatView({
       setStreamStartedAt(null)
       router.refresh()
     } catch (error) {
-      setStreamError(
-        error instanceof Error ? error.message : 'Unable to abort pi run.',
-      )
+      setStreamError(error instanceof Error ? error.message : 'Unable to abort pi run.')
     } finally {
       setAbortingRun(false)
     }
@@ -679,79 +655,65 @@ export function ChatView({
   }
 
   const selectTreeNode = async (entryId: string) => {
-    if (!activeSession || isRunningRun) return;
-    setSelectedNodeId(entryId);
-    setBranchError(null);
+    if (!activeSession || isRunningRun) return
+    setSelectedNodeId(entryId)
+    setBranchError(null)
     try {
       const response = await fetch(
         `/api/sessions/${encodeURIComponent(activeSession.id)}/context?leafId=${encodeURIComponent(entryId)}`,
-      );
+      )
       const body = (await response.json()) as {
-        messages?: ChatMessage[];
-        error?: string;
-      };
+        messages?: ChatMessage[]
+        error?: string
+      }
       if (!response.ok || !body.messages)
-        throw new Error(body.error ?? "Unable to load branch context.");
-      setBranchMessages(body.messages);
+        throw new Error(body.error ?? 'Unable to load branch context.')
+      setBranchMessages(body.messages)
     } catch (error) {
-      setBranchError(
-        error instanceof Error
-          ? error.message
-          : "Unable to load branch context.",
-      );
+      setBranchError(error instanceof Error ? error.message : 'Unable to load branch context.')
     }
-  };
+  }
 
   const startBranch = async () => {
-    if (!activeSession || !selectedNodeId || isRunningRun) return;
-    setBranchPending("navigate");
-    setBranchError(null);
+    if (!activeSession || !selectedNodeId || isRunningRun) return
+    setBranchPending('navigate')
+    setBranchError(null)
     try {
-      const response = await fetch(
-        `/api/sessions/${activeSession.id}/navigate`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ entryId: selectedNodeId }),
-        },
-      );
-      const body = (await response.json()) as { error?: string };
-      if (!response.ok)
-        throw new Error(body.error ?? "Unable to create branch.");
-      form.setFocus("message");
+      const response = await fetch(`/api/sessions/${activeSession.id}/navigate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ entryId: selectedNodeId }),
+      })
+      const body = (await response.json()) as { error?: string }
+      if (!response.ok) throw new Error(body.error ?? 'Unable to create branch.')
+      form.setFocus('message')
     } catch (error) {
-      setBranchError(
-        error instanceof Error ? error.message : "Unable to create branch.",
-      );
+      setBranchError(error instanceof Error ? error.message : 'Unable to create branch.')
     } finally {
-      setBranchPending(null);
+      setBranchPending(null)
     }
-  };
+  }
 
   const forkSession = async () => {
-    if (!activeAgent || !activeSession || !selectedNodeId || isRunningRun)
-      return;
-    setBranchPending("fork");
-    setBranchError(null);
+    if (!activeAgent || !activeSession || !selectedNodeId || isRunningRun) return
+    setBranchPending('fork')
+    setBranchError(null)
     try {
       const response = await fetch(`/api/sessions/${activeSession.id}/fork`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ entryId: selectedNodeId }),
-      });
-      const body = (await response.json()) as { id?: string; error?: string };
-      if (!response.ok || !body.id)
-        throw new Error(body.error ?? "Unable to fork session.");
-      router.push(`/chat?agent=${activeAgent.id}&session=${body.id}`);
-      router.refresh();
+      })
+      const body = (await response.json()) as { id?: string; error?: string }
+      if (!response.ok || !body.id) throw new Error(body.error ?? 'Unable to fork session.')
+      router.push(`/chat?agent=${activeAgent.id}&session=${body.id}`)
+      router.refresh()
     } catch (error) {
-      setBranchError(
-        error instanceof Error ? error.message : "Unable to fork session.",
-      );
+      setBranchError(error instanceof Error ? error.message : 'Unable to fork session.')
     } finally {
-      setBranchPending(null);
+      setBranchPending(null)
     }
-  };
+  }
 
   const totalTreeNodes = countTreeNodes(tree)
   const visibleTree = useMemo(
@@ -782,74 +744,69 @@ export function ChatView({
     <div className="flex h-full min-h-0">
       {/* LEFT: session tree */}
       {showSessionTree && (
-      <aside className="flex w-72 shrink-0 flex-col border-r border-border bg-panel">
-        <div className="flex h-18 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
-          <div>
-            <Label>Session tree</Label>
-            <p className="mt-1 font-mono text-[11px] text-muted-foreground">
-              {visibleTreeNodes < totalTreeNodes
-                ? `${visibleTreeNodes} of ${totalTreeNodes} recent nodes`
-                : `${totalTreeNodes} nodes`}{' '}
-              · {sessions.length} sessions
-            </p>
+        <aside className="flex w-72 shrink-0 flex-col border-r border-border bg-panel">
+          <div className="flex h-18 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
+            <div>
+              <Label>Session tree</Label>
+              <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                {visibleTreeNodes < totalTreeNodes
+                  ? `${visibleTreeNodes} of ${totalTreeNodes} recent nodes`
+                  : `${totalTreeNodes} nodes`}{' '}
+                · {sessions.length} sessions
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowSessionTree(false)}
+              className="flex size-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title="Hide session tree"
+              aria-label="Hide session tree"
+            >
+              <PanelLeftClose className="size-4" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowSessionTree(false)}
-            className="flex size-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            title="Hide session tree"
-            aria-label="Hide session tree"
-          >
-            <PanelLeftClose className="size-4" />
-          </button>
-        </div>
-        <ScrollArea
-          className="min-h-0 flex-1"
-          viewportClassName="py-2 pl-2 pr-5"
-        >
-          {visibleTree ? (
-            <TreeNode
-              node={visibleTree}
-              depth={0}
-              selectedId={selectedNodeId}
-              onSelect={selectTreeNode}
-            />
-          ) : (
-            <p className="px-2 py-6 text-center font-mono text-[11px] text-muted-foreground">
-              No tree nodes yet
+          <ScrollArea className="min-h-0 flex-1" viewportClassName="py-2 pl-2 pr-5">
+            {visibleTree ? (
+              <TreeNode
+                node={visibleTree}
+                depth={0}
+                selectedId={selectedNodeId}
+                onSelect={selectTreeNode}
+              />
+            ) : (
+              <p className="px-2 py-6 text-center font-mono text-[11px] text-muted-foreground">
+                No tree nodes yet
+              </p>
+            )}
+          </ScrollArea>
+          {branchError && (
+            <p className="border-t border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
+              {branchError}
             </p>
           )}
-        </ScrollArea>
-        {branchError && (
-          <p className="border-t border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
-            {branchError}
-          </p>
-        )}
-        <div className="grid grid-cols-2 gap-2 border-border p-2">
-          <BracketButton
-            className="justify-center whitespace-nowrap"
-            disabled={!selectedNodeId || isRunningRun || branchPending !== null}
-            onClick={() => void startBranch()}
-          >
-            <span className="inline-flex items-center gap-1.5">
-              <GitBranch className="size-3 shrink-0" />
-              <span>
-                {branchPending === "navigate" ? "Branching" : "New branch"}
+          <div className="grid grid-cols-2 gap-2 border-border p-2">
+            <BracketButton
+              className="justify-center whitespace-nowrap"
+              disabled={!selectedNodeId || isRunningRun || branchPending !== null}
+              onClick={() => void startBranch()}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <GitBranch className="size-3 shrink-0" />
+                <span>{branchPending === 'navigate' ? 'Branching' : 'New branch'}</span>
               </span>
-            </span>
-          </BracketButton>
-          <BracketButton
-            className="justify-center whitespace-nowrap"
-            disabled={!selectedNodeId || isRunningRun || branchPending !== null}
-            onClick={() => void forkSession()}
-          >
-            <span className="inline-flex items-center gap-1.5">
-              <GitBranch className="size-3 shrink-0" />
-              <span>{branchPending === "fork" ? "Forking" : "Fork"}</span>
-            </span>
-          </BracketButton>
-        </div>
-      </aside>
+            </BracketButton>
+            <BracketButton
+              className="justify-center whitespace-nowrap"
+              disabled={!selectedNodeId || isRunningRun || branchPending !== null}
+              onClick={() => void forkSession()}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <GitBranch className="size-3 shrink-0" />
+                <span>{branchPending === 'fork' ? 'Forking' : 'Fork'}</span>
+              </span>
+            </BracketButton>
+          </div>
+        </aside>
       )}
 
       {/* CENTER: conversation */}
@@ -872,13 +829,9 @@ export function ChatView({
               <Bot className="size-3.5 text-accent" />
             </span>
             <div className="min-w-0">
-              <div className="truncate text-sm font-medium text-foreground">
-                {activeAgent.name}
-              </div>
+              <div className="truncate text-sm font-medium text-foreground">{activeAgent.name}</div>
               <div className="truncate font-mono text-[11px] text-muted-foreground">
-                {activeSession.name ??
-                  activeSession.firstUserMessage ??
-                  "New conversation"}
+                {activeSession.name ?? activeSession.firstUserMessage ?? 'New conversation'}
               </div>
             </div>
           </div>
@@ -886,11 +839,11 @@ export function ChatView({
             <Tag tone="outline">
               <Circle
                 className={cn(
-                  "size-2",
-                  runId ? "fill-success text-success" : "text-muted-foreground",
+                  'size-2',
+                  runId ? 'fill-success text-success' : 'text-muted-foreground',
                 )}
               />
-              {runId ? "running" : "ready"}
+              {runId ? 'running' : 'ready'}
             </Tag>
             <Tag tone="outline">{activeSession.messageCount} msgs</Tag>
             {!showActiveContext && (
@@ -914,86 +867,81 @@ export function ChatView({
             viewportClassName="px-5 py-6"
             viewportRef={messageViewportRef}
           >
-          <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-4 overflow-x-hidden">
-            {displayItems.map((item) =>
-              item.type === "process" ? (
-                <ProcessDetailsGroup
-                  key={item.id}
-                  messages={item.messages}
-                  isStreaming={Boolean(
-                    runId &&
-                    item.messages.some(
-                      (message) => message.timestamp === "streaming",
-                    ),
-                  )}
-                />
-              ) : (
-                <MessageBubble
-                  key={item.message.id}
-                  message={item.message}
+            <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-4 overflow-x-hidden">
+              {displayItems.map((item) =>
+                item.type === 'process' ? (
+                  <ProcessDetailsGroup
+                    key={item.id}
+                    messages={item.messages}
+                    isStreaming={Boolean(
+                      runId && item.messages.some((message) => message.timestamp === 'streaming'),
+                    )}
+                  />
+                ) : (
+                  <MessageBubble
+                    key={item.message.id}
+                    message={item.message}
+                    agentName={activeAgent.name}
+                    streamStartedAt={
+                      item.message.id === 'streaming-assistant' ? streamStartedAt : null
+                    }
+                    usageSummary={
+                      item.message.id === 'streaming-assistant'
+                        ? formatUsageSummary(streamingUsage)
+                        : undefined
+                    }
+                  />
+                ),
+              )}
+              {isWaiting && <WaitingBubble agentName={activeAgent.name} />}
+              {displayMessages.length === 0 && !isWaiting && !streamError && (
+                <EmptyConversationState
                   agentName={activeAgent.name}
-                  streamStartedAt={
-                    item.message.id === "streaming-assistant"
-                      ? streamStartedAt
-                      : null
-                  }
-                  usageSummary={
-                    item.message.id === "streaming-assistant"
-                      ? formatUsageSummary(streamingUsage)
-                      : undefined
-                  }
+                  modelName={activeModelName}
+                  skillCount={skillNames.length}
+                  onSelectPrompt={(prompt) => {
+                    form.setValue('message', prompt)
+                    form.setFocus('message')
+                  }}
                 />
-              ),
-            )}
-            {isWaiting && <WaitingBubble agentName={activeAgent.name} />}
-            {displayMessages.length === 0 && !isWaiting && !streamError && (
-              <EmptyConversationState
-                agentName={activeAgent.name}
-                modelName={activeModelName}
-                skillCount={skillNames.length}
-                onSelectPrompt={(prompt) => {
-                  form.setValue("message", prompt);
-                  form.setFocus("message");
-                }}
-              />
-            )}
-            {streamError && (
-              <MessageBubble
-                agentName={activeAgent.name}
-                message={{
-                  id: "stream-error",
-                  type: "error",
-                  content: streamError,
-                  timestamp: "now",
-                }}
-              />
-            )}
-          </div>
+              )}
+              {streamError && (
+                <MessageBubble
+                  agentName={activeAgent.name}
+                  message={{
+                    id: 'stream-error',
+                    type: 'error',
+                    content: streamError,
+                    timestamp: 'now',
+                  }}
+                />
+              )}
+            </div>
           </ScrollArea>
           {(canScrollUp || canScrollDown) && (
-            <div className="pointer-events-none absolute bottom-5 right-5 flex flex-col border border-border bg-card shadow-lg">
-            {canScrollUp && (
-              <button
-                type="button"
-                onClick={() => scrollMessagesTo('top')}
-                className="pointer-events-auto flex size-9 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98]"
-                title="Back to top"
-                aria-label="Back to top"
-              >
-                <ArrowUp className="size-4" />
-              </button>
-            )}
-            {canScrollDown && (
-              <button
-                type="button"
-                onClick={() => scrollMessagesTo('bottom')}
-                className="pointer-events-auto flex size-9 items-center justify-center border-t border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98] first:border-t-0"
-                title="Jump to latest message"
-                aria-label="Jump to latest message"
-              >
-                <ArrowDown className="size-4" />
-              </button>
-            )}
+            <div className="pointer-events-none absolute right-5 bottom-5 flex flex-col border border-border bg-card shadow-lg">
+              {canScrollUp && (
+                <button
+                  type="button"
+                  onClick={() => scrollMessagesTo('top')}
+                  className="pointer-events-auto flex size-9 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98]"
+                  title="Back to top"
+                  aria-label="Back to top"
+                >
+                  <ArrowUp className="size-4" />
+                </button>
+              )}
+              {canScrollDown && (
+                <button
+                  type="button"
+                  onClick={() => scrollMessagesTo('bottom')}
+                  className="pointer-events-auto flex size-9 items-center justify-center border-t border-border text-muted-foreground transition-colors first:border-t-0 hover:bg-muted hover:text-foreground active:scale-[0.98]"
+                  title="Jump to latest message"
+                  aria-label="Jump to latest message"
+                >
+                  <ArrowDown className="size-4" />
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -1009,7 +957,7 @@ export function ChatView({
                     {slashPromptOptions.length} available
                   </span>
                 </div>
-                <ul className="max-h-64 overflow-auto py-1 scrollbar-thin">
+                <ul className="scrollbar-thin max-h-64 overflow-auto py-1">
                   {slashPromptOptions.map((prompt, index) => (
                     <li key={prompt.id}>
                       <button
@@ -1024,7 +972,7 @@ export function ChatView({
                         )}
                       >
                         <span className="flex min-w-0 items-baseline gap-2.5">
-                          <span className="shrink-0 font-mono text-[13px] font-medium leading-5 text-accent">
+                          <span className="shrink-0 font-mono text-[13px] leading-5 font-medium text-accent">
                             /{prompt.name}
                           </span>
                           {prompt.argumentHint && (
@@ -1054,7 +1002,7 @@ export function ChatView({
                 <Paperclip className="size-4" />
               </button>
               <textarea
-                {...form.register("message")}
+                {...form.register('message')}
                 onKeyDown={(e) => {
                   if (slashPromptOptions.length > 0) {
                     if (e.key === 'ArrowDown') {
@@ -1064,12 +1012,17 @@ export function ChatView({
                     }
                     if (e.key === 'ArrowUp') {
                       e.preventDefault()
-                      setSlashSelection((value) => (value - 1 + slashPromptOptions.length) % slashPromptOptions.length)
+                      setSlashSelection(
+                        (value) =>
+                          (value - 1 + slashPromptOptions.length) % slashPromptOptions.length,
+                      )
                       return
                     }
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()
-                      insertPromptCommand(slashPromptOptions[slashSelection] ?? slashPromptOptions[0])
+                      insertPromptCommand(
+                        slashPromptOptions[slashSelection] ?? slashPromptOptions[0],
+                      )
                       return
                     }
                     if (e.key === 'Escape') {
@@ -1079,43 +1032,36 @@ export function ChatView({
                     }
                   }
                   if (
-                    e.key === "Enter" &&
+                    e.key === 'Enter' &&
                     !e.shiftKey &&
                     !e.nativeEvent.isComposing &&
                     e.keyCode !== 229
                   ) {
-                    e.preventDefault();
-                    if (
-                      canSend &&
-                      !isStartingRun &&
-                      !isRunningRun &&
-                      !abortingRun
-                    ) {
-                      void submit();
+                    e.preventDefault()
+                    if (canSend && !isStartingRun && !isRunningRun && !abortingRun) {
+                      void submit()
                     }
                   }
                 }}
                 rows={1}
                 placeholder={
                   runId
-                    ? "Add guidance to the active run..."
-                    : "Reply to the agent...  (Enter to send, Shift+Enter for newline)"
+                    ? 'Add guidance to the active run...'
+                    : 'Reply to the agent...  (Enter to send, Shift+Enter for newline)'
                 }
                 className="max-h-40 min-h-11 flex-1 resize-none bg-transparent py-2 font-mono text-[13px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/60"
               />
               <button
-                type={isRunningRun ? "button" : "submit"}
+                type={isRunningRun ? 'button' : 'submit'}
                 onClick={isRunningRun ? abort : undefined}
-                disabled={
-                  isRunningRun ? abortingRun : isStartingRun || !canSend
-                }
+                disabled={isRunningRun ? abortingRun : isStartingRun || !canSend}
                 className={cn(
-                  "flex h-9 items-center justify-center gap-1.5 border font-mono text-[11px] uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-70",
+                  'flex h-9 items-center justify-center gap-1.5 border font-mono text-[11px] uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-70',
                   isRunningRun
-                    ? "border-destructive/70 bg-destructive/10 px-3 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                    : "border-accent bg-accent px-2.5 text-accent-foreground hover:opacity-90",
+                    ? 'border-destructive/70 bg-destructive/10 px-3 text-destructive hover:bg-destructive hover:text-destructive-foreground'
+                    : 'border-accent bg-accent px-2.5 text-accent-foreground hover:opacity-90',
                 )}
-                aria-label={isRunningRun ? "Abort run" : "Send message"}
+                aria-label={isRunningRun ? 'Abort run' : 'Send message'}
               >
                 {abortingRun || isStartingRun ? (
                   <LoaderCircle className="size-3.5 animate-spin" />
@@ -1132,69 +1078,67 @@ export function ChatView({
                 <button
                   type="button"
                   disabled={!message.trim() || queueingMessage !== null}
-                  onClick={() => void queueMessage("steer")}
-                  className="border border-border-strong px-2.5 py-1 font-mono text-[10px] uppercase text-muted-foreground hover:border-accent hover:text-foreground disabled:opacity-50"
+                  onClick={() => void queueMessage('steer')}
+                  className="border border-border-strong px-2.5 py-1 font-mono text-[10px] text-muted-foreground uppercase hover:border-accent hover:text-foreground disabled:opacity-50"
                 >
-                  {queueingMessage === "steer" ? "Queueing…" : "Steer now"}
+                  {queueingMessage === 'steer' ? 'Queueing…' : 'Steer now'}
                 </button>
                 <button
                   type="button"
                   disabled={!message.trim() || queueingMessage !== null}
-                  onClick={() => void queueMessage("follow-up")}
-                  className="border border-border-strong px-2.5 py-1 font-mono text-[10px] uppercase text-muted-foreground hover:border-accent hover:text-foreground disabled:opacity-50"
+                  onClick={() => void queueMessage('follow-up')}
+                  className="border border-border-strong px-2.5 py-1 font-mono text-[10px] text-muted-foreground uppercase hover:border-accent hover:text-foreground disabled:opacity-50"
                 >
-                  {queueingMessage === "follow-up" ? "Queueing…" : "Follow up"}
+                  {queueingMessage === 'follow-up' ? 'Queueing…' : 'Follow up'}
                 </button>
               </div>
             )}
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
               <label className="flex items-center gap-1.5">
                 <Cpu className="size-3 text-muted-foreground" />
-                <input type="hidden" {...form.register("providerId")} />
-                <input type="hidden" {...form.register("modelId")} />
+                <input type="hidden" {...form.register('providerId')} />
+                <input type="hidden" {...form.register('modelId')} />
                 <select
                   disabled={availableModelOptions.length === 0 || isRunningRun}
                   value={
                     selectedModelOption
                       ? `${selectedModelOption.provider.id}::${selectedModelOption.model.id}`
-                      : ""
+                      : ''
                   }
                   onChange={(event) => {
                     const next = availableModelOptions.find(
                       ({ provider, model: candidate }) =>
                         `${provider.id}::${candidate.id}` === event.target.value,
-                    );
-                    if (!next) return;
-                    form.setValue("providerId", next.provider.id, {
+                    )
+                    if (!next) return
+                    form.setValue('providerId', next.provider.id, {
                       shouldDirty: true,
                       shouldValidate: true,
-                    });
-                    form.setValue("modelId", next.model.id, {
+                    })
+                    form.setValue('modelId', next.model.id, {
                       shouldDirty: true,
                       shouldValidate: true,
-                    });
+                    })
                   }}
                   className="bg-transparent font-mono text-[11px] text-muted-foreground outline-none hover:text-foreground"
                 >
                   {availableModelOptions.length === 0 && (
                     <option value="">No enabled models</option>
                   )}
-                  {availableModelOptions.map(
-                    ({ provider, model: candidate }) => (
-                      <option
-                        key={`${provider.id}:${candidate.id}`}
-                        value={`${provider.id}::${candidate.id}`}
-                      >
-                        {provider.name} / {candidate.name ?? candidate.id}
-                      </option>
-                    ),
-                  )}
+                  {availableModelOptions.map(({ provider, model: candidate }) => (
+                    <option
+                      key={`${provider.id}:${candidate.id}`}
+                      value={`${provider.id}::${candidate.id}`}
+                    >
+                      {provider.name} / {candidate.name ?? candidate.id}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label className="flex items-center gap-1.5">
                 <Brain className="size-3 text-muted-foreground" />
                 <select
-                  {...form.register("thinkingLevel")}
+                  {...form.register('thinkingLevel')}
                   className="bg-transparent font-mono text-[11px] text-muted-foreground outline-none hover:text-foreground"
                 >
                   {thinkingLevels.map((t) => (
@@ -1214,75 +1158,72 @@ export function ChatView({
 
       {/* RIGHT: context inspector */}
       {showActiveContext && (
-      <aside className="hidden w-72 shrink-0 flex-col border-l border-border bg-panel xl:flex">
-        <div className="flex h-18 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
-          <Label>Active context</Label>
-          <button
-            type="button"
-            onClick={() => setShowActiveContext(false)}
-            className="flex size-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            title="Hide active context"
-            aria-label="Hide active context"
-          >
-            <PanelRightClose className="size-4" />
-          </button>
-        </div>
-        <div className="flex-1 space-y-4 overflow-auto p-4">
-          <Panel>
-            <PanelHeader>
-              <Label>Model</Label>
-            </PanelHeader>
-            <div className="space-y-2 p-3">
-              <Row icon={<Cpu className="size-3" />} label={activeModelName} />
-              <Row
-                icon={<Brain className="size-3" />}
-                label={`thinking · ${thinking}`}
-              />
-              <Row
-                icon={<Coins className="size-3" />}
-                label={`${activeSession.totalTokens ?? 0} tokens`}
-              />
-            </div>
-          </Panel>
-          <Panel>
-            <PanelHeader>
-              <Label>Skills</Label>
-              <Tag>{skillNames.length}</Tag>
-            </PanelHeader>
-            <ul className="divide-y divide-border">
-              {skillNames.map((s) => (
-                <li
-                  key={s}
-                  className="flex items-center gap-2 px-3 py-2 font-mono text-[11px] text-muted-foreground"
-                >
-                  <Layers className="size-3 shrink-0 text-accent" />
-                  {s}
-                </li>
-              ))}
-            </ul>
-          </Panel>
-          <Panel>
-            <PanelHeader>
-              <Label>MCP tools</Label>
-              <Tag>{mcpNames.length}</Tag>
-            </PanelHeader>
-            <ul className="divide-y divide-border">
-              {mcpNames.map((s) => (
-                <li
-                  key={s}
-                  className="flex items-center gap-2 px-3 py-2 font-mono text-[11px] text-muted-foreground"
-                >
-                  <Wrench className="size-3 shrink-0 text-accent" />
-                  {s}
-                </li>
-              ))}
-            </ul>
-          </Panel>
-        </div>
-      </aside>
+        <aside className="hidden w-72 shrink-0 flex-col border-l border-border bg-panel xl:flex">
+          <div className="flex h-18 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
+            <Label>Active context</Label>
+            <button
+              type="button"
+              onClick={() => setShowActiveContext(false)}
+              className="flex size-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title="Hide active context"
+              aria-label="Hide active context"
+            >
+              <PanelRightClose className="size-4" />
+            </button>
+          </div>
+          <div className="flex-1 space-y-4 overflow-auto p-4">
+            <Panel>
+              <PanelHeader>
+                <Label>Model</Label>
+              </PanelHeader>
+              <div className="space-y-2 p-3">
+                <Row icon={<Cpu className="size-3" />} label={activeModelName} />
+                <Row icon={<Brain className="size-3" />} label={`thinking · ${thinking}`} />
+                <Row
+                  icon={<Coins className="size-3" />}
+                  label={`${activeSession.totalTokens ?? 0} tokens`}
+                />
+              </div>
+            </Panel>
+            <Panel>
+              <PanelHeader>
+                <Label>Skills</Label>
+                <Tag>{skillNames.length}</Tag>
+              </PanelHeader>
+              <ul className="divide-y divide-border">
+                {skillNames.map((s) => (
+                  <li
+                    key={s}
+                    className="flex items-center gap-2 px-3 py-2 font-mono text-[11px] text-muted-foreground"
+                  >
+                    <Layers className="size-3 shrink-0 text-accent" />
+                    {s}
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+            <Panel>
+              <PanelHeader>
+                <Label>MCP tools</Label>
+                <Tag>{mcpNames.length}</Tag>
+              </PanelHeader>
+              <ul className="divide-y divide-border">
+                {mcpNames.map((s) => (
+                  <li
+                    key={s}
+                    className="flex items-center gap-2 px-3 py-2 font-mono text-[11px] text-muted-foreground"
+                  >
+                    <Wrench className="size-3 shrink-0 text-accent" />
+                    {s}
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          </div>
+        </aside>
       )}
     </div>
-  );
+  )
 }
 
 function Row({ icon, label }: { icon: React.ReactNode; label: string }) {
@@ -1306,9 +1247,9 @@ function EmptyConversationState({
   onSelectPrompt: (prompt: string) => void
 }) {
   const prompts = [
-    "Review this project and summarize its architecture.",
-    "Find the highest-impact improvement to make next.",
-    "Help me implement a new feature in this workspace.",
+    'Review this project and summarize its architecture.',
+    'Find the highest-impact improvement to make next.',
+    'Help me implement a new feature in this workspace.',
   ]
 
   return (
@@ -1316,38 +1257,36 @@ function EmptyConversationState({
       <div className="w-full max-w-xl">
         <div className="relative overflow-hidden border border-border-strong bg-card shadow-sm">
           <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-accent to-transparent opacity-70" />
-          <div className="px-7 pb-6 pt-8 text-center">
+          <div className="px-7 pt-8 pb-6 text-center">
             <div className="mx-auto flex size-12 items-center justify-center border border-accent/40 bg-accent/10 text-accent shadow-[0_0_24px_color-mix(in_oklab,var(--accent)_18%,transparent)]">
               <Bot className="size-5" />
             </div>
-            <Label className="mt-5 inline-block text-accent">
-              Ready for a new task
-            </Label>
-            <h2 className="mt-2 font-serif text-2xl italic text-foreground">
+            <Label className="mt-5 inline-block text-accent">Ready for a new task</Label>
+            <h2 className="mt-2 font-serif text-2xl text-foreground italic">
               Start working with {agentName}
             </h2>
             <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
-              Describe what you want to understand, change, or build. The agent
-              will use the active workspace and configured resources.
+              Describe what you want to understand, change, or build. The agent will use the active
+              workspace and configured resources.
             </p>
           </div>
 
           <div className="grid grid-cols-3 border-y border-border bg-panel/60">
             <div className="flex min-w-0 items-center justify-center gap-2 border-r border-border px-3 py-2.5">
               <Cpu className="size-3 shrink-0 text-accent" />
-              <span className="truncate font-mono text-[10px] uppercase text-muted-foreground">
+              <span className="truncate font-mono text-[10px] text-muted-foreground uppercase">
                 {modelName}
               </span>
             </div>
             <div className="flex items-center justify-center gap-2 border-r border-border px-3 py-2.5">
               <Layers className="size-3 text-accent" />
-              <span className="font-mono text-[10px] uppercase text-muted-foreground">
+              <span className="font-mono text-[10px] text-muted-foreground uppercase">
                 {skillCount} skills
               </span>
             </div>
             <div className="flex items-center justify-center gap-2 px-3 py-2.5">
               <Brain className="size-3 text-accent" />
-              <span className="font-mono text-[10px] uppercase text-muted-foreground">
+              <span className="font-mono text-[10px] text-muted-foreground uppercase">
                 Agent mode
               </span>
             </div>
@@ -1361,9 +1300,7 @@ function EmptyConversationState({
                 onClick={() => onSelectPrompt(prompt)}
                 className="group flex w-full items-center gap-3 border border-border bg-panel/40 px-3 py-2.5 text-left transition-colors hover:border-accent/50 hover:bg-accent/5"
               >
-                <span className="font-mono text-[10px] text-muted-foreground/50">
-                  0{index + 1}
-                </span>
+                <span className="font-mono text-[10px] text-muted-foreground/50">0{index + 1}</span>
                 <span className="flex-1 text-[13px] text-muted-foreground transition-colors group-hover:text-foreground">
                   {prompt}
                 </span>
@@ -1374,12 +1311,12 @@ function EmptyConversationState({
             ))}
           </div>
         </div>
-        <p className="mt-3 text-center font-mono text-[10px] uppercase tracking-wider text-muted-foreground/50">
+        <p className="mt-3 text-center font-mono text-[10px] tracking-wider text-muted-foreground/50 uppercase">
           Or type a custom request in the composer below
         </p>
       </div>
     </div>
-  );
+  )
 }
 
 /* ---------- Session tree ---------- */
@@ -1393,13 +1330,13 @@ const roleMeta: Record<TreeNodeRole, { icon: React.ReactNode; color: string }> =
 }
 
 function findCurrentTreeNodeId(node: SessionTreeNode | null): string | null {
-  if (!node) return null;
-  if (node.isCurrent) return node.id;
+  if (!node) return null
+  if (node.isCurrent) return node.id
   for (const child of node.children) {
-    const current = findCurrentTreeNodeId(child);
-    if (current) return current;
+    const current = findCurrentTreeNodeId(child)
+    if (current) return current
   }
-  return null;
+  return null
 }
 
 function countTreeNodes(node: SessionTreeNode | null): number {
@@ -1482,13 +1419,13 @@ function TreeNode({
   selectedId,
   onSelect,
 }: {
-  node: SessionTreeNode;
-  depth: number;
-  selectedId: string | null;
-  onSelect: (entryId: string) => void;
+  node: SessionTreeNode
+  depth: number
+  selectedId: string | null
+  onSelect: (entryId: string) => void
 }) {
-  const isEvent = node.type !== "message";
-  const meta = node.role ? roleMeta[node.role] : null;
+  const isEvent = node.type !== 'message'
+  const meta = node.role ? roleMeta[node.role] : null
   const hasBranches = node.children.length > 1
   const childDepth = hasBranches ? Math.min(depth + 1, 4) : depth
   const previewRef = useRef<HTMLParagraphElement>(null)
@@ -1518,34 +1455,34 @@ function TreeNode({
         onFocus={showPreviewTooltip}
         onBlur={() => setTooltipPosition(null)}
         onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") onSelect(node.id);
+          if (event.key === 'Enter' || event.key === ' ') onSelect(node.id)
         }}
         className={cn(
-          "group flex cursor-pointer items-start gap-2 border-l-2 border-transparent px-2 py-2 outline-none transition-colors hover:bg-muted/70 focus-visible:bg-muted focus-visible:border-ring",
-          node.isCurrent && "border-l-accent bg-accent/8",
-          selectedId === node.id && "border-l-primary bg-primary/10",
+          'group flex cursor-pointer items-start gap-2 border-l-2 border-transparent px-2 py-2 transition-colors outline-none hover:bg-muted/70 focus-visible:border-ring focus-visible:bg-muted',
+          node.isCurrent && 'border-l-accent bg-accent/8',
+          selectedId === node.id && 'border-l-primary bg-primary/10',
         )}
         style={{ paddingLeft: Math.min(depth, 4) * 12 + 8 }}
       >
         <span
           className={cn(
-            "mt-0.5 shrink-0",
-            isEvent ? "text-warning" : (meta?.color ?? "text-muted-foreground"),
+            'mt-0.5 shrink-0',
+            isEvent ? 'text-warning' : (meta?.color ?? 'text-muted-foreground'),
           )}
         >
           {isEvent ? <GitBranch className="size-3" /> : meta?.icon}
         </span>
-        <div className="min-w-0 max-w-55 flex-1">
+        <div className="max-w-55 min-w-0 flex-1">
           {node.label && (
-            <span className="mb-0.5 mr-1 inline-block bg-accent/12 px-1 font-mono text-[9px] uppercase tracking-wider text-accent">
+            <span className="mr-1 mb-0.5 inline-block bg-accent/12 px-1 font-mono text-[9px] tracking-wider text-accent uppercase">
               {node.label}
             </span>
           )}
           <p
             ref={previewRef}
             className={cn(
-              "truncate font-mono text-[11px] leading-4",
-              isEvent ? "italic text-warning" : "text-foreground/80",
+              'truncate font-mono text-[11px] leading-4',
+              isEvent ? 'text-warning italic' : 'text-foreground/80',
             )}
           >
             {node.preview}
@@ -1570,11 +1507,7 @@ function TreeNode({
           document.body,
         )}
       {node.children.length > 0 && (
-        <div
-          className={cn(
-            hasBranches && "ml-3 border-l border-dashed border-border-strong",
-          )}
-        >
+        <div className={cn(hasBranches && 'ml-3 border-l border-dashed border-border-strong')}>
           {node.children.map((c) => (
             <TreeNode
               key={c.id}
@@ -1587,7 +1520,7 @@ function TreeNode({
         </div>
       )}
     </div>
-  );
+  )
 }
 
 /* ---------- Message bubbles ---------- */
@@ -1690,7 +1623,9 @@ function ProcessDetailsGroup({
     toolCalls ? `${toolCalls} tool calls` : null,
     toolResults ? `${toolResults} results` : null,
     bashOutputs ? `${bashOutputs} outputs` : null,
-  ].filter(Boolean).join(' · ')
+  ]
+    .filter(Boolean)
+    .join(' · ')
 
   return (
     <details className="group border border-border bg-panel/35">
@@ -1706,7 +1641,7 @@ function ProcessDetailsGroup({
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-[11px] uppercase text-muted-foreground">
+            <span className="font-mono text-[11px] text-muted-foreground uppercase">
               {isStreaming ? 'Working' : 'Process details'}
             </span>
             {isStreaming && (
@@ -1745,12 +1680,12 @@ function ProcessMessageRow({ message }: { message: ChatMessage }) {
           {message.timestamp}
         </span>
       </div>
-      <pre className={cn(
-        'max-h-72 max-w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap wrap-break-word p-3 font-mono text-[11px] leading-relaxed',
-        message.type === 'thinking'
-          ? 'italic text-muted-foreground'
-          : 'text-foreground/85',
-      )}>
+      <pre
+        className={cn(
+          'max-h-72 max-w-full overflow-x-hidden overflow-y-auto p-3 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap',
+          message.type === 'thinking' ? 'text-muted-foreground italic' : 'text-foreground/85',
+        )}
+      >
         {message.content}
       </pre>
     </div>
@@ -1807,19 +1742,18 @@ function MessageBubble({
               {message.timestamp}
             </span>
           </div>
-          <div className="max-w-[85%] wrap-break-word border border-border-strong bg-card px-3.5 py-2.5 text-sm leading-relaxed text-foreground">
+          <div className="max-w-[85%] border border-border-strong bg-card px-3.5 py-2.5 text-sm leading-relaxed wrap-break-word text-foreground">
             {message.content}
           </div>
         </div>
-      );
+      )
     case 'assistant': {
       const estimatedTokens = message.tokens ?? estimateTokens(message.content)
       const streamSeconds =
         streamStartedAt && message.timestamp === 'streaming'
           ? Math.max(1, Math.round((Date.now() - streamStartedAt) / 1000))
           : null
-      const effectiveUsageSummary =
-        usageSummary ?? formatUsageSummary(message.usage ?? null)
+      const effectiveUsageSummary = usageSummary ?? formatUsageSummary(message.usage ?? null)
       const meta = [
         effectiveUsageSummary,
         !effectiveUsageSummary && message.tokens
@@ -1829,17 +1763,15 @@ function MessageBubble({
             : null,
         streamSeconds ? `${streamSeconds}s` : null,
         message.timestamp !== 'streaming' ? message.timestamp : null,
-      ].filter(Boolean).join(' · ')
+      ]
+        .filter(Boolean)
+        .join(' · ')
       return (
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1.5">
             <Bot className="size-3 text-accent" />
             <Label>{agentName}</Label>
-            {meta && (
-              <span className="font-mono text-[10px] text-muted-foreground/50">
-                {meta}
-              </span>
-            )}
+            {meta && <span className="font-mono text-[10px] text-muted-foreground/50">{meta}</span>}
           </div>
           <MarkdownContent content={message.content} />
         </div>
@@ -1855,7 +1787,7 @@ function MessageBubble({
             </span>
             <ChevronRight className="ml-auto size-3 text-muted-foreground transition-transform group-open:rotate-90" />
           </summary>
-          <p className="border-t border-dashed border-border px-3 py-2 font-mono text-[11px] italic leading-relaxed text-muted-foreground">
+          <p className="border-t border-dashed border-border px-3 py-2 font-mono text-[11px] leading-relaxed text-muted-foreground italic">
             {message.content}
           </p>
         </details>
@@ -1878,31 +1810,31 @@ function MessageBubble({
           <PanelHeader className="py-1.5">
             <div className="flex items-center gap-1.5">
               <Wrench className="size-3 text-muted-foreground" />
-              <Label>{message.title ?? "tool result"}</Label>
+              <Label>{message.title ?? 'tool result'}</Label>
             </div>
             <span className="font-mono text-[10px] text-muted-foreground/50">
               {message.timestamp}
             </span>
           </PanelHeader>
-          <pre className="max-w-full overflow-hidden whitespace-pre-wrap wrap-break-word bg-code p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
+          <pre className="bg-code max-w-full overflow-hidden p-3 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-muted-foreground">
             {message.content}
           </pre>
         </Panel>
-      );
+      )
     case 'bash':
       return (
-        <div className="border border-border bg-code">
+        <div className="bg-code border border-border">
           <div className="flex items-center gap-1.5 border-b border-border px-3 py-1.5">
             <Terminal className="size-3 text-success" />
             <span className="font-mono text-[11px] text-muted-foreground">
-              {message.title ?? "bash"}
+              {message.title ?? 'bash'}
             </span>
           </div>
-          <pre className="max-w-full overflow-hidden whitespace-pre-wrap wrap-break-word p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
+          <pre className="max-w-full overflow-hidden p-3 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-foreground/90">
             {message.content}
           </pre>
         </div>
-      );
+      )
     case 'error':
       return (
         <div className="flex items-start gap-2 border border-destructive/40 bg-destructive/8 px-3 py-2">
@@ -1916,7 +1848,7 @@ function MessageBubble({
       return (
         <div className="flex items-center gap-2 py-1">
           <div className="h-px flex-1 bg-border" />
-          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/60">
+          <span className="font-mono text-[10px] tracking-wider text-muted-foreground/60 uppercase">
             {message.content}
           </span>
           <div className="h-px flex-1 bg-border" />

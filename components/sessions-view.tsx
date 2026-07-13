@@ -60,9 +60,7 @@ export function SessionsView({
   const [tagFilter, setTagFilter] = useState<string>('all')
   const [selected, setSelected] = useState<AgentSessionSummary | null>(null)
   const [pending, setPending] = useState<string | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<AgentSessionSummary | null>(
-    null,
-  )
+  const [deleteTarget, setDeleteTarget] = useState<AgentSessionSummary | null>(null)
   const [editTarget, setEditTarget] = useState<AgentSessionSummary | null>(null)
   const [editName, setEditName] = useState('')
   const [editCwd, setEditCwd] = useState('')
@@ -79,13 +77,7 @@ export function SessionsView({
       if (tagFilter !== 'all' && !s.tags.includes(tagFilter)) return false
       if (query) {
         const q = query.toLowerCase()
-        const hay = [
-          s.name,
-          s.firstUserMessage,
-          s.lastMessagePreview,
-          s.filePath,
-          s.cwd,
-        ]
+        const hay = [s.name, s.firstUserMessage, s.lastMessagePreview, s.filePath, s.cwd]
           .filter(Boolean)
           .join(' ')
           .toLowerCase()
@@ -228,16 +220,23 @@ export function SessionsView({
               <table className="w-full border-collapse text-left">
                 <thead className="sticky top-0 z-10 bg-panel">
                   <tr className="border-b border-border">
-                    {['Session', 'Agent', 'Messages', 'Tokens', 'Cost', 'Branches', 'Updated', 'Actions'].map(
-                      (h) => (
-                        <th
-                          key={h}
-                          className="whitespace-nowrap px-4 py-2.5 font-mono-label text-[11px] text-muted-foreground"
-                        >
-                          {h}
-                        </th>
-                      ),
-                    )}
+                    {[
+                      'Session',
+                      'Agent',
+                      'Messages',
+                      'Tokens',
+                      'Cost',
+                      'Branches',
+                      'Updated',
+                      'Actions',
+                    ].map((h) => (
+                      <th
+                        key={h}
+                        className="font-mono-label px-4 py-2.5 text-[11px] whitespace-nowrap text-muted-foreground"
+                      >
+                        {h}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -262,7 +261,7 @@ export function SessionsView({
                           ))}
                         </div>
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3">
+                      <td className="px-4 py-3 whitespace-nowrap">
                         <span className="font-mono text-xs text-muted-foreground">
                           {agentName(agents, s.agentId)}
                         </span>
@@ -283,16 +282,14 @@ export function SessionsView({
                             {s.branchCount}
                           </span>
                         ) : (
-                          <span className="font-mono text-xs text-muted-foreground/50">
-                            —
-                          </span>
+                          <span className="font-mono text-xs text-muted-foreground/50">—</span>
                         )}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-muted-foreground">
+                      <td className="px-4 py-3 font-mono text-xs whitespace-nowrap text-muted-foreground">
                         {s.updatedAt}
                       </td>
                       <td
-                        className="whitespace-nowrap px-4 py-3"
+                        className="px-4 py-3 whitespace-nowrap"
                         onClick={(event) => event.stopPropagation()}
                       >
                         <div className="flex items-center gap-0.5">
@@ -332,149 +329,207 @@ export function SessionsView({
 
         {/* Preview drawer */}
         {selected && (
-          <div className="fixed inset-0 z-40 flex justify-end" role="dialog" aria-modal="true" aria-label="Session detail">
+          <div
+            className="fixed inset-0 z-40 flex justify-end"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Session detail"
+          >
             <button
               type="button"
               aria-label="Close session detail"
               onClick={() => setSelected(null)}
               className="absolute inset-0 bg-foreground/20 backdrop-blur-[1px]"
             />
-          <aside className="relative flex h-full w-full max-w-[440px] flex-col border-l border-border bg-panel shadow-[-24px_0_64px_-36px_rgba(0,0,0,0.45)]">
-            <div className="flex items-start justify-between gap-2 border-b border-border px-4 py-3">
-              <div className="min-w-0">
-                <Label>Session detail</Label>
-                <h2 className="mt-1 truncate text-sm font-medium text-foreground">
-                  {selected.name ?? selected.firstUserMessage ?? 'Untitled'}
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelected(null)}
-                className="text-muted-foreground hover:text-foreground"
-                aria-label="Close detail"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-auto p-4">
-              <div className="grid grid-cols-2 gap-px overflow-hidden border border-border bg-border">
-                <Stat icon={<MessageSquare className="size-3" />} label="Messages" value={String(selected.messageCount)} />
-                <Stat icon={<Coins className="size-3" />} label="Tokens" value={formatTokens(selected.totalTokens)} />
-                <Stat icon={<Coins className="size-3" />} label="Cost" value={formatCost(selected.totalCost)} />
-                <Stat icon={<GitBranch className="size-3" />} label="Branches" value={String(selected.branchCount)} />
+            <aside className="relative flex h-full w-full max-w-[440px] flex-col border-l border-border bg-panel shadow-[-24px_0_64px_-36px_rgba(0,0,0,0.45)]">
+              <div className="flex items-start justify-between gap-2 border-b border-border px-4 py-3">
+                <div className="min-w-0">
+                  <Label>Session detail</Label>
+                  <h2 className="mt-1 truncate text-sm font-medium text-foreground">
+                    {selected.name ?? selected.firstUserMessage ?? 'Untitled'}
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelected(null)}
+                  className="text-muted-foreground hover:text-foreground"
+                  aria-label="Close detail"
+                >
+                  <X className="size-4" />
+                </button>
               </div>
 
-              <div className="mt-4 space-y-3">
-                <Field label="Agent" value={agentName(agents, selected.agentId)} />
-                <Field label="Created" value={selected.createdAt} />
-                <Field label="Updated" value={selected.updatedAt} />
-                <div>
-                  <Label>Working directory</Label>
-                  <div className="mt-1 flex items-center gap-1.5 border border-border bg-card px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
-                    <Folder className="size-3 shrink-0" />
-                    <span className="truncate">{selected.cwd}</span>
+              <div className="flex-1 overflow-auto p-4">
+                <div className="grid grid-cols-2 gap-px overflow-hidden border border-border bg-border">
+                  <Stat
+                    icon={<MessageSquare className="size-3" />}
+                    label="Messages"
+                    value={String(selected.messageCount)}
+                  />
+                  <Stat
+                    icon={<Coins className="size-3" />}
+                    label="Tokens"
+                    value={formatTokens(selected.totalTokens)}
+                  />
+                  <Stat
+                    icon={<Coins className="size-3" />}
+                    label="Cost"
+                    value={formatCost(selected.totalCost)}
+                  />
+                  <Stat
+                    icon={<GitBranch className="size-3" />}
+                    label="Branches"
+                    value={String(selected.branchCount)}
+                  />
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  <Field label="Agent" value={agentName(agents, selected.agentId)} />
+                  <Field label="Created" value={selected.createdAt} />
+                  <Field label="Updated" value={selected.updatedAt} />
+                  <div>
+                    <Label>Working directory</Label>
+                    <div className="mt-1 flex items-center gap-1.5 border border-border bg-card px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
+                      <Folder className="size-3 shrink-0" />
+                      <span className="truncate">{selected.cwd}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <Label>Session file</Label>
+                    <div className="mt-1 truncate border border-border bg-card px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
+                      {selected.filePath}
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <Label>Session file</Label>
-                  <div className="mt-1 truncate border border-border bg-card px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
-                    {selected.filePath}
+
+                {selected.firstUserMessage && (
+                  <Panel className="mt-4">
+                    <PanelHeader>
+                      <Label>First message</Label>
+                    </PanelHeader>
+                    <p className="p-3 text-sm leading-relaxed text-foreground">
+                      {selected.firstUserMessage}
+                    </p>
+                  </Panel>
+                )}
+                {selected.lastMessagePreview && (
+                  <Panel className="mt-3">
+                    <PanelHeader>
+                      <Label>Latest reply</Label>
+                    </PanelHeader>
+                    <p className="p-3 text-sm leading-relaxed text-muted-foreground">
+                      {selected.lastMessagePreview}
+                    </p>
+                  </Panel>
+                )}
+
+                {selected.tags.length > 0 && (
+                  <div className="mt-4">
+                    <Label>Tags</Label>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {selected.tags.map((t) => (
+                        <Tag key={t} tone="accent">
+                          {t}
+                        </Tag>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
-              {selected.firstUserMessage && (
-                <Panel className="mt-4">
-                  <PanelHeader>
-                    <Label>First message</Label>
-                  </PanelHeader>
-                  <p className="p-3 text-sm leading-relaxed text-foreground">
-                    {selected.firstUserMessage}
-                  </p>
-                </Panel>
-              )}
-              {selected.lastMessagePreview && (
-                <Panel className="mt-3">
-                  <PanelHeader>
-                    <Label>Latest reply</Label>
-                  </PanelHeader>
-                  <p className="p-3 text-sm leading-relaxed text-muted-foreground">
-                    {selected.lastMessagePreview}
-                  </p>
-                </Panel>
-              )}
-
-              {selected.tags.length > 0 && (
-                <div className="mt-4">
-                  <Label>Tags</Label>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {selected.tags.map((t) => (
-                      <Tag key={t} tone="accent">
-                        {t}
-                      </Tag>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
-              <Link
-                href={`/chat?agent=${selected.agentId}&session=${selected.id}`}
-                className="flex-1"
-              >
-                <ActionButton variant="accent" className="w-full">
-                  <Play className="size-3.5" />
-                  Resume
+              <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
+                <Link
+                  href={`/chat?agent=${selected.agentId}&session=${selected.id}`}
+                  className="flex-1"
+                >
+                  <ActionButton variant="accent" className="w-full">
+                    <Play className="size-3.5" />
+                    Resume
+                  </ActionButton>
+                </Link>
+                <ActionButton title="Open in new window">
+                  <ExternalLink className="size-3.5" />
                 </ActionButton>
-              </Link>
-              <ActionButton title="Open in new window">
-                <ExternalLink className="size-3.5" />
-              </ActionButton>
-              <ActionButton
-                title="Duplicate"
-                onClick={() => duplicateSession(selected)}
-                disabled={pending === `duplicate:${selected.id}`}
-              >
-                <Copy className="size-3.5" />
-              </ActionButton>
-              <ActionButton
-                variant="danger"
-                title="Delete session"
-                onClick={() => setDeleteTarget(selected)}
-                disabled={pending === `delete:${selected.id}`}
-              >
-                <Trash2 className="size-3.5" />
-              </ActionButton>
-            </div>
-          </aside>
+                <ActionButton
+                  title="Duplicate"
+                  onClick={() => duplicateSession(selected)}
+                  disabled={pending === `duplicate:${selected.id}`}
+                >
+                  <Copy className="size-3.5" />
+                </ActionButton>
+                <ActionButton
+                  variant="danger"
+                  title="Delete session"
+                  onClick={() => setDeleteTarget(selected)}
+                  disabled={pending === `delete:${selected.id}`}
+                >
+                  <Trash2 className="size-3.5" />
+                </ActionButton>
+              </div>
+            </aside>
           </div>
         )}
       </div>
       {editTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="edit-session-title">
-          <button type="button" aria-label="Close edit session" onClick={() => setEditTarget(null)} className="absolute inset-0 bg-foreground/25" />
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-session-title"
+        >
+          <button
+            type="button"
+            aria-label="Close edit session"
+            onClick={() => setEditTarget(null)}
+            className="absolute inset-0 bg-foreground/25"
+          />
           <form
             className="relative w-full max-w-md border border-border bg-card shadow-xl"
-            onSubmit={(event) => { event.preventDefault(); void saveSession() }}
+            onSubmit={(event) => {
+              event.preventDefault()
+              void saveSession()
+            }}
           >
             <div className="border-b border-border bg-panel px-4 py-3">
-              <h2 id="edit-session-title" className="font-serif text-lg italic text-foreground">Edit session</h2>
+              <h2 id="edit-session-title" className="font-serif text-lg text-foreground italic">
+                Edit session
+              </h2>
             </div>
             <div className="space-y-4 px-4 py-4">
               <label className="block space-y-1.5">
                 <Label>Name</Label>
-                <input value={editName} onChange={(event) => setEditName(event.target.value)} className="w-full border border-input bg-panel px-3 py-2 text-sm text-foreground outline-none focus:border-ring" autoFocus />
+                <input
+                  value={editName}
+                  onChange={(event) => setEditName(event.target.value)}
+                  className="w-full border border-input bg-panel px-3 py-2 text-sm text-foreground outline-none focus:border-ring"
+                  autoFocus
+                />
               </label>
               <label className="block space-y-1.5">
                 <Label>Working directory</Label>
-                <input value={editCwd} onChange={(event) => setEditCwd(event.target.value)} className="w-full border border-input bg-panel px-3 py-2 font-mono text-xs text-foreground outline-none focus:border-ring" />
+                <input
+                  value={editCwd}
+                  onChange={(event) => setEditCwd(event.target.value)}
+                  className="w-full border border-input bg-panel px-3 py-2 font-mono text-xs text-foreground outline-none focus:border-ring"
+                />
               </label>
             </div>
             <div className="flex justify-end gap-2 border-t border-border bg-panel px-4 py-3">
-              <ActionButton onClick={() => setEditTarget(null)} disabled={pending === `edit:${editTarget.id}`}>Cancel</ActionButton>
-              <ActionButton type="submit" variant="accent" disabled={!editName.trim() || !editCwd.trim() || pending === `edit:${editTarget.id}`}>Save changes</ActionButton>
+              <ActionButton
+                onClick={() => setEditTarget(null)}
+                disabled={pending === `edit:${editTarget.id}`}
+              >
+                Cancel
+              </ActionButton>
+              <ActionButton
+                type="submit"
+                variant="accent"
+                disabled={
+                  !editName.trim() || !editCwd.trim() || pending === `edit:${editTarget.id}`
+                }
+              >
+                Save changes
+              </ActionButton>
             </div>
           </form>
         </div>
@@ -484,9 +539,7 @@ export function SessionsView({
         title="Delete session"
         description={`Delete session "${deleteTarget?.name ?? deleteTarget?.id ?? ''}"? This cannot be undone.`}
         confirmLabel="Delete session"
-        busy={
-          deleteTarget ? pending === `delete:${deleteTarget.id}` : false
-        }
+        busy={deleteTarget ? pending === `delete:${deleteTarget.id}` : false}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => {
           if (deleteTarget) void deleteSession(deleteTarget)
@@ -496,15 +549,7 @@ export function SessionsView({
   )
 }
 
-function Stat({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode
-  label: string
-  value: string
-}) {
+function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <div className="bg-card p-3">
       <div className="flex items-center gap-1 text-muted-foreground">
@@ -525,25 +570,17 @@ function Field({ label, value }: { label: string; value: string }) {
   )
 }
 
-function SessionsEmptyState({
-  onCreate,
-  disabled,
-}: {
-  onCreate: () => void
-  disabled?: boolean
-}) {
+function SessionsEmptyState({ onCreate, disabled }: { onCreate: () => void; disabled?: boolean }) {
   return (
     <div className="mx-auto flex max-w-md flex-col items-center justify-center gap-4 py-24 text-center">
       <div className="flex size-14 items-center justify-center border border-border-strong bg-card">
         <MessageSquare className="size-6 text-muted-foreground" />
       </div>
       <div>
-        <h2 className="font-serif text-2xl italic text-foreground">
-          No sessions yet
-        </h2>
-        <p className="mt-2 text-sm text-muted-foreground text-pretty">
-          Start a conversation from an agent to create the first session, then
-          come back here to inspect history, tokens, branches, and files.
+        <h2 className="font-serif text-2xl text-foreground italic">No sessions yet</h2>
+        <p className="mt-2 text-sm text-pretty text-muted-foreground">
+          Start a conversation from an agent to create the first session, then come back here to
+          inspect history, tokens, branches, and files.
         </p>
       </div>
       <ActionButton variant="accent" onClick={onCreate} disabled={disabled}>
