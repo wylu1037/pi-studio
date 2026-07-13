@@ -12,6 +12,7 @@ import {
   FileText,
   Plug,
   Cpu,
+  FileKey2,
   Settings,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -26,6 +27,7 @@ const nav = [
   { href: '/prompts', label: 'Prompts', icon: FileText },
   { href: '/mcp', label: 'MCP', icon: Plug },
   { href: '/models', label: 'Models', icon: Cpu },
+  { href: '/environment', label: 'Environment', icon: FileKey2 },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
 
