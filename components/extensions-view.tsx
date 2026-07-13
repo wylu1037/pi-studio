@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { AlertTriangle, Puzzle, Search } from 'lucide-react'
 import type { GlobalExtension } from '@/lib/types'
+import { errorMessage, showToast } from '@/lib/toast'
 import {
   BracketButton,
   Label,
@@ -18,7 +19,6 @@ export function ExtensionsView({ extensions }: { extensions: GlobalExtension[] }
   const [scope, setScope] = useState<'global' | 'project'>('global')
   const [query, setQuery] = useState('')
   const [pendingSource, setPendingSource] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const filtered = items.filter(
     (extension) =>
       extension.scope === scope &&
@@ -30,7 +30,6 @@ export function ExtensionsView({ extensions }: { extensions: GlobalExtension[] }
 
   const toggle = async (extension: GlobalExtension) => {
     setPendingSource(extension.source)
-    setError(null)
     try {
       const response = await fetch('/api/extensions/toggle', {
         method: 'POST',
@@ -46,8 +45,13 @@ export function ExtensionsView({ extensions }: { extensions: GlobalExtension[] }
         throw new Error(Array.isArray(body) ? 'Unable to update extension.' : body.error)
       }
       setItems(body)
+      showToast({
+        tone: 'success',
+        message: `${extension.name} ${extension.enabled ? 'disabled' : 'enabled'}.`,
+      })
     } catch (toggleError) {
-      setError(toggleError instanceof Error ? toggleError.message : 'Unable to update extension.')
+      const message = errorMessage(toggleError, 'Unable to update extension.')
+      showToast({ tone: 'error', message })
     } finally {
       setPendingSource(null)
     }
@@ -83,11 +87,6 @@ export function ExtensionsView({ extensions }: { extensions: GlobalExtension[] }
           {filtered.length} extensions
         </span>
       </div>
-      {error && (
-        <div className="border-b border-destructive/30 bg-destructive/10 px-6 py-2 text-xs text-destructive">
-          {error}
-        </div>
-      )}
       <div className="flex-1 overflow-y-auto scrollbar-thin p-6">
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 py-24 text-center">

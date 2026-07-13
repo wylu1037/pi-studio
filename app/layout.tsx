@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Analytics } from '@vercel/analytics/next'
 import { Sidebar } from '@/components/sidebar'
 import { QueryProvider } from '@/components/query-provider'
+import { ToastHost } from '@/components/toast-host'
 import { getPiVersionLabel } from '@/lib/pi-version'
 import './globals.css'
 
@@ -33,6 +34,7 @@ export default function RootLayout({
             <main className="flex-1 overflow-hidden">{children}</main>
           </div>
         </QueryProvider>
+        <ToastHost />
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

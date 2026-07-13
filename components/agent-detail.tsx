@@ -33,6 +33,7 @@ import { patchApiAgentsIdResources } from '@/lib/api/generated/clients/patchApiA
 import { postApiAgentsIdAssign } from '@/lib/api/generated/clients/postApiAgentsIdAssign'
 import { postApiAgentsIdDuplicate } from '@/lib/api/generated/clients/postApiAgentsIdDuplicate'
 import { refreshAfterMutation } from '@/lib/api/refresh'
+import { errorMessage, showToast } from '@/lib/toast'
 import {
   ActionButton,
   ConfirmDialog,
@@ -381,6 +382,10 @@ function ResourcePicker({
         resourceId: id,
         enabled,
       })
+      showToast({
+        tone: 'success',
+        message: `${title} ${enabled ? 'enabled' : 'disabled'}.`,
+      })
     } catch (error) {
       setSelected((prev) => {
         const next = new Set(prev)
@@ -388,7 +393,7 @@ function ResourcePicker({
         else next.add(id)
         return next
       })
-      throw error
+      showToast({ tone: 'error', message: errorMessage(error) })
     } finally {
       setPendingId(null)
     }
@@ -525,6 +530,10 @@ function ModelsTab({
     })
     try {
       await postApiAgentsIdAssign(agent.id, { kind, resourceId, enabled })
+      showToast({
+        tone: 'success',
+        message: `${kind === 'provider' ? 'Provider' : 'Model'} ${enabled ? 'enabled' : 'disabled'}.`,
+      })
     } catch (error) {
       setSelected((prev) => {
         const next = new Set(prev)
@@ -532,7 +541,7 @@ function ModelsTab({
         else next.add(resourceId)
         return next
       })
-      throw error
+      showToast({ tone: 'error', message: errorMessage(error) })
     } finally {
       setPending(null)
     }
@@ -544,9 +553,10 @@ function ModelsTab({
     setThinking(level)
     try {
       await patchApiAgentsIdResources(agent.id, { defaultThinkingLevel: level })
+      showToast({ tone: 'success', message: `Default thinking level set to ${level}.` })
     } catch (error) {
       setThinking(previous)
-      throw error
+      showToast({ tone: 'error', message: errorMessage(error) })
     } finally {
       setPending(null)
     }

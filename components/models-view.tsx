@@ -29,6 +29,7 @@ import { postApiModelProvidersIdTest } from '@/lib/api/generated/clients/postApi
 import type { PostApiModelProvidersIdModelsMutationRequest } from '@/lib/api/generated/types/PostApiModelProvidersIdModels'
 import { postApiModelProvidersIdModelsMutationRequestSchema } from '@/lib/api/generated/zod/postApiModelProvidersIdModelsSchema'
 import { refreshAfterMutation } from '@/lib/api/refresh'
+import { errorMessage, showToast } from '@/lib/toast'
 import {
   ActionButton,
   ConfirmDialog,
@@ -133,6 +134,9 @@ export function ModelsView({
       })
       setProviderList((current) => [provider, ...current])
       setSelectedId(provider.id)
+      showToast({ tone: 'success', message: 'Provider created.' })
+    } catch (error) {
+      showToast({ tone: 'error', message: errorMessage(error) })
     } finally {
       setPending(null)
     }
@@ -391,27 +395,28 @@ function ProviderDetail({
     status: string
     message?: string
   } | null>(null)
-  const [saveResult, setSaveResult] = useState<string | null>(null)
-  const [modelResult, setModelResult] = useState<string | null>(null)
 
   const saveProvider = async (values: ProviderForm) => {
-    setSaveResult(null)
-    let headers: Record<string, string> = {}
-    if (values.headersText?.trim()) {
-      headers = JSON.parse(values.headersText) as Record<string, string>
+    try {
+      let headers: Record<string, string> = {}
+      if (values.headersText?.trim()) {
+        headers = JSON.parse(values.headersText) as Record<string, string>
+      }
+      const updated = await postApiModelProviders({
+        id: provider.id,
+        name: values.name,
+        baseUrl: values.baseUrl,
+        api: values.api,
+        apiKey: values.apiKey,
+        headers,
+        isDefault: provider.isDefault,
+        status: provider.status,
+      })
+      onProviderUpdate(updated)
+      showToast({ tone: 'success', message: `Provider "${values.name}" saved.` })
+    } catch (error) {
+      showToast({ tone: 'error', message: errorMessage(error) })
     }
-    const updated = await postApiModelProviders({
-      id: provider.id,
-      name: values.name,
-      baseUrl: values.baseUrl,
-      api: values.api,
-      apiKey: values.apiKey,
-      headers,
-      isDefault: provider.isDefault,
-      status: provider.status,
-    })
-    onProviderUpdate(updated)
-    setSaveResult('Provider saved.')
   }
 
   const testProvider = async () => {
@@ -446,6 +451,12 @@ function ProviderDetail({
     try {
       const updated = await postApiModelProvidersIdDefault(provider.id)
       onProviderUpdate(updated)
+      showToast({
+        tone: 'success',
+        message: updated.isDefault ? `${provider.name} set as default.` : `${provider.name} is no longer default.`,
+      })
+    } catch (error) {
+      showToast({ tone: 'error', message: errorMessage(error) })
     } finally {
       setPending(null)
     }
@@ -466,7 +477,6 @@ function ProviderDetail({
     model: PostApiModelProvidersIdModelsMutationRequest,
     mode: 'add' | 'edit',
   ) => {
-    setModelResult(null)
     setPending(
       mode === 'add' ? 'model:add' : `model:edit:${model.originalId ?? model.id}`,
     )
@@ -474,13 +484,14 @@ function ProviderDetail({
       const updated = await postApiModelProvidersIdModels(provider.id, model)
       setDisplayModels(updated.models as GlobalModel[])
       onProviderUpdate(updated)
-      setModelResult(
-        mode === 'add'
-          ? `Model "${model.id}" added.`
-          : `Model "${model.id}" updated.`,
-      )
+      showToast({
+        tone: 'success',
+        message: mode === 'add' ? `Model "${model.id}" added.` : `Model "${model.id}" updated.`,
+      })
       setShowAddModel(false)
       setEditingModel(null)
+    } catch (error) {
+      showToast({ tone: 'error', message: errorMessage(error) })
     } finally {
       setPending(null)
     }
@@ -540,22 +551,6 @@ function ProviderDetail({
           <Tag tone={testResult.ok ? 'success' : 'warning'}>
             {testResult.status}
           </Tag>
-        </div>
-      )}
-      {saveResult && (
-        <div className="flex items-center justify-between gap-3 border border-border bg-panel px-3 py-2">
-          <span className="font-mono text-xs text-foreground">
-            {saveResult}
-          </span>
-          <Tag tone="success">saved</Tag>
-        </div>
-      )}
-      {modelResult && (
-        <div className="flex items-center justify-between gap-3 border border-border bg-panel px-3 py-2">
-          <span className="font-mono text-xs text-foreground">
-            {modelResult}
-          </span>
-          <Tag tone="success">added</Tag>
         </div>
       )}
 

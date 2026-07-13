@@ -26,6 +26,7 @@ import { postApiSkills } from '@/lib/api/generated/clients/postApiSkills'
 import type { PostApiSkillsMutationRequest } from '@/lib/api/generated/types/PostApiSkills'
 import { postApiSkillsMutationRequestSchema } from '@/lib/api/generated/zod/postApiSkillsSchema'
 import { refreshAfterMutation } from '@/lib/api/refresh'
+import { errorMessage, showToast } from '@/lib/toast'
 import {
   ActionButton,
   BracketButton,
@@ -92,10 +93,6 @@ export function SkillsView({
   const [registry, setRegistry] = useState<RegistrySkill[]>([])
   const [registryLoading, setRegistryLoading] = useState(false)
   const [registryError, setRegistryError] = useState<string | null>(null)
-  const [toast, setToast] = useState<{
-    tone: 'success' | 'error'
-    message: string
-  } | null>(null)
   const [registryReloadKey, setRegistryReloadKey] = useState(0)
   const [deleteTarget, setDeleteTarget] = useState<GlobalSkill | null>(null)
 
@@ -159,25 +156,13 @@ export function SkillsView({
         path: skill.installUrl || `skills.sh/${skill.id || skill.source || skill.name}`,
         tags: skill.tags,
       })
-      setToast({ tone: 'success', message: `${skill.name} imported successfully` })
-      window.setTimeout(refreshAfterMutation, 1200)
+      refreshAfterMutation(`${skill.name} imported successfully.`)
     } catch (error) {
-      const message =
-        typeof error === 'object' &&
-        error !== null &&
-        'response' in error &&
-        typeof error.response === 'object' &&
-        error.response !== null &&
-        'data' in error.response &&
-        typeof error.response.data === 'object' &&
-        error.response.data !== null &&
-        'error' in error.response.data &&
-        typeof error.response.data.error === 'string'
-          ? error.response.data.error
-          : error instanceof Error
-            ? error.message
-            : 'Unable to import skill'
-      setToast({ tone: 'error', message })
+      showToast({
+        tone: 'error',
+        title: 'Import failed',
+        message: errorMessage(error, 'Unable to import skill.'),
+      })
     } finally {
       setPendingId(null)
     }
@@ -457,32 +442,6 @@ export function SkillsView({
         </div>
       )}
 
-      {toast && (
-        <div
-          role="status"
-          className="fixed bottom-5 right-5 z-[60] flex max-w-sm items-start gap-3 border border-border bg-card px-4 py-3 shadow-xl"
-        >
-          {toast.tone === 'success' ? (
-            <Check className="mt-0.5 size-4 shrink-0 text-success" />
-          ) : (
-            <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
-          )}
-          <div className="min-w-0 flex-1">
-            <Label>{toast.tone === 'success' ? 'Import complete' : 'Import failed'}</Label>
-            <p className="mt-1 max-h-28 overflow-auto break-words text-sm leading-relaxed text-foreground scrollbar-thin">
-              {toast.message}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setToast(null)}
-            className="text-muted-foreground hover:text-foreground"
-            aria-label="Dismiss notification"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-      )}
       {viewing && (
         <SkillDetailsDialog
           skill={viewing}

@@ -18,6 +18,7 @@ import { deleteApiPackagesId } from '@/lib/api/generated/clients/deleteApiPackag
 import { postApiPackages } from '@/lib/api/generated/clients/postApiPackages'
 import { postApiPackagesIdUpdate } from '@/lib/api/generated/clients/postApiPackagesIdUpdate'
 import { refreshAfterMutation } from '@/lib/api/refresh'
+import { errorMessage, showToast } from '@/lib/toast'
 import {
   ActionButton,
   BracketButton,
@@ -166,7 +167,6 @@ function InstallPackageDialog({
   const [source, setSource] = useState('')
   const [scope, setScope] = useState<'global' | 'project'>(initialScope)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   if (!open) return null
 
@@ -174,17 +174,13 @@ function InstallPackageDialog({
     const value = source.trim()
     if (!value || busy) return
     setBusy(true)
-    setError(null)
     try {
       await postApiPackages({ source: value, scope })
       refreshAfterMutation()
       onClose()
     } catch (installError) {
-      setError(
-        installError instanceof Error
-          ? installError.message
-          : 'Unable to install package.',
-      )
+      const message = errorMessage(installError, 'Unable to install package.')
+      showToast({ tone: 'error', title: 'Install failed', message })
     } finally {
       setBusy(false)
     }
@@ -236,11 +232,6 @@ function InstallPackageDialog({
             <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning" />
             Packages may execute arbitrary code through extensions. Review the source before installing.
           </div>
-          {error && (
-            <p className="border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              {error}
-            </p>
-          )}
         </div>
         <div className="flex justify-end gap-2 border-t border-border bg-panel px-4 py-3">
           <ActionButton onClick={onClose} disabled={busy}>Cancel</ActionButton>
