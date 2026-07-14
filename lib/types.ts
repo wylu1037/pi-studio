@@ -99,10 +99,37 @@ export interface GlobalExtension {
   id: string
   name: string
   path: string
+  relativePath?: string
   source: string
   scope: 'global' | 'project'
+  origin?: 'package' | 'top-level'
   enabled: boolean
   packageManaged: boolean
+  canToggle?: boolean
+  compatibility?: 'web' | 'partial' | 'tui-only'
+  status?: 'enabled' | 'disabled' | 'loaded' | 'load-error' | 'trust-required' | 'missing'
+  package?: {
+    source: string
+    name?: string
+    version?: string
+    installedPath?: string
+  }
+  capabilities?: {
+    tools: string[]
+    commands: string[]
+    shortcuts: string[]
+    flags: string[]
+    providers: string[]
+    hooks: string[]
+    ui: boolean
+  }
+  runtime?: {
+    loaded: boolean
+    sessionIds: string[]
+    lastLoadedAt?: string
+    lastErrorAt?: string
+  }
+  diagnosticCount?: number
 }
 
 export interface AgentProfile {

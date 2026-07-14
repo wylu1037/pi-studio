@@ -3,7 +3,7 @@
 * Do not edit manually.
 */
 
-import type { DeleteApiModelsIdMutationResponse, DeleteApiModelsIdPathParams, DeleteApiModelsId404 } from "../types/DeleteApiModelsId.ts";
+import type { DeleteApiModelsIdMutationResponse, DeleteApiModelsIdPathParams, DeleteApiModelsIdQueryParams, DeleteApiModelsId404 } from "../types/DeleteApiModelsId.ts";
 import type { Client, RequestConfig, ResponseErrorConfig } from "@kubb/plugin-client/clients/axios";
 import type { UseMutationOptions, UseMutationResult, QueryClient } from "@tanstack/react-query";
 import { deleteApiModelsId } from "../clients/deleteApiModelsId.ts";
@@ -16,10 +16,10 @@ export type DeleteApiModelsIdMutationKey = ReturnType<typeof deleteApiModelsIdMu
 export function deleteApiModelsIdMutationOptions<TContext = unknown>(config: Partial<RequestConfig> & { client?: Client } = {}) {
 
         const mutationKey = deleteApiModelsIdMutationKey()
-        return mutationOptions<DeleteApiModelsIdMutationResponse, ResponseErrorConfig<DeleteApiModelsId404>, {id: DeleteApiModelsIdPathParams["id"]}, TContext>({
+        return mutationOptions<DeleteApiModelsIdMutationResponse, ResponseErrorConfig<DeleteApiModelsId404>, {id: DeleteApiModelsIdPathParams["id"], params: DeleteApiModelsIdQueryParams}, TContext>({
           mutationKey,
-          mutationFn: async({ id }) => {
-            return deleteApiModelsId(id, config)
+          mutationFn: async({ id, params }) => {
+            return deleteApiModelsId(id, params, config)
           },
         })
 
@@ -30,7 +30,7 @@ export function deleteApiModelsIdMutationOptions<TContext = unknown>(config: Par
  */
 export function useDeleteApiModelsId<TContext>(options: 
 {
-  mutation?: UseMutationOptions<DeleteApiModelsIdMutationResponse, ResponseErrorConfig<DeleteApiModelsId404>, {id: DeleteApiModelsIdPathParams["id"]}, TContext> & { client?: QueryClient },
+  mutation?: UseMutationOptions<DeleteApiModelsIdMutationResponse, ResponseErrorConfig<DeleteApiModelsId404>, {id: DeleteApiModelsIdPathParams["id"], params: DeleteApiModelsIdQueryParams}, TContext> & { client?: QueryClient },
   client?: Partial<RequestConfig> & { client?: Client },
 }
  = {}) {
@@ -39,13 +39,13 @@ export function useDeleteApiModelsId<TContext>(options:
           const { client: queryClient, ...mutationOptions } = mutation;
           const mutationKey = mutationOptions.mutationKey ?? deleteApiModelsIdMutationKey()
 
-          const baseOptions = deleteApiModelsIdMutationOptions(config) as UseMutationOptions<DeleteApiModelsIdMutationResponse, ResponseErrorConfig<DeleteApiModelsId404>, {id: DeleteApiModelsIdPathParams["id"]}, TContext>
+          const baseOptions = deleteApiModelsIdMutationOptions(config) as UseMutationOptions<DeleteApiModelsIdMutationResponse, ResponseErrorConfig<DeleteApiModelsId404>, {id: DeleteApiModelsIdPathParams["id"], params: DeleteApiModelsIdQueryParams}, TContext>
           
 
-          return useMutation<DeleteApiModelsIdMutationResponse, ResponseErrorConfig<DeleteApiModelsId404>, {id: DeleteApiModelsIdPathParams["id"]}, TContext>({
+          return useMutation<DeleteApiModelsIdMutationResponse, ResponseErrorConfig<DeleteApiModelsId404>, {id: DeleteApiModelsIdPathParams["id"], params: DeleteApiModelsIdQueryParams}, TContext>({
             ...baseOptions,
             mutationKey,
             ...mutationOptions,
-          }, queryClient) as UseMutationResult<DeleteApiModelsIdMutationResponse, ResponseErrorConfig<DeleteApiModelsId404>, {id: DeleteApiModelsIdPathParams["id"]}, TContext>
+          }, queryClient) as UseMutationResult<DeleteApiModelsIdMutationResponse, ResponseErrorConfig<DeleteApiModelsId404>, {id: DeleteApiModelsIdPathParams["id"], params: DeleteApiModelsIdQueryParams}, TContext>
       
 }

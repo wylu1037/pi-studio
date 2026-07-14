@@ -13,13 +13,9 @@ import {
   type AnthropicOptions,
 } from '@earendil-works/pi-ai/api/anthropic-messages'
 import type { GlobalModel, GlobalModelProvider } from '@/lib/types'
+import { normalizePiBaseUrl, resolvePiProviderConnection } from './provider-connection'
 
-type PiProviderConnection = Pick<GlobalModelProvider, 'baseUrl' | 'api' | 'apiKey' | 'headers'>
-
-function hasHeader(headers: Record<string, string> | undefined, name: string) {
-  const expected = name.toLowerCase()
-  return Object.keys(headers ?? {}).some((key) => key.toLowerCase() === expected)
-}
+export { normalizePiBaseUrl, resolvePiProviderConnection } from './provider-connection'
 
 function hasProviderHeader(headers: ProviderHeaders | undefined, name: string) {
   const expected = name.toLowerCase()
@@ -31,44 +27,6 @@ function isOfficialAnthropicEndpoint(baseUrl: string) {
     return new URL(baseUrl).hostname.toLowerCase() === 'api.anthropic.com'
   } catch {
     return false
-  }
-}
-
-/**
- * The Anthropic SDK appends `/v1/messages` itself. Accept URLs copied from
- * provider dashboards without producing `/v1/v1/messages`.
- */
-export function normalizePiBaseUrl(api: string, baseUrl: string) {
-  const trimmed = baseUrl.trim().replace(/\/+$/, '')
-  if (api !== 'anthropic-messages') return trimmed
-
-  try {
-    const url = new URL(trimmed)
-    url.pathname = url.pathname.replace(/\/(?:v1\/messages|v1)\/?$/, '') || '/'
-    return url.toString().replace(/\/$/, '')
-  } catch {
-    return trimmed.replace(/\/(?:v1\/messages|v1)\/?$/, '')
-  }
-}
-
-/** Anthropic Messages uses x-api-key unless custom headers explicitly own auth. */
-export function resolvePiProviderConnection(provider: PiProviderConnection) {
-  const headers = { ...(provider.headers ?? {}) }
-  let apiKey = provider.apiKey?.trim() || undefined
-
-  if (
-    provider.api === 'anthropic-messages' &&
-    (hasHeader(headers, 'authorization') || hasHeader(headers, 'x-api-key'))
-  ) {
-    // Header-owned authentication must not also make the Anthropic SDK inject
-    // a second x-api-key header.
-    apiKey = undefined
-  }
-
-  return {
-    baseUrl: normalizePiBaseUrl(provider.api, provider.baseUrl),
-    apiKey,
-    headers,
   }
 }
 

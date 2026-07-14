@@ -1,4 +1,4 @@
-export type ToastTone = 'success' | 'error'
+export type ToastTone = 'success' | 'error' | 'info' | 'warning'
 
 export type ToastPayload = {
   tone: ToastTone

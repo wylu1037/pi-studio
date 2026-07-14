@@ -3,6 +3,20 @@ import { ExtensionsView } from '@/components/extensions-view'
 export const dynamic = 'force-dynamic'
 
 export default async function ExtensionsPage() {
-  const { listRuntimeExtensions } = await import('@/lib/packages/package-service')
-  return <ExtensionsView extensions={await listRuntimeExtensions(process.cwd())} />
+  const { listExtensionsWithRuntime } = await import('@/lib/extensions/extension-service')
+  const { listExtensionWorkspaces } = await import('@/lib/extensions/workspaces')
+  const { getProjectTrustState } = await import('@/lib/extensions/project-trust')
+  const workspaces = listExtensionWorkspaces()
+  const cwd =
+    workspaces.find((workspace) => workspace.path === process.cwd())?.path ??
+    workspaces[0]?.path ??
+    process.cwd()
+  return (
+    <ExtensionsView
+      initialCwd={cwd}
+      initialExtensions={await listExtensionsWithRuntime(cwd)}
+      initialWorkspaces={workspaces}
+      initialTrust={getProjectTrustState(cwd)}
+    />
+  )
 }

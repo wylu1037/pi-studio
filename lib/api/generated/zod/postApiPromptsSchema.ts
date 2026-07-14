@@ -40,8 +40,8 @@ export const postApiPromptsMutationRequestSchema = z.object({
 "argumentHint": z.optional(z.string()),
 "content": z.string().min(1),
 "path": z.optional(z.string()),
-"source": z.optional(z.enum(["studio", "global", "project", "package"])),
-"scope": z.optional(z.enum(["global", "project"])),
+"source": z.optional(z.enum(["studio", "global", "project", "package"]).default("studio")),
+"scope": z.optional(z.enum(["global", "project"]).default("global")),
 "tags": z.optional(z.array(z.string()))
     })
 

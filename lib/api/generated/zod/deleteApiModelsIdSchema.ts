@@ -9,6 +9,10 @@ export const deleteApiModelsIdPathParamsSchema = z.object({
     "id": z.string()
     })
 
+export const deleteApiModelsIdQueryParamsSchema = z.object({
+    "providerId": z.string()
+    })
+
 /**
  * @description OK
  */

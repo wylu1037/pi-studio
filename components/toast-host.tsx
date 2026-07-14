@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { AlertCircle, Check, X } from 'lucide-react'
+import { Check, Info, Warning, X } from '@phosphor-icons/react'
 import { Label } from '@/components/pi-ui'
 import { errorMessage, takePendingToast, TOAST_EVENT, type ToastPayload } from '@/lib/toast'
 
@@ -19,7 +19,7 @@ export function ToastHost() {
         () => {
           setItems((current) => current.filter((entry) => entry.id !== item.id))
         },
-        payload.tone === 'error' ? 7000 : 4000,
+        payload.tone === 'error' || payload.tone === 'warning' ? 7000 : 4000,
       )
     }
     const pending = takePendingToast()
@@ -51,12 +51,31 @@ export function ToastHost() {
           className="pointer-events-auto flex items-start gap-3 border border-border-strong bg-card px-4 py-3 shadow-xl"
         >
           {item.tone === 'success' ? (
-            <Check className="mt-0.5 size-4 shrink-0 text-success" />
+            <Check size={16} weight="bold" className="mt-0.5 shrink-0 text-success" />
+          ) : item.tone === 'info' ? (
+            <Info size={16} weight="fill" className="mt-0.5 shrink-0 text-accent" />
           ) : (
-            <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+            <Warning
+              size={16}
+              weight="fill"
+              className={
+                item.tone === 'warning'
+                  ? 'mt-0.5 shrink-0 text-warning'
+                  : 'mt-0.5 shrink-0 text-destructive'
+              }
+            />
           )}
           <div className="min-w-0 flex-1">
-            <Label>{item.title ?? (item.tone === 'success' ? 'Saved' : 'Save failed')}</Label>
+            <Label>
+              {item.title ??
+                (item.tone === 'success'
+                  ? 'Saved'
+                  : item.tone === 'info'
+                    ? 'Notice'
+                    : item.tone === 'warning'
+                      ? 'Warning'
+                      : 'Save failed')}
+            </Label>
             <p className="scrollbar-thin mt-1 max-h-28 overflow-auto text-sm leading-relaxed wrap-break-word text-foreground">
               {item.message}
             </p>
@@ -67,7 +86,7 @@ export function ToastHost() {
             className="text-muted-foreground hover:text-foreground"
             aria-label="Dismiss notification"
           >
-            <X className="size-4" />
+            <X size={16} />
           </button>
         </div>
       ))}

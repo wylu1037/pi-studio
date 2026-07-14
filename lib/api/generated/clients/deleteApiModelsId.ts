@@ -4,7 +4,7 @@
 */
 
 import fetch from "@kubb/plugin-client/clients/axios";
-import type { DeleteApiModelsIdMutationResponse, DeleteApiModelsIdPathParams, DeleteApiModelsId404 } from "../types/DeleteApiModelsId.ts";
+import type { DeleteApiModelsIdMutationResponse, DeleteApiModelsIdPathParams, DeleteApiModelsIdQueryParams, DeleteApiModelsId404 } from "../types/DeleteApiModelsId.ts";
 import type { Client, RequestConfig, ResponseErrorConfig } from "@kubb/plugin-client/clients/axios";
 
 function getDeleteApiModelsIdUrl(id: DeleteApiModelsIdPathParams["id"]) {
@@ -15,11 +15,11 @@ function getDeleteApiModelsIdUrl(id: DeleteApiModelsIdPathParams["id"]) {
 /**
  * {@link /api/models/:id}
  */
-export async function deleteApiModelsId(id: DeleteApiModelsIdPathParams["id"], config: Partial<RequestConfig> & { client?: Client } = {}) {
+export async function deleteApiModelsId(id: DeleteApiModelsIdPathParams["id"], params: DeleteApiModelsIdQueryParams, config: Partial<RequestConfig> & { client?: Client } = {}) {
   const { client: request = fetch, ...requestConfig } = config
 
 
 
-  const res = await request<DeleteApiModelsIdMutationResponse, ResponseErrorConfig<DeleteApiModelsId404>, unknown>({ method : "DELETE", url : getDeleteApiModelsIdUrl(id).url.toString(), ... requestConfig })
+  const res = await request<DeleteApiModelsIdMutationResponse, ResponseErrorConfig<DeleteApiModelsId404>, unknown>({ method : "DELETE", url : getDeleteApiModelsIdUrl(id).url.toString(), params, ... requestConfig })
   return res.data
 }

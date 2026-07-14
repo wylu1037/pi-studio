@@ -4,6 +4,22 @@
 */
 
 
+export const getApiPrompts200SourceEnum = {
+    studio: "studio",
+    global: "global",
+    project: "project",
+    package: "package"
+} as const;
+
+export type GetApiPrompts200SourceEnumKey = (typeof getApiPrompts200SourceEnum)[keyof typeof getApiPrompts200SourceEnum];
+
+export const getApiPrompts200ScopeEnum = {
+    global: "global",
+    project: "project"
+} as const;
+
+export type GetApiPrompts200ScopeEnumKey = (typeof getApiPrompts200ScopeEnum)[keyof typeof getApiPrompts200ScopeEnum];
+
 /**
  * @description OK
 */
@@ -21,6 +37,10 @@ export type GetApiPrompts200 = {
     */
     description?: string;
     /**
+     * @type string | undefined
+    */
+    argumentHint?: string;
+    /**
      * @type string
     */
     content: string;
@@ -28,6 +48,14 @@ export type GetApiPrompts200 = {
      * @type string
     */
     path: string;
+    /**
+     * @type string
+    */
+    source: GetApiPrompts200SourceEnumKey;
+    /**
+     * @type string
+    */
+    scope: GetApiPrompts200ScopeEnumKey;
     /**
      * @type array
     */

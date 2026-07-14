@@ -3,31 +3,58 @@ import {
   createAgentSessionFromServices,
   createAgentSessionServices,
   getAgentDir,
+  SettingsManager,
   SessionManager,
   type AgentSession,
   type AgentSessionEvent,
+  type ExtensionError,
 } from '@earendil-works/pi-coding-agent'
 import { registerPiStudioApiProviders } from '@/lib/models/pi-ai'
+import { isProjectTrusted } from '@/lib/extensions/project-trust'
+import {
+  disposeExtensionUiBroker,
+  getExtensionUiBroker,
+  getOrCreateExtensionUiBroker,
+} from './extension-ui-broker'
 
 type Listener = (event: AgentSessionEvent) => void
+
+export interface SdkExtensionDiagnostic {
+  id: string
+  sessionId: string
+  extensionPath?: string
+  event: string
+  level: 'error' | 'warning' | 'info'
+  message: string
+  stack?: string
+  createdAt: string
+}
 
 class StudioAgentSession {
   private listeners = new Set<Listener>()
   private unsubscribe: (() => void) | null = null
   private idleTimer: ReturnType<typeof setTimeout> | null = null
   private alive = true
+  private diagnostics: SdkExtensionDiagnostic[] = []
 
   constructor(
     readonly key: string,
     readonly inner: AgentSession,
-    readonly resourceSignature: string,
+    resourceSignature: string,
+    readonly cwd: string,
+    readonly promptPaths: string[],
+    diagnostics: SdkExtensionDiagnostic[] = [],
   ) {
+    this.resourceSignature = resourceSignature
+    this.diagnostics = diagnostics.slice(-200)
     this.unsubscribe = inner.subscribe((event) => {
       this.touch()
       for (const listener of this.listeners) listener(event)
     })
     this.touch()
   }
+
+  resourceSignature: string
 
   subscribe(listener: Listener) {
     this.listeners.add(listener)
@@ -37,6 +64,20 @@ class StudioAgentSession {
 
   isAlive() {
     return this.alive
+  }
+
+  recordDiagnostic(diagnostic: Omit<SdkExtensionDiagnostic, 'id' | 'sessionId' | 'createdAt'>) {
+    this.diagnostics.push({
+      ...diagnostic,
+      id: `${this.key}:${Date.now()}:${this.diagnostics.length}`,
+      sessionId: this.key,
+      createdAt: new Date().toISOString(),
+    })
+    if (this.diagnostics.length > 200) this.diagnostics.splice(0, this.diagnostics.length - 200)
+  }
+
+  getDiagnostics() {
+    return [...this.diagnostics]
   }
 
   touch() {
@@ -50,6 +91,7 @@ class StudioAgentSession {
     if (this.idleTimer) clearTimeout(this.idleTimer)
     this.unsubscribe?.()
     this.inner.dispose()
+    disposeExtensionUiBroker(this.key)
     this.listeners.clear()
     sessions().delete(this.key)
   }
@@ -86,15 +128,7 @@ export async function getOrCreateSdkSession(input: {
   thinkingLevel?: string
   promptPaths?: string[]
 }) {
-  const resourceSignature = JSON.stringify(
-    [...(input.promptPaths ?? [])].sort().map((path) => {
-      try {
-        return [path, statSync(path).mtimeMs]
-      } catch {
-        return [path, 0]
-      }
-    }),
-  )
+  const resourceSignature = await createResourceSignature(input.cwd, input.promptPaths ?? [])
   const existing = sessions().get(input.studioSessionId)
   if (existing?.isAlive() && existing.resourceSignature === resourceSignature) {
     existing.touch()
@@ -110,9 +144,16 @@ export async function getOrCreateSdkSession(input: {
       input.sessionFile && existsSync(input.sessionFile)
         ? SessionManager.open(input.sessionFile, input.sessionDir)
         : SessionManager.create(input.cwd, input.sessionDir)
+    const settingsManager = SettingsManager.create(input.cwd, getAgentDir(), {
+      projectTrusted: isProjectTrusted(input.cwd),
+    })
     const services = await createAgentSessionServices({
       cwd: input.cwd,
       agentDir: getAgentDir(),
+      settingsManager,
+      resourceLoaderReloadOptions: {
+        resolveProjectTrust: async () => isProjectTrusted(input.cwd),
+      },
       resourceLoaderOptions: {
         additionalPromptTemplatePaths: input.promptPaths ?? [],
         promptsOverride: (base) => {
@@ -129,7 +170,7 @@ export async function getOrCreateSdkSession(input: {
       input.modelProvider && input.modelId
         ? services.modelRegistry.find(input.modelProvider, input.modelId)
         : undefined
-    const { session } = await createAgentSessionFromServices({
+    const { session, extensionsResult } = await createAgentSessionFromServices({
       services,
       sessionManager,
       ...(model ? { model } : {}),
@@ -142,14 +183,43 @@ export async function getOrCreateSdkSession(input: {
       await session.navigateTree(pendingBranch, {})
       pendingBranches().delete(input.studioSessionId)
     }
+    const diagnostics: SdkExtensionDiagnostic[] = extensionsResult.errors.map((error, index) => ({
+      id: `${input.studioSessionId}:load:${index}`,
+      sessionId: input.studioSessionId,
+      extensionPath: error.path,
+      event: 'load',
+      level: 'error',
+      message: error.error,
+      createdAt: new Date().toISOString(),
+    }))
+    const wrappedRef: { current?: StudioAgentSession } = {}
+    const recordExtensionError = (error: ExtensionError) => {
+      const diagnostic = {
+        extensionPath: error.extensionPath,
+        event: error.event,
+        level: 'error' as const,
+        message: error.error,
+        stack: error.stack,
+      }
+      if (wrappedRef.current) wrappedRef.current.recordDiagnostic(diagnostic)
+      else {
+        diagnostics.push({
+          ...diagnostic,
+          id: `${input.studioSessionId}:bind:${diagnostics.length}`,
+          sessionId: input.studioSessionId,
+          createdAt: new Date().toISOString(),
+        })
+      }
+      console.error(
+        `[pi-studio] extension error in ${error.extensionPath} (${error.event}): ${error.error}`,
+      )
+    }
     try {
+      const broker = getOrCreateExtensionUiBroker(input.studioSessionId)
       await session.bindExtensions({
         mode: 'rpc',
-        onError: (error) => {
-          console.error(
-            `[pi-studio] extension error in ${error.extensionPath} (${error.event}): ${error.error}`,
-          )
-        },
+        uiContext: broker.uiContext,
+        onError: recordExtensionError,
       })
     } catch (error) {
       console.error(
@@ -157,13 +227,46 @@ export async function getOrCreateSdkSession(input: {
         error instanceof Error ? error.message : error,
       )
     }
-    const wrapped = new StudioAgentSession(input.studioSessionId, session, resourceSignature)
+    const wrapped = new StudioAgentSession(
+      input.studioSessionId,
+      session,
+      resourceSignature,
+      input.cwd,
+      input.promptPaths ?? [],
+      diagnostics,
+    )
+    wrappedRef.current = wrapped
     sessions().set(input.studioSessionId, wrapped)
     return wrapped
   })().finally(() => locks().delete(input.studioSessionId))
 
   locks().set(input.studioSessionId, starting)
   return starting
+}
+
+async function createResourceSignature(cwd: string, promptPaths: string[]) {
+  const { listRuntimeExtensions } = await import('@/lib/packages/package-service')
+  const extensions = await listRuntimeExtensions(cwd)
+  const files = [...promptPaths, ...extensions.map((extension) => extension.path)]
+    .sort()
+    .map((path) => {
+      try {
+        return [path, statSync(path).mtimeMs]
+      } catch {
+        return [path, 0]
+      }
+    })
+  const settings = SettingsManager.create(cwd, getAgentDir(), {
+    projectTrusted: isProjectTrusted(cwd),
+  })
+  return JSON.stringify({
+    files,
+    globalPackages: settings.getGlobalSettings().packages ?? [],
+    projectPackages: settings.getProjectSettings().packages ?? [],
+    globalExtensions: settings.getGlobalSettings().extensions ?? [],
+    projectExtensions: settings.getProjectSettings().extensions ?? [],
+    projectTrusted: isProjectTrusted(cwd),
+  })
 }
 
 export function getSdkSession(studioSessionId: string) {
@@ -184,6 +287,140 @@ export function getSdkSessionState(studioSessionId: string) {
     thinkingLevel: session.inner.thinkingLevel,
     sessionFile: session.inner.sessionFile ?? null,
     sessionId: session.inner.sessionId,
+  }
+}
+
+export function getSdkSessionExtensions(studioSessionId: string) {
+  const session = getSdkSession(studioSessionId)
+  if (!session) return null
+  const runner = session.inner.extensionRunner
+  const paths = runner.getExtensionPaths()
+  const tools = runner.getAllRegisteredTools().map((tool) => ({
+    name: tool.definition.name,
+    label: tool.definition.label,
+    description: tool.definition.description,
+    extensionPath: tool.sourceInfo.path,
+  }))
+  const commands = runner.getRegisteredCommands().map((command) => ({
+    name: command.invocationName,
+    description: command.description,
+    extensionPath: command.sourceInfo.path,
+  }))
+  const flags = [...runner.getFlags().values()].map((flag) => ({
+    name: flag.name,
+    description: flag.description,
+    extensionPath: flag.extensionPath,
+  }))
+  return {
+    sessionId: studioSessionId,
+    cwd: session.cwd,
+    running: session.inner.isStreaming || !session.inner.isIdle,
+    loadedAt: new Date().toISOString(),
+    extensions: paths.map((path) => ({
+      path,
+      tools: tools.filter((tool) => tool.extensionPath === path),
+      commands: commands.filter((command) => command.extensionPath === path),
+      flags: flags.filter((flag) => flag.extensionPath === path),
+    })),
+  }
+}
+
+export function listSdkSessionExtensionSnapshots(cwd?: string) {
+  return [...sessions().values()]
+    .filter((session) => session.isAlive() && (!cwd || session.cwd === cwd))
+    .map((session) => getSdkSessionExtensions(session.key))
+    .filter((snapshot): snapshot is NonNullable<typeof snapshot> => snapshot !== null)
+}
+
+export function getSdkSessionExtensionDiagnostics(studioSessionId: string) {
+  return getSdkSession(studioSessionId)?.getDiagnostics() ?? null
+}
+
+export function listSdkExtensionDiagnostics(cwd?: string) {
+  return [...sessions().values()]
+    .filter((session) => session.isAlive() && (!cwd || session.cwd === cwd))
+    .flatMap((session) => session.getDiagnostics())
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+}
+
+export async function reloadSdkSessions(input: {
+  cwd?: string
+  sessionIds?: string[]
+  mode: 'idle-only' | 'all'
+  confirmRunning?: boolean
+}) {
+  const selected = new Set(input.sessionIds ?? [])
+  const results: Array<{
+    sessionId: string
+    status: 'reloaded' | 'skipped-running' | 'failed'
+    error?: string
+  }> = []
+  for (const session of [...sessions().values()]) {
+    if (!session.isAlive()) continue
+    if (input.cwd && session.cwd !== input.cwd) continue
+    if (selected.size > 0 && !selected.has(session.key)) continue
+    const running = session.inner.isStreaming || !session.inner.isIdle
+    if (running && (input.mode !== 'all' || !input.confirmRunning)) {
+      results.push({ sessionId: session.key, status: 'skipped-running' })
+      continue
+    }
+    try {
+      if (running) await session.inner.abort()
+      await session.inner.reload({ beforeSessionStart: () => session.touch() })
+      session.resourceSignature = await createResourceSignature(session.cwd, session.promptPaths)
+      session.recordDiagnostic({
+        event: 'reload',
+        level: 'info',
+        message: 'Extensions reloaded successfully.',
+      })
+      results.push({ sessionId: session.key, status: 'reloaded' })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Extension reload failed.'
+      session.recordDiagnostic({ event: 'reload', level: 'error', message })
+      results.push({ sessionId: session.key, status: 'failed', error: message })
+    }
+  }
+  return results
+}
+
+export function getSdkSessionExtensionUi(studioSessionId: string, afterNotification = 0) {
+  const broker = getExtensionUiBroker(studioSessionId)
+  if (!broker && !getSdkSession(studioSessionId)) return null
+  return broker?.snapshot(afterNotification) ?? null
+}
+
+export function respondToSdkSessionExtensionUi(
+  studioSessionId: string,
+  interactionId: string,
+  value: unknown,
+  cancelled = false,
+) {
+  return getExtensionUiBroker(studioSessionId)?.respond(interactionId, value, cancelled) ?? false
+}
+
+export async function executeSdkExtensionCommand(
+  studioSessionId: string,
+  commandName: string,
+  args = '',
+) {
+  const session = getSdkSession(studioSessionId)
+  if (!session) return { status: 'session-not-active' as const }
+  if (!session.inner.isIdle) return { status: 'session-running' as const }
+  const command = session.inner.extensionRunner.getCommand(commandName)
+  if (!command) return { status: 'command-not-found' as const }
+  try {
+    await command.handler(args, session.inner.extensionRunner.createCommandContext())
+    return { status: 'completed' as const }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Extension command failed.'
+    session.recordDiagnostic({
+      extensionPath: command.sourceInfo.path,
+      event: `command:${commandName}`,
+      level: 'error',
+      message,
+      stack: error instanceof Error ? error.stack : undefined,
+    })
+    return { status: 'failed' as const, error: message }
   }
 }
 

@@ -11,6 +11,13 @@ export type DeleteApiModelsIdPathParams = {
     id: string;
 };
 
+export type DeleteApiModelsIdQueryParams = {
+    /**
+     * @type string
+    */
+    providerId: string;
+};
+
 export const deleteApiModelsId200ApiEnum = {
     "openai-completions": "openai-completions",
     "openai-responses": "openai-responses",
@@ -127,5 +134,6 @@ export type DeleteApiModelsIdMutationResponse = DeleteApiModelsId200;
 export type DeleteApiModelsIdMutation = {
     Response: DeleteApiModelsId200;
     PathParams: DeleteApiModelsIdPathParams;
+    QueryParams: DeleteApiModelsIdQueryParams;
     Errors: DeleteApiModelsId404;
 };

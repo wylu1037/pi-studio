@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 import { mkdirSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
 import { streamSSE } from 'hono/streaming'
 import { abortRun as abortRegisteredRun } from '@/lib/chat/run-registry'
 import { defaultPiSessionDir, runPiCli } from '@/lib/chat/pi-adapter'
-import { resolvePiProviderConnection } from '@/lib/models/pi-ai'
 import { runNpx } from '@/lib/npx'
 import { loadPackageGallery } from '@/lib/packages/pi-dev-gallery'
 import { materializeInstalledSkill, removeStoredSkill, studioRootDir } from '@/lib/skills/store'
@@ -62,7 +62,21 @@ import {
   ChatMessageSchema,
   CreateSessionSchema,
   ErrorSchema,
+  CreateExtensionSchema,
+  ExtensionDiagnosticSchema,
+  ExtensionFileContentSchema,
+  ExtensionFileQuerySchema,
+  ExtensionFileSchema,
+  ExtensionListQuerySchema,
+  ExtensionReloadResultSchema,
+  ExtensionReloadSchema,
   ExtensionSchema,
+  ExtensionSourceSchema,
+  ExtensionStateSchema,
+  ExtensionUiResponseSchema,
+  ExtensionUiSnapshotSchema,
+  ExtensionValidationSchema,
+  ExtensionWorkspaceSchema,
   McpInputSchema,
   McpSchema,
   ModelCapabilitiesSchema,
@@ -74,8 +88,11 @@ import {
   ProviderInputSchema,
   ProviderSchema,
   ProviderTestResultSchema,
+  ProjectTrustInputSchema,
+  ProjectTrustStateSchema,
   RunSchema,
   SessionSchema,
+  SessionExtensionSnapshotSchema,
   UpdateSessionSchema,
   SessionBranchContextSchema,
   SessionEntryActionSchema,
@@ -271,6 +288,7 @@ async function installSkillsShPackage(pkg: string) {
 async function fetchProviderModelCatalog(providerId: string) {
   const provider = getProvider(providerId)
   if (!provider) return null
+  const { resolvePiProviderConnection } = await import('@/lib/models/provider-connection')
   const connection = resolvePiProviderConnection({
     baseUrl: provider.baseUrl,
     api: provider.api,
@@ -931,11 +949,469 @@ api.openapi(
     method: 'get',
     path: '/extensions',
     tags: ['Extensions'],
+    request: { query: ExtensionListQuerySchema },
     responses: { 200: json(z.array(ExtensionSchema)) },
   }),
   async (c) => {
-    const { listRuntimeExtensions } = await import('@/lib/packages/package-service')
-    return c.json(await listRuntimeExtensions(process.cwd()))
+    const query = c.req.valid('query')
+    const extensionService = await import('@/lib/extensions/extension-service')
+    try {
+      const extensions = await extensionService.listExtensionsWithRuntime(
+        query.cwd ?? process.cwd(),
+      )
+      return c.json(
+        query.scope && query.scope !== 'effective'
+          ? extensions.filter((extension) => extension.scope === query.scope)
+          : extensions,
+      )
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : 'Unable to list extensions.' },
+        400,
+      )
+    }
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'get',
+    path: '/extensions/workspaces',
+    tags: ['Extensions'],
+    responses: { 200: json(z.array(ExtensionWorkspaceSchema)) },
+  }),
+  async (c) => {
+    const { listExtensionWorkspaces } = await import('@/lib/extensions/workspaces')
+    return c.json(listExtensionWorkspaces())
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'get',
+    path: '/extensions/trust',
+    tags: ['Extensions'],
+    request: { query: z.object({ cwd: z.string() }) },
+    responses: { 200: json(ProjectTrustStateSchema), 400: json(ErrorSchema) },
+  }),
+  async (c) => {
+    try {
+      const { assertExtensionWorkspace } = await import('@/lib/extensions/workspaces')
+      const { getProjectTrustState } = await import('@/lib/extensions/project-trust')
+      return c.json(getProjectTrustState(assertExtensionWorkspace(c.req.valid('query').cwd)))
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : 'Unable to read project trust.' },
+        400,
+      )
+    }
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'post',
+    path: '/extensions/trust',
+    tags: ['Extensions'],
+    request: { body: json(ProjectTrustInputSchema) },
+    responses: { 200: json(ProjectTrustStateSchema), 400: json(ErrorSchema) },
+  }),
+  async (c) => {
+    try {
+      const input = c.req.valid('json')
+      const { assertExtensionWorkspace } = await import('@/lib/extensions/workspaces')
+      const { setProjectTrust } = await import('@/lib/extensions/project-trust')
+      const cwd = assertExtensionWorkspace(input.cwd)
+      const state = setProjectTrust(cwd, input.decision)
+      const { reloadSdkSessions } = await import('@/lib/chat/sdk-session-manager')
+      await reloadSdkSessions({ cwd, mode: 'idle-only' })
+      return c.json(state)
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : 'Unable to update project trust.' },
+        400,
+      )
+    }
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'get',
+    path: '/extensions/{id}',
+    tags: ['Extensions'],
+    request: {
+      params: z.object({ id: z.string() }),
+      query: z.object({ cwd: z.string() }),
+    },
+    responses: { 200: json(ExtensionSchema), 404: json(ErrorSchema) },
+  }),
+  async (c) => {
+    const { id } = c.req.valid('param')
+    const { cwd } = c.req.valid('query')
+    const { listExtensionsWithRuntime } = await import('@/lib/extensions/extension-service')
+    const extension = (await listExtensionsWithRuntime(cwd)).find((item) => item.id === id)
+    return extension ? c.json(extension) : c.json({ error: 'Extension not found.' }, 404)
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'get',
+    path: '/extensions/{id}/diagnostics',
+    tags: ['Extensions'],
+    request: {
+      params: z.object({ id: z.string() }),
+      query: z.object({ cwd: z.string() }),
+    },
+    responses: { 200: json(z.array(ExtensionDiagnosticSchema)), 404: json(ErrorSchema) },
+  }),
+  async (c) => {
+    const { id } = c.req.valid('param')
+    const { cwd } = c.req.valid('query')
+    const packageService = await import('@/lib/packages/package-service')
+    const extension = (await packageService.listRuntimeExtensions(cwd)).find(
+      (item) => item.id === id,
+    )
+    if (!extension) return c.json({ error: 'Extension not found.' }, 404)
+    const runtime = await import('@/lib/chat/sdk-session-manager')
+    return c.json(
+      runtime
+        .listSdkExtensionDiagnostics(cwd)
+        .filter(
+          (diagnostic) =>
+            diagnostic.extensionPath &&
+            resolve(diagnostic.extensionPath) === resolve(extension.path),
+        ),
+    )
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'get',
+    path: '/extensions/{id}/source',
+    tags: ['Extensions'],
+    request: {
+      params: z.object({ id: z.string() }),
+      query: z.object({ cwd: z.string() }),
+    },
+    responses: { 200: json(ExtensionSourceSchema), 400: json(ErrorSchema), 404: json(ErrorSchema) },
+  }),
+  async (c) => {
+    try {
+      const { getExtensionSource } = await import('@/lib/extensions/extension-service')
+      return c.json(await getExtensionSource(c.req.valid('param').id, c.req.valid('query').cwd))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to read extension source.'
+      return c.json({ error: message }, /not found/i.test(message) ? 404 : 400)
+    }
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'post',
+    path: '/extensions/create',
+    tags: ['Extensions'],
+    request: { body: json(CreateExtensionSchema) },
+    responses: { 200: json(ExtensionSchema), 400: json(ErrorSchema) },
+  }),
+  async (c) => {
+    try {
+      const { createLocalExtension } = await import('@/lib/extensions/extension-service')
+      return c.json(await createLocalExtension(c.req.valid('json')))
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : 'Unable to create extension.' },
+        400,
+      )
+    }
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'get',
+    path: '/extensions/{id}/files',
+    tags: ['Extensions'],
+    request: {
+      params: z.object({ id: z.string() }),
+      query: z.object({ cwd: z.string() }),
+    },
+    responses: { 200: json(z.array(ExtensionFileSchema)), 400: json(ErrorSchema) },
+  }),
+  async (c) => {
+    try {
+      const { listExtensionFiles } = await import('@/lib/extensions/extension-service')
+      return c.json(await listExtensionFiles(c.req.valid('param').id, c.req.valid('query').cwd))
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : 'Unable to list extension files.' },
+        400,
+      )
+    }
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'get',
+    path: '/extensions/{id}/files/content',
+    tags: ['Extensions'],
+    request: { params: z.object({ id: z.string() }), query: ExtensionFileQuerySchema },
+    responses: { 200: json(ExtensionFileContentSchema), 400: json(ErrorSchema) },
+  }),
+  async (c) => {
+    try {
+      const { readExtensionFile } = await import('@/lib/extensions/extension-service')
+      const query = c.req.valid('query')
+      return c.json(await readExtensionFile(c.req.valid('param').id, query.cwd, query.path))
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : 'Unable to read extension file.' },
+        400,
+      )
+    }
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'put',
+    path: '/extensions/{id}/files/content',
+    tags: ['Extensions'],
+    request: {
+      params: z.object({ id: z.string() }),
+      query: z.object({ cwd: z.string() }),
+      body: json(ExtensionFileContentSchema),
+    },
+    responses: { 200: json(ExtensionFileContentSchema), 400: json(ErrorSchema) },
+  }),
+  async (c) => {
+    try {
+      const { writeExtensionFile } = await import('@/lib/extensions/extension-service')
+      const input = c.req.valid('json')
+      return c.json(
+        await writeExtensionFile(
+          c.req.valid('param').id,
+          c.req.valid('query').cwd,
+          input.path,
+          input.content,
+        ),
+      )
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : 'Unable to save extension file.' },
+        400,
+      )
+    }
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'post',
+    path: '/extensions/{id}/validate',
+    tags: ['Extensions'],
+    request: {
+      params: z.object({ id: z.string() }),
+      query: z.object({ cwd: z.string() }),
+    },
+    responses: { 200: json(ExtensionValidationSchema), 400: json(ErrorSchema) },
+  }),
+  async (c) => {
+    try {
+      const { validateLocalExtension } = await import('@/lib/extensions/extension-service')
+      return c.json(await validateLocalExtension(c.req.valid('param').id, c.req.valid('query').cwd))
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : 'Unable to validate extension.' },
+        400,
+      )
+    }
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/extensions/{id}',
+    tags: ['Extensions'],
+    request: {
+      params: z.object({ id: z.string() }),
+      query: z.object({ cwd: z.string() }),
+    },
+    responses: { 200: json(z.object({ deleted: z.boolean() })), 400: json(ErrorSchema) },
+  }),
+  async (c) => {
+    try {
+      const { deleteLocalExtension } = await import('@/lib/extensions/extension-service')
+      return c.json(await deleteLocalExtension(c.req.valid('param').id, c.req.valid('query').cwd))
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : 'Unable to delete extension.' },
+        400,
+      )
+    }
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'post',
+    path: '/extensions/reload',
+    tags: ['Extensions'],
+    request: { body: json(ExtensionReloadSchema) },
+    responses: { 200: json(z.array(ExtensionReloadResultSchema)) },
+  }),
+  async (c) => {
+    const runtime = await import('@/lib/chat/sdk-session-manager')
+    return c.json(await runtime.reloadSdkSessions(c.req.valid('json')))
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'get',
+    path: '/sessions/{id}/extensions',
+    tags: ['Extensions'],
+    request: { params: z.object({ id: z.string() }) },
+    responses: { 200: json(SessionExtensionSnapshotSchema), 404: json(ErrorSchema) },
+  }),
+  async (c) => {
+    const runtime = await import('@/lib/chat/sdk-session-manager')
+    const snapshot = runtime.getSdkSessionExtensions(c.req.valid('param').id)
+    return snapshot ? c.json(snapshot) : c.json({ error: 'SDK session is not active.' }, 404)
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'get',
+    path: '/sessions/{id}/extensions/diagnostics',
+    tags: ['Extensions'],
+    request: { params: z.object({ id: z.string() }) },
+    responses: { 200: json(z.array(ExtensionDiagnosticSchema)), 404: json(ErrorSchema) },
+  }),
+  async (c) => {
+    const runtime = await import('@/lib/chat/sdk-session-manager')
+    const diagnostics = runtime.getSdkSessionExtensionDiagnostics(c.req.valid('param').id)
+    return diagnostics ? c.json(diagnostics) : c.json({ error: 'SDK session is not active.' }, 404)
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'post',
+    path: '/sessions/{id}/extensions/commands/{command}',
+    tags: ['Extensions'],
+    request: {
+      params: z.object({ id: z.string(), command: z.string() }),
+      body: json(z.object({ args: z.string().optional() })),
+    },
+    responses: {
+      200: json(
+        z.object({
+          status: z.enum([
+            'completed',
+            'failed',
+            'session-not-active',
+            'session-running',
+            'command-not-found',
+          ]),
+          error: z.string().optional(),
+        }),
+      ),
+    },
+  }),
+  async (c) => {
+    const runtime = await import('@/lib/chat/sdk-session-manager')
+    const params = c.req.valid('param')
+    return c.json(
+      await runtime.executeSdkExtensionCommand(
+        params.id,
+        params.command,
+        c.req.valid('json').args ?? '',
+      ),
+    )
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'get',
+    path: '/sessions/{id}/extensions/ui',
+    tags: ['Extensions'],
+    request: {
+      params: z.object({ id: z.string() }),
+      query: z.object({ afterNotification: z.coerce.number().int().nonnegative().optional() }),
+    },
+    responses: { 200: json(ExtensionUiSnapshotSchema), 404: json(ErrorSchema) },
+  }),
+  async (c) => {
+    const runtime = await import('@/lib/chat/sdk-session-manager')
+    const snapshot = runtime.getSdkSessionExtensionUi(
+      c.req.valid('param').id,
+      c.req.valid('query').afterNotification ?? 0,
+    )
+    return snapshot ? c.json(snapshot) : c.json({ error: 'SDK session is not active.' }, 404)
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'post',
+    path: '/sessions/{id}/extensions/ui/respond',
+    tags: ['Extensions'],
+    request: {
+      params: z.object({ id: z.string() }),
+      body: json(ExtensionUiResponseSchema),
+    },
+    responses: { 200: json(z.object({ accepted: z.boolean() })), 404: json(ErrorSchema) },
+  }),
+  async (c) => {
+    const runtime = await import('@/lib/chat/sdk-session-manager')
+    const input = c.req.valid('json')
+    const accepted = runtime.respondToSdkSessionExtensionUi(
+      c.req.valid('param').id,
+      input.interactionId,
+      input.value,
+      input.cancelled,
+    )
+    return accepted ? c.json({ accepted }) : c.json({ error: 'Interaction not found.' }, 404)
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'post',
+    path: '/extensions/{id}/state',
+    tags: ['Extensions'],
+    request: {
+      params: z.object({ id: z.string() }),
+      body: json(ExtensionStateSchema),
+    },
+    responses: {
+      200: json(z.array(ExtensionSchema)),
+      400: json(ErrorSchema),
+      404: json(ErrorSchema),
+    },
+  }),
+  async (c) => {
+    const { id } = c.req.valid('param')
+    const input = c.req.valid('json')
+    const extensionService = await import('@/lib/packages/package-service')
+    try {
+      const { assertExtensionWorkspace } = await import('@/lib/extensions/workspaces')
+      const cwd = assertExtensionWorkspace(input.cwd ?? process.cwd())
+      await extensionService.setRuntimeExtensionState({ id, enabled: input.enabled, cwd })
+      const { listExtensionsWithRuntime } = await import('@/lib/extensions/extension-service')
+      return c.json(await listExtensionsWithRuntime(cwd))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to update extension.'
+      return c.json({ error: message }, /not found/i.test(message) ? 404 : 400)
+    }
   },
 )
 
@@ -950,9 +1426,11 @@ api.openapi(
   async (c) => {
     const input = c.req.valid('json')
     const extensionService = await import('@/lib/packages/package-service')
-    const cwd = input.cwd ?? process.cwd()
+    const { assertExtensionWorkspace } = await import('@/lib/extensions/workspaces')
+    const cwd = assertExtensionWorkspace(input.cwd ?? process.cwd())
     await extensionService.setRuntimeExtensionEnabled({ ...input, cwd })
-    return c.json(await extensionService.listRuntimeExtensions(cwd))
+    const { listExtensionsWithRuntime } = await import('@/lib/extensions/extension-service')
+    return c.json(await listExtensionsWithRuntime(cwd))
   },
 )
 

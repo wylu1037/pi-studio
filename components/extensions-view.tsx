@@ -1,138 +1,1546 @@
 'use client'
 
-import { useState } from 'react'
-import { AlertTriangle, Puzzle, Search } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import dynamic from 'next/dynamic'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import {
+  ArrowsClockwise,
+  BracketsCurly,
+  CaretRight,
+  CheckCircle,
+  Code,
+  File,
+  FileTs,
+  FloppyDisk,
+  Folder,
+  MagnifyingGlass,
+  Plus,
+  PuzzlePiece,
+  ShieldCheck,
+  TerminalWindow,
+  Trash,
+  Warning,
+  X,
+  XCircle,
+} from '@phosphor-icons/react'
+import {
+  ActionButton,
+  BracketButton,
+  Label,
+  PageHeader,
+  PanelHeader,
+  Tag,
+  TextInput,
+  Toggle,
+} from '@/components/pi-ui'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import type { GlobalExtension } from '@/lib/types'
 import { errorMessage, showToast } from '@/lib/toast'
-import { BracketButton, Label, PageHeader, Panel, Tag, TextInput, Toggle } from '@/components/pi-ui'
+import { cn } from '@/lib/utils'
 
-export function ExtensionsView({ extensions }: { extensions: GlobalExtension[] }) {
-  const [items, setItems] = useState(extensions)
-  const [scope, setScope] = useState<'global' | 'project'>('global')
-  const [query, setQuery] = useState('')
-  const [pendingSource, setPendingSource] = useState<string | null>(null)
-  const filtered = items.filter(
-    (extension) =>
-      extension.scope === scope &&
-      (!query ||
-        extension.name.toLowerCase().includes(query.toLowerCase()) ||
-        extension.source.toLowerCase().includes(query.toLowerCase()) ||
-        extension.path.toLowerCase().includes(query.toLowerCase())),
+type ExtensionsTab = 'manage' | 'develop'
+type ExtensionScopeFilter = 'effective' | 'global' | 'project'
+type ExtensionTemplate =
+  | 'empty'
+  | 'tool'
+  | 'command'
+  | 'permission-gate'
+  | 'lifecycle'
+  | 'context-modifier'
+  | 'provider'
+  | 'session-state'
+
+type Workspace = {
+  path: string
+  label: string
+  sources: Array<'studio' | 'agent' | 'session'>
+}
+
+type TrustState = {
+  cwd: string
+  requiresTrust: boolean
+  trusted: boolean
+  savedDecision: boolean | null
+  options: Array<{
+    label: string
+    trusted: boolean
+    updates: Array<{ path: string; decision: boolean | null }>
+    savedPath?: string
+  }>
+}
+
+type ExtensionFile = {
+  path: string
+  type: 'file' | 'directory'
+  size?: number
+}
+
+type ValidationResult = {
+  valid: boolean
+  diagnostics: Array<{
+    file?: string
+    line?: number
+    column?: number
+    severity: 'error' | 'warning'
+    code: string
+    message: string
+  }>
+  capabilities: {
+    tools: string[]
+    commands: string[]
+    hooks: string[]
+    providers: string[]
+    ui: string[]
+  }
+  checkedAt: string
+}
+
+type ExtensionDiagnostic = {
+  id: string
+  sessionId: string
+  extensionPath?: string
+  event: string
+  level: 'error' | 'warning' | 'info'
+  message: string
+  stack?: string
+  createdAt: string
+}
+
+const templates: Array<{ value: ExtensionTemplate; label: string; description: string }> = [
+  { value: 'empty', label: 'Empty extension', description: 'Minimal session start hook.' },
+  { value: 'tool', label: 'Custom tool', description: 'Register a TypeBox-backed LLM tool.' },
+  { value: 'command', label: 'Slash command', description: 'Register an interactive command.' },
+  {
+    value: 'permission-gate',
+    label: 'Tool permission gate',
+    description: 'Review selected tool calls before execution.',
+  },
+  { value: 'lifecycle', label: 'Lifecycle hook', description: 'Observe session and turn events.' },
+  {
+    value: 'context-modifier',
+    label: 'Context modifier',
+    description: 'Append project guidance to the system prompt.',
+  },
+  {
+    value: 'provider',
+    label: 'Provider registration',
+    description: 'Scaffold a provider adapter.',
+  },
+  {
+    value: 'session-state',
+    label: 'Session state',
+    description: 'Persist extension state in session entries.',
+  },
+]
+
+const ExtensionsEditor = dynamic(
+  () => import('@/components/extensions-editor').then((module) => module.ExtensionsEditor),
+  {
+    ssr: false,
+    loading: () => <div className="h-full animate-pulse bg-muted" />,
+  },
+)
+
+async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, init)
+  const body = (await response.json()) as T | { error?: string }
+  if (!response.ok) {
+    throw new Error(
+      'error' in (body as object) ? (body as { error?: string }).error : response.statusText,
+    )
+  }
+  return body as T
+}
+
+function queryUrl(path: string, values: Record<string, string | number | undefined>) {
+  const url = new URL(path, window.location.origin)
+  for (const [key, value] of Object.entries(values)) {
+    if (value !== undefined) url.searchParams.set(key, String(value))
+  }
+  return `${url.pathname}${url.search}`
+}
+
+export function ExtensionsView({
+  initialCwd,
+  initialExtensions,
+  initialWorkspaces,
+  initialTrust,
+}: {
+  initialCwd: string
+  initialExtensions: GlobalExtension[]
+  initialWorkspaces: Workspace[]
+  initialTrust: TrustState
+}) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const initialTab = searchParams.get('tab') === 'develop' ? 'develop' : 'manage'
+  const [tab, setTab] = useState<ExtensionsTab>(initialTab)
+  const [cwd, setCwd] = useState(initialCwd)
+  const [workspaces] = useState(initialWorkspaces)
+  const [items, setItems] = useState(initialExtensions)
+  const [trust, setTrust] = useState(initialTrust)
+  const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  const updateLocation = useCallback(
+    (nextTab: ExtensionsTab, extensionId?: string) => {
+      const params = new URLSearchParams(searchParams.toString())
+      params.set('tab', nextTab)
+      if (extensionId) params.set('extension', extensionId)
+      else params.delete('extension')
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+    },
+    [pathname, router, searchParams],
   )
 
-  const toggle = async (extension: GlobalExtension) => {
-    setPendingSource(extension.source)
+  const refresh = useCallback(
+    async (targetCwd = cwd) => {
+      setLoading(true)
+      setLoadError(null)
+      try {
+        const [extensions, trustState] = await Promise.all([
+          requestJson<GlobalExtension[]>(queryUrl('/api/extensions', { cwd: targetCwd })),
+          requestJson<TrustState>(queryUrl('/api/extensions/trust', { cwd: targetCwd })),
+        ])
+        setItems(extensions)
+        setTrust(trustState)
+      } catch (refreshError) {
+        setLoadError(errorMessage(refreshError, 'Unable to load extensions.'))
+      } finally {
+        setLoading(false)
+      }
+    },
+    [cwd],
+  )
+
+  const changeWorkspace = (nextCwd: string) => {
+    setCwd(nextCwd)
+    void refresh(nextCwd)
+  }
+
+  const changeTab = (nextTab: ExtensionsTab) => {
+    setTab(nextTab)
+    updateLocation(
+      nextTab,
+      nextTab === 'develop' ? (searchParams.get('extension') ?? undefined) : undefined,
+    )
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <PageHeader
+        title="Extensions"
+        subtitle="Inspect, develop, validate, and reload executable Pi extensions."
+      >
+        <div className="flex items-center border border-border-strong bg-panel p-0.5">
+          {(['manage', 'develop'] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => changeTab(value)}
+              className={cn(
+                'px-4 py-1.5 font-mono text-[11px] tracking-[0.12em] uppercase transition-colors active:scale-[0.98]',
+                tab === value
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              )}
+            >
+              {value}
+            </button>
+          ))}
+        </div>
+      </PageHeader>
+
+      <div className="flex flex-wrap items-center gap-3 border-b border-border bg-panel/80 px-4 py-2.5 sm:px-6">
+        <Label>Workspace</Label>
+        <Select value={cwd} onValueChange={(value) => value && changeWorkspace(value)}>
+          <SelectTrigger className="h-8 w-auto max-w-[min(70vw,32rem)] min-w-48 border-border bg-card px-2 font-mono text-xs">
+            <SelectValue>
+              {workspaces.find((workspace) => workspace.path === cwd)?.label ?? cwd}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent
+            align="start"
+            alignItemWithTrigger={false}
+            className="w-max max-w-[calc(100vw-2rem)] min-w-(--anchor-width)"
+          >
+            {workspaces.map((workspace) => (
+              <SelectItem key={workspace.path} value={workspace.path}>
+                <span className="flex min-w-0 flex-col">
+                  <span>{workspace.label}</span>
+                  <span className="max-w-lg truncate font-mono text-[10px] text-muted-foreground">
+                    {workspace.path}
+                  </span>
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {loading && <Tag tone="warning">refreshing</Tag>}
+        <span className="ml-auto hidden max-w-[38vw] truncate font-mono text-[10px] text-muted-foreground lg:block">
+          {cwd}
+        </span>
+      </div>
+
+      {trust.requiresTrust && !trust.trusted && (
+        <TrustBanner
+          cwd={cwd}
+          onTrusted={(state) => {
+            setTrust(state)
+            void refresh(cwd)
+          }}
+        />
+      )}
+      {loadError && (
+        <div className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/8 px-6 py-2.5 text-sm text-destructive">
+          <Warning size={16} weight="fill" />
+          <span>{loadError}</span>
+          <button
+            type="button"
+            className="ml-auto font-mono text-xs underline"
+            onClick={() => void refresh()}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {tab === 'manage' ? (
+        <ManageTab items={items} cwd={cwd} onItems={setItems} onRefresh={() => refresh()} />
+      ) : (
+        <DevelopTab
+          items={items}
+          cwd={cwd}
+          trusted={trust.trusted}
+          initialExtensionId={searchParams.get('extension') ?? undefined}
+          onRefresh={() => refresh()}
+          onLocation={(extensionId) => updateLocation('develop', extensionId)}
+        />
+      )}
+    </div>
+  )
+}
+
+function TrustBanner({ cwd, onTrusted }: { cwd: string; onTrusted: (state: TrustState) => void }) {
+  const [pending, setPending] = useState<string | null>(null)
+  const decide = async (decision: 'once' | 'always' | 'deny') => {
+    setPending(decision)
     try {
-      const response = await fetch('/api/extensions/toggle', {
+      const state = await requestJson<TrustState>('/api/extensions/trust', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          source: extension.source,
-          scope: extension.scope,
-          enabled: !extension.enabled,
-        }),
+        body: JSON.stringify({ cwd, decision }),
       })
-      const body = (await response.json()) as GlobalExtension[] | { error?: string }
-      if (!response.ok || !Array.isArray(body)) {
-        throw new Error(Array.isArray(body) ? 'Unable to update extension.' : body.error)
+      onTrusted(state)
+      showToast({
+        tone: 'success',
+        message: state.trusted
+          ? 'Project extensions are trusted.'
+          : 'Project extensions remain disabled.',
+      })
+    } catch (trustError) {
+      showToast({
+        tone: 'error',
+        message: errorMessage(trustError, 'Unable to update project trust.'),
+      })
+    } finally {
+      setPending(null)
+    }
+  }
+  return (
+    <div className="flex flex-col gap-3 border-b border-warning/35 bg-warning/10 px-4 py-3 sm:flex-row sm:items-center sm:px-6">
+      <div className="flex min-w-0 items-start gap-2.5">
+        <ShieldCheck size={18} className="mt-0.5 shrink-0 text-warning" />
+        <div className="min-w-0">
+          <p className="font-mono text-xs text-foreground">Project trust required</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Project extensions can execute files, processes, and network requests. Review the path
+            before loading them.
+          </p>
+          <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">{cwd}</p>
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-wrap gap-2 sm:ml-auto">
+        <ActionButton disabled={pending !== null} onClick={() => void decide('once')}>
+          Trust once
+        </ActionButton>
+        <ActionButton
+          disabled={pending !== null}
+          variant="accent"
+          onClick={() => void decide('always')}
+        >
+          Always trust
+        </ActionButton>
+        <ActionButton
+          disabled={pending !== null}
+          variant="ghost"
+          onClick={() => void decide('deny')}
+        >
+          Do not trust
+        </ActionButton>
+      </div>
+    </div>
+  )
+}
+
+function ManageTab({
+  items,
+  cwd,
+  onItems,
+  onRefresh,
+}: {
+  items: GlobalExtension[]
+  cwd: string
+  onItems: (items: GlobalExtension[]) => void
+  onRefresh: () => Promise<void>
+}) {
+  const [scope, setScope] = useState<ExtensionScopeFilter>('effective')
+  const [query, setQuery] = useState('')
+  const [status, setStatus] = useState('all')
+  const [capability, setCapability] = useState('all')
+  const [pendingId, setPendingId] = useState<string | null>(null)
+  const [reloading, setReloading] = useState(false)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  const filtered = useMemo(() => {
+    const normalized = query.trim().toLowerCase()
+    return items.filter((extension) => {
+      if (scope !== 'effective' && extension.scope !== scope) return false
+      if (status === 'enabled' && !extension.enabled) return false
+      if (status === 'disabled' && extension.enabled) return false
+      if (
+        status !== 'all' &&
+        status !== 'enabled' &&
+        status !== 'disabled' &&
+        extension.status !== status
+      )
+        return false
+      if (capability !== 'all') {
+        if (capability === 'ui' && !extension.capabilities?.ui) return false
+        if (
+          capability !== 'ui' &&
+          !extension.capabilities?.[capability as 'tools' | 'commands' | 'hooks' | 'providers']
+            ?.length
+        ) {
+          return false
+        }
       }
-      setItems(body)
+      return (
+        !normalized ||
+        extension.name.toLowerCase().includes(normalized) ||
+        extension.source.toLowerCase().includes(normalized) ||
+        extension.path.toLowerCase().includes(normalized) ||
+        extension.package?.name?.toLowerCase().includes(normalized)
+      )
+    })
+  }, [capability, items, query, scope, status])
+
+  const selected = items.find((item) => item.id === selectedId)
+  const metrics = {
+    total: items.length,
+    enabled: items.filter((item) => item.enabled).length,
+    loaded: items.filter((item) => item.status === 'loaded').length,
+    errors: items.filter((item) => item.status === 'load-error').length,
+    trust: items.filter((item) => item.status === 'trust-required').length,
+  }
+
+  const toggle = async (extension: GlobalExtension) => {
+    setPendingId(extension.id)
+    try {
+      const next = await requestJson<GlobalExtension[]>(
+        `/api/extensions/${encodeURIComponent(extension.id)}/state`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ enabled: !extension.enabled, cwd }),
+        },
+      )
+      onItems(next)
       showToast({
         tone: 'success',
         message: `${extension.name} ${extension.enabled ? 'disabled' : 'enabled'}.`,
       })
     } catch (toggleError) {
-      const message = errorMessage(toggleError, 'Unable to update extension.')
-      showToast({ tone: 'error', message })
+      showToast({
+        tone: 'error',
+        message: errorMessage(toggleError, 'Unable to update extension.'),
+      })
     } finally {
-      setPendingSource(null)
+      setPendingId(null)
+    }
+  }
+
+  const reload = async (all = false) => {
+    if (all && !window.confirm('Reload running sessions too? Active runs will be aborted.')) return
+    setReloading(true)
+    try {
+      const results = await requestJson<Array<{ status: string }>>('/api/extensions/reload', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cwd, mode: all ? 'all' : 'idle-only', confirmRunning: all }),
+      })
+      const reloaded = results.filter((result) => result.status === 'reloaded').length
+      const skipped = results.filter((result) => result.status === 'skipped-running').length
+      showToast({
+        tone: 'success',
+        message: `${reloaded} session${reloaded === 1 ? '' : 's'} reloaded${skipped ? `; ${skipped} running session${skipped === 1 ? '' : 's'} skipped` : ''}.`,
+      })
+      await onRefresh()
+    } catch (reloadError) {
+      showToast({
+        tone: 'error',
+        message: errorMessage(reloadError, 'Unable to reload extensions.'),
+      })
+    } finally {
+      setReloading(false)
     }
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <PageHeader
-        title="Extensions"
-        subtitle="Executable Pi extensions loaded from global and project packages."
-      />
-      <div className="flex items-start gap-2.5 border-b border-warning/30 bg-warning/10 px-6 py-2.5">
-        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
-        <p className="text-[13px] text-foreground/80">
-          Extensions execute code inside the Pi agent runtime. Only enable sources you trust.
-        </p>
-      </div>
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-6 py-3">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-wrap items-center gap-2.5 border-b border-border px-4 py-3 sm:px-6">
         <TextInput
           value={query}
           onChange={setQuery}
-          placeholder="Filter extensions…"
-          icon={<Search className="size-3.5" />}
-          className="w-72"
+          placeholder="Search name, package, or path"
+          icon={<MagnifyingGlass size={14} />}
+          className="w-full sm:w-72"
         />
-        <BracketButton active={scope === 'global'} onClick={() => setScope('global')}>
-          Global
-        </BracketButton>
-        <BracketButton active={scope === 'project'} onClick={() => setScope('project')}>
-          Project
-        </BracketButton>
-        <span className="ml-auto font-mono text-xs text-muted-foreground">
-          {filtered.length} extensions
-        </span>
+        <div className="flex items-center gap-1">
+          {(['effective', 'global', 'project'] as const).map((value) => (
+            <BracketButton key={value} active={scope === value} onClick={() => setScope(value)}>
+              {value}
+            </BracketButton>
+          ))}
+        </div>
+        <Select value={status} onValueChange={(value) => value && setStatus(value)}>
+          <SelectTrigger className="h-8 w-auto min-w-32 border-border bg-panel px-2 font-mono text-[11px]">
+            <SelectValue>{status === 'all' ? 'All status' : status}</SelectValue>
+          </SelectTrigger>
+          <SelectContent alignItemWithTrigger={false} className="w-max min-w-(--anchor-width)">
+            {['all', 'loaded', 'enabled', 'disabled', 'load-error', 'trust-required'].map(
+              (value) => (
+                <SelectItem key={value} value={value}>
+                  {value === 'all' ? 'All status' : value}
+                </SelectItem>
+              ),
+            )}
+          </SelectContent>
+        </Select>
+        <Select value={capability} onValueChange={(value) => value && setCapability(value)}>
+          <SelectTrigger className="h-8 w-auto min-w-36 border-border bg-panel px-2 font-mono text-[11px]">
+            <SelectValue>{capability === 'all' ? 'All capabilities' : capability}</SelectValue>
+          </SelectTrigger>
+          <SelectContent alignItemWithTrigger={false} className="w-max min-w-(--anchor-width)">
+            {['all', 'tools', 'commands', 'hooks', 'providers', 'ui'].map((value) => (
+              <SelectItem key={value} value={value}>
+                {value === 'all' ? 'All capabilities' : value}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="ml-auto flex gap-2">
+          <ActionButton disabled={reloading} onClick={() => void reload(false)}>
+            <ArrowsClockwise size={14} className={cn(reloading && 'animate-spin')} />
+            Reload idle
+          </ActionButton>
+          <ActionButton disabled={reloading} variant="ghost" onClick={() => void reload(true)}>
+            Reload all
+          </ActionButton>
+        </div>
       </div>
-      <div className="scrollbar-thin flex-1 overflow-y-auto p-6">
-        {filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-24 text-center">
-            <Puzzle className="size-7 text-muted-foreground/50" />
-            <div>
-              <h2 className="font-serif text-xl text-foreground italic">No extensions found</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Install a Pi package containing extensions or switch the scope filter.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="grid gap-4 lg:grid-cols-2">
-            {filtered.map((extension) => (
-              <Panel key={extension.id} className="flex flex-col">
-                <div className="flex items-start justify-between gap-3 border-b border-border bg-panel p-4">
+
+      <div className="grid grid-cols-2 divide-x divide-border border-b border-border sm:grid-cols-5">
+        <Metric label="Total" value={metrics.total} />
+        <Metric label="Enabled" value={metrics.enabled} />
+        <Metric label="Loaded" value={metrics.loaded} />
+        <Metric
+          label="Errors"
+          value={metrics.errors}
+          tone={metrics.errors ? 'danger' : undefined}
+        />
+        <Metric
+          label="Trust required"
+          value={metrics.trust}
+          tone={metrics.trust ? 'warning' : undefined}
+        />
+      </div>
+
+      <div className="grid min-h-0 flex-1 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="scrollbar-thin min-h-0 overflow-y-auto p-4 sm:p-6">
+          {filtered.length === 0 ? (
+            <EmptyState
+              icon={<PuzzlePiece size={28} />}
+              title="No extensions match"
+              description="Change the workspace or filters, or create a local TypeScript extension in Develop."
+            />
+          ) : (
+            <div className="divide-y divide-border border-y border-border">
+              {filtered.map((extension) => (
+                <button
+                  key={extension.id}
+                  type="button"
+                  onClick={() => setSelectedId(extension.id)}
+                  className={cn(
+                    'grid w-full gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/70 active:translate-y-px sm:grid-cols-[minmax(0,1fr)_auto_auto]',
+                    selectedId === extension.id && 'bg-muted',
+                  )}
+                >
                   <div className="flex min-w-0 items-start gap-3">
-                    <div className="flex size-9 shrink-0 items-center justify-center border border-border bg-card">
-                      <Puzzle className="size-4 text-accent" />
-                    </div>
+                    <span className="flex size-9 shrink-0 items-center justify-center border border-border bg-card text-accent">
+                      <PuzzlePiece size={16} />
+                    </span>
                     <div className="min-w-0">
-                      <p className="truncate font-mono text-sm text-foreground">{extension.name}</p>
-                      <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
-                        {extension.source}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="truncate font-mono text-sm text-foreground">
+                          {extension.name}
+                        </span>
+                        <StatusTag extension={extension} />
+                      </div>
+                      <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
+                        {extension.package?.name ?? extension.source}
+                        {extension.package?.version ? ` · ${extension.package.version}` : ''}
+                      </p>
+                      <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground/75">
+                        {extension.relativePath ?? extension.path}
                       </p>
                     </div>
                   </div>
-                  <Toggle
-                    checked={extension.enabled}
-                    onChange={() => void toggle(extension)}
-                    disabled={!extension.packageManaged || pendingSource === extension.source}
-                  />
-                </div>
-                <div className="flex-1 space-y-3 p-4">
-                  <div>
-                    <Label>Path</Label>
-                    <p className="mt-1 font-mono text-[11px] break-all text-muted-foreground">
-                      {extension.path}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    <Tag tone={extension.enabled ? 'success' : 'outline'}>
-                      {extension.enabled ? 'enabled' : 'disabled'}
-                    </Tag>
+                  <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
                     <Tag tone="outline">{extension.scope}</Tag>
-                    <Tag tone="outline">{extension.packageManaged ? 'package' : 'local'}</Tag>
-                    {pendingSource === extension.source && <Tag tone="warning">saving</Tag>}
+                    <Tag tone="outline">
+                      {extension.packageManaged ? 'package' : extension.source}
+                    </Tag>
+                    {extension.capabilities?.tools.length ? (
+                      <Tag>{extension.capabilities.tools.length} tools</Tag>
+                    ) : null}
+                    {extension.capabilities?.commands.length ? (
+                      <Tag>{extension.capabilities.commands.length} commands</Tag>
+                    ) : null}
                   </div>
-                </div>
-              </Panel>
-            ))}
+                  <div className="flex items-center justify-between gap-3 sm:justify-end">
+                    <Toggle
+                      checked={extension.enabled}
+                      onChange={() => void toggle(extension)}
+                      disabled={
+                        !extension.canToggle ||
+                        pendingId === extension.id ||
+                        extension.status === 'trust-required'
+                      }
+                    />
+                    <CaretRight size={14} className="text-muted-foreground" />
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="hidden min-h-0 border-l border-border bg-panel xl:block">
+          {selected ? (
+            <ExtensionDetails extension={selected} cwd={cwd} onClose={() => setSelectedId(null)} />
+          ) : (
+            <EmptyState
+              icon={<Code size={24} />}
+              title="Select an extension"
+              description="Inspect capabilities, runtime sessions, diagnostics, and source."
+              compact
+            />
+          )}
+        </div>
+      </div>
+
+      {selected && (
+        <div
+          className="fixed inset-0 bg-foreground/15 xl:hidden"
+          onClick={() => setSelectedId(null)}
+        >
+          <div
+            className="absolute inset-y-0 right-0 w-full max-w-md border-l border-border bg-panel shadow-[-20px_0_50px_rgba(50,45,35,0.12)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <ExtensionDetails extension={selected} cwd={cwd} onClose={() => setSelectedId(null)} />
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Metric({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: number
+  tone?: 'danger' | 'warning'
+}) {
+  return (
+    <div className="px-4 py-3 sm:px-6">
+      <Label>{label}</Label>
+      <p
+        className={cn(
+          'mt-1 font-mono text-xl text-foreground',
+          tone === 'danger' && 'text-destructive',
+          tone === 'warning' && 'text-warning',
+        )}
+      >
+        {value}
+      </p>
+    </div>
+  )
+}
+
+function StatusTag({ extension }: { extension: GlobalExtension }) {
+  const tone =
+    extension.status === 'loaded'
+      ? 'success'
+      : extension.status === 'load-error'
+        ? 'danger'
+        : extension.status === 'trust-required'
+          ? 'warning'
+          : 'outline'
+  return <Tag tone={tone}>{extension.status ?? (extension.enabled ? 'enabled' : 'disabled')}</Tag>
+}
+
+function ExtensionDetails({
+  extension,
+  cwd,
+  onClose,
+}: {
+  extension: GlobalExtension
+  cwd: string
+  onClose: () => void
+}) {
+  const [source, setSource] = useState<string | null>(null)
+  const [diagnostics, setDiagnostics] = useState<ExtensionDiagnostic[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    Promise.all([
+      requestJson<{ content: string }>(
+        queryUrl(`/api/extensions/${encodeURIComponent(extension.id)}/source`, { cwd }),
+      ).catch(() => null),
+      requestJson<ExtensionDiagnostic[]>(
+        queryUrl(`/api/extensions/${encodeURIComponent(extension.id)}/diagnostics`, { cwd }),
+      ).catch(() => []),
+    ]).then(([sourceResult, diagnosticResult]) => {
+      if (!active) return
+      setSource(sourceResult?.content ?? null)
+      setDiagnostics(diagnosticResult)
+      setLoading(false)
+    })
+    return () => {
+      active = false
+    }
+  }, [cwd, extension.id])
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex items-start gap-3 border-b border-border px-4 py-4">
+        <span className="flex size-9 shrink-0 items-center justify-center border border-border bg-card text-accent">
+          <PuzzlePiece size={17} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-mono text-sm">{extension.name}</p>
+          <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
+            {extension.source}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          aria-label="Close extension details"
+        >
+          <X size={16} />
+        </button>
+      </div>
+      <div className="scrollbar-thin min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
+        <section className="space-y-2">
+          <Label>Overview</Label>
+          <DetailRow label="Status">
+            <StatusTag extension={extension} />
+          </DetailRow>
+          <DetailRow label="Scope">
+            <Tag tone="outline">{extension.scope}</Tag>
+          </DetailRow>
+          <DetailRow label="Origin">
+            <span>{extension.origin ?? 'unknown'}</span>
+          </DetailRow>
+          <DetailRow label="Compatibility">
+            <span>{extension.compatibility ?? 'web'}</span>
+          </DetailRow>
+          <DetailRow label="Sessions">
+            <span>{extension.runtime?.sessionIds.length ?? 0}</span>
+          </DetailRow>
+          <div className="border-t border-border pt-2">
+            <Label>Path</Label>
+            <p className="mt-1 font-mono text-[10px] break-all text-muted-foreground">
+              {extension.path}
+            </p>
+          </div>
+        </section>
+        <section className="space-y-2 border-t border-border pt-4">
+          <Label>Capabilities</Label>
+          <CapabilityList label="Tools" values={extension.capabilities?.tools ?? []} />
+          <CapabilityList label="Commands" values={extension.capabilities?.commands ?? []} />
+          <CapabilityList label="Flags" values={extension.capabilities?.flags ?? []} />
+          <CapabilityList label="Hooks" values={extension.capabilities?.hooks ?? []} />
+        </section>
+        <section className="space-y-2 border-t border-border pt-4">
+          <div className="flex items-center justify-between">
+            <Label>Diagnostics</Label>
+            <Tag>{diagnostics.length}</Tag>
+          </div>
+          {diagnostics.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No runtime errors recorded for active sessions.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {diagnostics.map((diagnostic) => (
+                <div
+                  key={diagnostic.id}
+                  className="border-l-2 border-destructive bg-destructive/5 px-3 py-2"
+                >
+                  <p className="font-mono text-[10px] text-destructive">
+                    {diagnostic.event} · {diagnostic.sessionId}
+                  </p>
+                  <p className="mt-1 text-xs text-foreground">{diagnostic.message}</p>
+                  {diagnostic.stack && (
+                    <pre className="mt-2 overflow-auto font-mono text-[9px] whitespace-pre-wrap text-muted-foreground">
+                      {diagnostic.stack}
+                    </pre>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+        <section className="space-y-2 border-t border-border pt-4">
+          <Label>Source preview</Label>
+          {loading ? (
+            <div className="h-32 animate-pulse bg-muted" />
+          ) : source ? (
+            <pre className="max-h-80 overflow-auto border border-border bg-card p-3 font-mono text-[10px] leading-relaxed text-foreground">
+              {source}
+            </pre>
+          ) : (
+            <p className="text-xs text-muted-foreground">Source preview is unavailable.</p>
+          )}
+        </section>
+      </div>
+    </div>
+  )
+}
+
+function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-border/70 py-1.5 text-xs last:border-0">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="min-w-0 text-right font-mono text-[10px]">{children}</span>
+    </div>
+  )
+}
+
+function CapabilityList({ label, values }: { label: string; values: string[] }) {
+  return (
+    <div className="grid grid-cols-[80px_minmax(0,1fr)] gap-2 border-b border-border/70 py-1.5 last:border-0">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <div className="flex flex-wrap justify-end gap-1">
+        {values.length ? (
+          values.map((value) => <Tag key={value}>{value}</Tag>)
+        ) : (
+          <span className="font-mono text-[10px] text-muted-foreground">none</span>
         )}
       </div>
+    </div>
+  )
+}
+
+function DevelopTab({
+  items,
+  cwd,
+  trusted,
+  initialExtensionId,
+  onRefresh,
+  onLocation,
+}: {
+  items: GlobalExtension[]
+  cwd: string
+  trusted: boolean
+  initialExtensionId?: string
+  onRefresh: () => Promise<void>
+  onLocation: (extensionId?: string) => void
+}) {
+  const localExtensions = useMemo(
+    () => items.filter((item) => !item.packageManaged && item.origin === 'top-level'),
+    [items],
+  )
+  const [extensionId, setExtensionId] = useState<string | undefined>(
+    initialExtensionId && localExtensions.some((item) => item.id === initialExtensionId)
+      ? initialExtensionId
+      : localExtensions[0]?.id,
+  )
+  const [files, setFiles] = useState<ExtensionFile[]>([])
+  const [activeFile, setActiveFile] = useState<string | undefined>()
+  const [content, setContent] = useState('')
+  const [savedContent, setSavedContent] = useState('')
+  const [validation, setValidation] = useState<ValidationResult | null>(null)
+  const [loadingFiles, setLoadingFiles] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [mobilePane, setMobilePane] = useState<'files' | 'editor' | 'inspector'>('editor')
+
+  const selected = localExtensions.find((item) => item.id === extensionId)
+  const dirty = content !== savedContent
+
+  const loadFiles = useCallback(
+    async (id: string) => {
+      setLoadingFiles(true)
+      setValidation(null)
+      try {
+        const nextFiles = await requestJson<ExtensionFile[]>(
+          queryUrl(`/api/extensions/${encodeURIComponent(id)}/files`, { cwd }),
+        )
+        setFiles(nextFiles)
+        const first =
+          nextFiles.find((file) => file.type === 'file' && /index\.[cm]?[jt]s$/.test(file.path)) ??
+          nextFiles.find((file) => file.type === 'file')
+        setActiveFile(first?.path)
+      } catch (fileError) {
+        showToast({
+          tone: 'error',
+          message: errorMessage(fileError, 'Unable to load extension files.'),
+        })
+        setFiles([])
+        setActiveFile(undefined)
+      } finally {
+        setLoadingFiles(false)
+      }
+    },
+    [cwd],
+  )
+
+  useEffect(() => {
+    if (!extensionId) {
+      setFiles([])
+      setActiveFile(undefined)
+      return
+    }
+    void loadFiles(extensionId)
+  }, [extensionId, loadFiles])
+
+  useEffect(() => {
+    if (!extensionId || !activeFile) {
+      setContent('')
+      setSavedContent('')
+      return
+    }
+    let active = true
+    requestJson<{ content: string }>(
+      queryUrl(`/api/extensions/${encodeURIComponent(extensionId)}/files/content`, {
+        cwd,
+        path: activeFile,
+      }),
+    )
+      .then((result) => {
+        if (!active) return
+        setContent(result.content)
+        setSavedContent(result.content)
+      })
+      .catch((fileError) => {
+        if (active)
+          showToast({
+            tone: 'error',
+            message: errorMessage(fileError, 'Unable to open extension file.'),
+          })
+      })
+    return () => {
+      active = false
+    }
+  }, [activeFile, cwd, extensionId])
+
+  const selectExtension = (id: string) => {
+    if (dirty && !window.confirm('Discard unsaved changes and switch extensions?')) return
+    setExtensionId(id)
+    onLocation(id)
+  }
+
+  const selectFile = (path: string) => {
+    if (dirty && !window.confirm('Discard unsaved changes and open another file?')) return
+    setActiveFile(path)
+    setMobilePane('editor')
+  }
+
+  const save = async () => {
+    if (!extensionId || !activeFile) return false
+    setSaving(true)
+    try {
+      await requestJson(
+        `/api/extensions/${encodeURIComponent(extensionId)}/files/content?cwd=${encodeURIComponent(cwd)}`,
+        {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ path: activeFile, content }),
+        },
+      )
+      setSavedContent(content)
+      showToast({ tone: 'success', message: `${activeFile} saved.` })
+      return true
+    } catch (saveError) {
+      showToast({
+        tone: 'error',
+        message: errorMessage(saveError, 'Unable to save extension file.'),
+      })
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const validate = async () => {
+    if (!extensionId) return null
+    try {
+      const result = await requestJson<ValidationResult>(
+        queryUrl(`/api/extensions/${encodeURIComponent(extensionId)}/validate`, { cwd }),
+        { method: 'POST' },
+      )
+      setValidation(result)
+      setMobilePane('inspector')
+      showToast({
+        tone: result.valid ? 'success' : 'error',
+        message: result.valid
+          ? 'Extension validation passed.'
+          : `${result.diagnostics.length} validation issue${result.diagnostics.length === 1 ? '' : 's'} found.`,
+      })
+      return result
+    } catch (validationError) {
+      showToast({
+        tone: 'error',
+        message: errorMessage(validationError, 'Unable to validate extension.'),
+      })
+      return null
+    }
+  }
+
+  const saveAndReload = async () => {
+    if (!(await save())) return
+    const result = await validate()
+    if (!result?.valid) return
+    try {
+      const reloadResults = await requestJson<
+        Array<{ status: 'reloaded' | 'skipped-running' | 'failed'; error?: string }>
+      >('/api/extensions/reload', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cwd, mode: 'idle-only' }),
+      })
+      await onRefresh()
+      const failures = reloadResults.filter((item) => item.status === 'failed')
+      const skipped = reloadResults.filter((item) => item.status === 'skipped-running')
+      if (failures.length > 0) {
+        throw new Error(
+          failures
+            .map((item) => item.error)
+            .filter(Boolean)
+            .join('; ') || 'Extension reload failed.',
+        )
+      }
+      showToast({
+        tone: 'success',
+        message: skipped.length
+          ? `Saved. ${skipped.length} running session${skipped.length === 1 ? '' : 's'} will use it on the next idle reload.`
+          : 'Saved and reloaded in idle sessions.',
+      })
+    } catch (reloadError) {
+      showToast({ tone: 'error', message: errorMessage(reloadError, 'Saved, but reload failed.') })
+    }
+  }
+
+  const deleteExtension = async () => {
+    if (!extensionId || !selected) return
+    if (!window.confirm(`Delete ${selected.name}? Only Pi Studio managed folders can be removed.`))
+      return
+    try {
+      await requestJson(queryUrl(`/api/extensions/${encodeURIComponent(extensionId)}`, { cwd }), {
+        method: 'DELETE',
+      })
+      setExtensionId(undefined)
+      onLocation(undefined)
+      await onRefresh()
+      showToast({ tone: 'success', message: `${selected.name} deleted.` })
+    } catch (deleteError) {
+      showToast({
+        tone: 'error',
+        message: errorMessage(deleteError, 'Unable to delete extension.'),
+      })
+    }
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-wrap items-center gap-2.5 border-b border-border px-4 py-3 sm:px-6">
+        <Select
+          value={extensionId ?? null}
+          onValueChange={(value) => value && selectExtension(value)}
+        >
+          <SelectTrigger className="h-8 w-auto max-w-[65vw] min-w-56 border-border bg-panel px-2 font-mono text-xs">
+            <SelectValue>{selected?.name ?? 'Select local extension'}</SelectValue>
+          </SelectTrigger>
+          <SelectContent
+            alignItemWithTrigger={false}
+            className="w-max max-w-[calc(100vw-2rem)] min-w-(--anchor-width)"
+          >
+            {localExtensions.map((extension) => (
+              <SelectItem key={extension.id} value={extension.id}>
+                <span className="flex items-center gap-2">
+                  <FileTs size={14} />
+                  {extension.name}
+                  <span className="text-muted-foreground">· {extension.scope}</span>
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <ActionButton variant="accent" onClick={() => setCreateOpen(true)}>
+          <Plus size={14} /> New extension
+        </ActionButton>
+        {selected && <Tag tone="outline">{selected.scope}</Tag>}
+        {dirty && <Tag tone="warning">unsaved</Tag>}
+        <div className="ml-auto flex flex-wrap gap-2">
+          <ActionButton disabled={!activeFile || saving || !dirty} onClick={() => void save()}>
+            <FloppyDisk size={14} /> Save
+          </ActionButton>
+          <ActionButton disabled={!extensionId} onClick={() => void validate()}>
+            <CheckCircle size={14} /> Validate
+          </ActionButton>
+          <ActionButton
+            disabled={!extensionId || saving}
+            variant="accent"
+            onClick={() => void saveAndReload()}
+          >
+            <ArrowsClockwise size={14} /> Save and reload
+          </ActionButton>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 border-b border-border md:hidden">
+        {(['files', 'editor', 'inspector'] as const).map((pane) => (
+          <button
+            key={pane}
+            type="button"
+            onClick={() => setMobilePane(pane)}
+            className={cn(
+              'px-3 py-2 font-mono text-[10px] uppercase',
+              mobilePane === pane
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-panel text-muted-foreground',
+            )}
+          >
+            {pane}
+          </button>
+        ))}
+      </div>
+
+      {!selected ? (
+        <EmptyState
+          icon={<BracketsCurly size={30} />}
+          title="Create a TypeScript extension"
+          description="Start from a template, edit it with Pi API types, validate without executing, then reload an idle session."
+          action={
+            <ActionButton variant="accent" onClick={() => setCreateOpen(true)}>
+              <Plus size={14} /> New extension
+            </ActionButton>
+          }
+        />
+      ) : (
+        <div className="grid min-h-0 flex-1 md:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)_310px]">
+          <aside
+            className={cn(
+              'min-h-0 border-r border-border bg-panel',
+              mobilePane !== 'files' && 'hidden md:block',
+            )}
+          >
+            <PanelHeader>
+              <Label>Files</Label>
+              <Tag>{files.filter((file) => file.type === 'file').length}</Tag>
+            </PanelHeader>
+            <div className="scrollbar-thin h-[calc(100%-41px)] overflow-y-auto py-2">
+              {loadingFiles ? (
+                <div className="space-y-2 px-3">
+                  {[1, 2, 3].map((value) => (
+                    <div key={value} className="h-7 animate-pulse bg-muted" />
+                  ))}
+                </div>
+              ) : files.length ? (
+                files.map((file) => (
+                  <button
+                    key={file.path}
+                    type="button"
+                    disabled={file.type === 'directory'}
+                    onClick={() => file.type === 'file' && selectFile(file.path)}
+                    className={cn(
+                      'flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-[11px] transition-colors',
+                      file.type === 'file' ? 'hover:bg-muted' : 'text-muted-foreground',
+                      activeFile === file.path && 'bg-muted text-foreground',
+                    )}
+                    style={{
+                      paddingLeft: `${12 + Math.max(0, file.path.split('/').length - 1) * 12}px`,
+                    }}
+                  >
+                    {file.type === 'directory' ? (
+                      <Folder size={14} />
+                    ) : /\.[cm]?tsx?$/.test(file.path) ? (
+                      <FileTs size={14} className="text-accent" />
+                    ) : (
+                      <File size={14} />
+                    )}
+                    <span className="truncate">{file.path.split('/').at(-1)}</span>
+                  </button>
+                ))
+              ) : (
+                <p className="px-3 py-4 text-xs text-muted-foreground">No editable files found.</p>
+              )}
+            </div>
+          </aside>
+
+          <main
+            className={cn('min-h-0 min-w-0 bg-card', mobilePane !== 'editor' && 'hidden md:block')}
+          >
+            <div className="flex h-10 items-center justify-between border-b border-border bg-panel px-3">
+              <span className="truncate font-mono text-[11px] text-muted-foreground">
+                {activeFile ?? 'No file selected'}
+              </span>
+              {dirty && <span className="font-mono text-[10px] text-warning">modified</span>}
+            </div>
+            <div className="h-[calc(100%-40px)] min-h-80">
+              {activeFile ? (
+                <ExtensionsEditor path={activeFile} value={content} onChange={setContent} />
+              ) : (
+                <EmptyState
+                  icon={<FileTs size={26} />}
+                  title="Select a file"
+                  description="Choose a source file from the tree."
+                  compact
+                />
+              )}
+            </div>
+          </main>
+
+          <aside
+            className={cn(
+              'min-h-0 border-l border-border bg-panel',
+              mobilePane !== 'inspector' && 'hidden xl:block',
+            )}
+          >
+            <Inspector validation={validation} />
+          </aside>
+          <div className="hidden border-t border-border bg-panel p-4 md:block xl:hidden">
+            <Inspector validation={validation} inline />
+          </div>
+        </div>
+      )}
+
+      {selected && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-border bg-panel px-4 py-2.5 sm:px-6">
+          <span className="font-mono text-[10px] text-muted-foreground">
+            Extensions execute with full Node.js permissions.
+          </span>
+          <ActionButton
+            className="ml-auto"
+            variant="ghost"
+            onClick={() => window.location.assign('/chat')}
+          >
+            <TerminalWindow size={14} /> Open test session
+          </ActionButton>
+          <ActionButton
+            variant="danger"
+            disabled={!trusted && selected.scope === 'project'}
+            onClick={() => void deleteExtension()}
+          >
+            <Trash size={14} /> Delete
+          </ActionButton>
+        </div>
+      )}
+
+      {createOpen && (
+        <CreateExtensionModal
+          cwd={cwd}
+          trusted={trusted}
+          onClose={() => setCreateOpen(false)}
+          onCreated={async (extension) => {
+            setCreateOpen(false)
+            await onRefresh()
+            setExtensionId(extension.id)
+            onLocation(extension.id)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function Inspector({
+  validation,
+  inline,
+}: {
+  validation: ValidationResult | null
+  inline?: boolean
+}) {
+  if (!validation) {
+    return (
+      <div className={cn('flex h-full flex-col', inline && 'h-auto')}>
+        {!inline && (
+          <PanelHeader>
+            <Label>Inspector</Label>
+          </PanelHeader>
+        )}
+        <EmptyState
+          icon={<CheckCircle size={24} />}
+          title="Not validated"
+          description="Save your files, then run static validation. No extension code is executed."
+          compact
+        />
+      </div>
+    )
+  }
+  return (
+    <div className={cn('flex h-full min-h-0 flex-col', inline && 'h-auto')}>
+      {!inline && (
+        <PanelHeader>
+          <Label>Inspector</Label>
+          <Tag tone={validation.valid ? 'success' : 'danger'}>
+            {validation.valid ? 'passed' : 'failed'}
+          </Tag>
+        </PanelHeader>
+      )}
+      <div
+        className={cn(
+          'scrollbar-thin min-h-0 flex-1 space-y-4 overflow-y-auto p-4',
+          inline && 'grid grid-cols-2 gap-6 space-y-0 p-0',
+        )}
+      >
+        <section>
+          <div className="flex items-center gap-2">
+            {validation.valid ? (
+              <CheckCircle size={18} weight="fill" className="text-success" />
+            ) : (
+              <XCircle size={18} weight="fill" className="text-destructive" />
+            )}
+            <p className="font-mono text-xs">
+              {validation.valid ? 'Validation passed' : 'Validation failed'}
+            </p>
+          </div>
+          <p className="mt-1 font-mono text-[9px] text-muted-foreground">
+            {new Date(validation.checkedAt).toLocaleString()}
+          </p>
+          <div className="mt-3 space-y-2">
+            {validation.diagnostics.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No static diagnostics.</p>
+            ) : (
+              validation.diagnostics.map((diagnostic, index) => (
+                <div
+                  key={`${diagnostic.code}:${index}`}
+                  className={cn(
+                    'border-l-2 px-3 py-2',
+                    diagnostic.severity === 'error'
+                      ? 'border-destructive bg-destructive/5'
+                      : 'border-warning bg-warning/5',
+                  )}
+                >
+                  <p className="font-mono text-[9px] text-muted-foreground">
+                    {diagnostic.code}
+                    {diagnostic.line ? ` · ${diagnostic.line}:${diagnostic.column ?? 1}` : ''}
+                  </p>
+                  <p className="mt-1 text-xs text-foreground">{diagnostic.message}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+        <section className="border-t border-border pt-4">
+          <Label>Detected capabilities</Label>
+          <div className="mt-2 space-y-2">
+            <CapabilityList label="Tools" values={validation.capabilities.tools} />
+            <CapabilityList label="Commands" values={validation.capabilities.commands} />
+            <CapabilityList label="Hooks" values={validation.capabilities.hooks} />
+            <CapabilityList label="Providers" values={validation.capabilities.providers} />
+            <CapabilityList label="Web UI" values={validation.capabilities.ui} />
+          </div>
+        </section>
+      </div>
+    </div>
+  )
+}
+
+function CreateExtensionModal({
+  cwd,
+  trusted,
+  onClose,
+  onCreated,
+}: {
+  cwd: string
+  trusted: boolean
+  onClose: () => void
+  onCreated: (extension: GlobalExtension) => Promise<void>
+}) {
+  const [name, setName] = useState('')
+  const [scope, setScope] = useState<'global' | 'project'>('project')
+  const [template, setTemplate] = useState<ExtensionTemplate>('tool')
+  const [creating, setCreating] = useState(false)
+  const create = async () => {
+    setCreating(true)
+    try {
+      const extension = await requestJson<GlobalExtension>('/api/extensions/create', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name, scope, cwd, template }),
+      })
+      await onCreated(extension)
+      showToast({ tone: 'success', message: `${extension.name} created.` })
+    } catch (createError) {
+      showToast({
+        tone: 'error',
+        message: errorMessage(createError, 'Unable to create extension.'),
+      })
+    } finally {
+      setCreating(false)
+    }
+  }
+  return (
+    <div
+      className="fixed inset-0 flex items-center justify-center bg-foreground/20 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-2xl border border-border bg-card shadow-[0_24px_70px_rgba(45,40,30,0.2)]"
+        onClick={(event: React.MouseEvent) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between border-b border-border px-5 py-4">
+          <div>
+            <h2 className="font-mono text-sm">Create TypeScript extension</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              A folder with index.ts and a Pi Studio ownership marker will be created.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 text-muted-foreground hover:bg-muted"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="grid gap-5 p-5 sm:grid-cols-[minmax(0,1fr)_220px]">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Name</Label>
+              <TextInput
+                value={name}
+                onChange={setName}
+                placeholder="review-gate"
+                className="w-full"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Lowercase letters, numbers, hyphens, and underscores.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Scope</Label>
+              <Select
+                value={scope}
+                onValueChange={(value) => value && setScope(value as 'global' | 'project')}
+              >
+                <SelectTrigger className="h-9 w-full border-border bg-panel font-mono text-xs">
+                  <SelectValue>{scope}</SelectValue>
+                </SelectTrigger>
+                <SelectContent alignItemWithTrigger={false} className="min-w-(--anchor-width)">
+                  <SelectItem value="project" disabled={!trusted}>
+                    Project · {trusted ? 'current workspace' : 'trust required'}
+                  </SelectItem>
+                  <SelectItem value="global">Global · all workspaces</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="border border-warning/30 bg-warning/8 p-3 text-xs text-muted-foreground">
+              <Warning size={16} className="mb-2 text-warning" />
+              Validate is static and does not execute code. Save and reload executes the extension
+              in selected idle sessions.
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Template</Label>
+            <div className="max-h-72 space-y-1 overflow-y-auto">
+              {templates.map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => setTemplate(item.value)}
+                  className={cn(
+                    'w-full border px-3 py-2 text-left transition-colors',
+                    template === item.value
+                      ? 'border-accent bg-accent/8'
+                      : 'border-border bg-card hover:bg-muted',
+                  )}
+                >
+                  <p className="font-mono text-[11px]">{item.label}</p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">{item.description}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-border bg-panel px-5 py-3">
+          <ActionButton onClick={onClose}>Cancel</ActionButton>
+          <ActionButton
+            variant="accent"
+            disabled={creating || !name.trim() || (scope === 'project' && !trusted)}
+            onClick={() => void create()}
+          >
+            <Plus size={14} />
+            {creating ? 'Creating' : 'Create extension'}
+          </ActionButton>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+  compact,
+}: {
+  icon: React.ReactNode
+  title: string
+  description: string
+  action?: React.ReactNode
+  compact?: boolean
+}) {
+  return (
+    <div
+      className={cn(
+        'flex h-full min-h-48 flex-col items-center justify-center px-6 text-center',
+        compact ? 'py-10' : 'py-20',
+      )}
+    >
+      <span className="text-muted-foreground/55">{icon}</span>
+      <h2 className="mt-3 font-mono text-sm text-foreground">{title}</h2>
+      <p className="mt-1.5 max-w-md text-xs leading-relaxed text-muted-foreground">{description}</p>
+      {action && <div className="mt-4">{action}</div>}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -33,6 +33,7 @@ import {
 import { Label, Tag, BracketButton, Panel, PanelHeader } from '@/components/pi-ui'
 import { MarkdownContent } from '@/components/markdown-content'
 import { WorkspaceExplorer } from '@/components/workspace-explorer'
+import { ExtensionUiHost } from '@/components/extension-ui-host'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Select,
@@ -108,6 +109,12 @@ type SlashCommandOption =
       argumentHint?: string
       prompt: GlobalPromptTemplate
     }
+  | {
+      kind: 'extension'
+      id: string
+      command: string
+      description: string
+    }
 
 export function ChatView({
   agents,
@@ -164,6 +171,9 @@ export function ChatView({
   const [branchMessages, setBranchMessages] = useState<ChatMessage[] | null>(null)
   const [branchPending, setBranchPending] = useState<'navigate' | 'fork' | null>(null)
   const [branchError, setBranchError] = useState<string | null>(null)
+  const [extensionCommands, setExtensionCommands] = useState<
+    Array<{ name: string; description?: string }>
+  >([])
   const eventSourceRef = useRef<EventSource | null>(null)
   const activeRunIdRef = useRef<string | null>(null)
   const reconcileTimerRef = useRef<number | null>(null)
@@ -201,6 +211,16 @@ export function ChatView({
       thinkingLevel: activeAgent?.defaultThinkingLevel ?? 'medium',
     },
   })
+  const applyExtensionEditorText = useCallback(
+    (text: string, mode: 'set' | 'append') => {
+      const current = form.getValues('message') ?? ''
+      form.setValue('message', mode === 'append' ? current + text : text, {
+        shouldDirty: true,
+      })
+      form.setFocus('message')
+    },
+    [form],
+  )
 
   const thinking = form.watch('thinkingLevel') ?? 'medium'
   const model = form.watch('modelId') ?? activeAgent?.defaultModelId ?? 'model'
@@ -212,6 +232,10 @@ export function ChatView({
     modelId: form.watch('modelId'),
     thinkingLevel: thinking,
   }
+  const extensionCommandMatch = message.trim().match(/^\/([^\s]+)(?:\s+(.*))?$/)
+  const selectedExtensionCommand = extensionCommands.find(
+    (command) => command.name === extensionCommandMatch?.[1],
+  )
 
   useEffect(() => {
     const contentHeight = resizeTextarea(composerTextareaRef.current)
@@ -243,6 +267,7 @@ export function ChatView({
   const isNewSessionCommand = composerValues.message.toLowerCase() === '/new-session'
   const canSend = Boolean(
     isNewSessionCommand ||
+    selectedExtensionCommand ||
     (selectedModelOption &&
       postApiSessionsIdRunsMutationRequestSchema.safeParse(composerValues).success),
   )
@@ -268,6 +293,46 @@ export function ChatView({
     const selected = new Set(activeAgent?.selectedPromptIds ?? [])
     return prompts.filter((prompt) => selected.has(prompt.id))
   }, [activeAgent?.selectedPromptIds, prompts])
+
+  useEffect(() => {
+    let active = true
+    let timer: number | undefined
+    const load = async () => {
+      if (!activeSession) return
+      try {
+        const response = await fetch(
+          `/api/sessions/${encodeURIComponent(activeSession.id)}/extensions`,
+          { cache: 'no-store' },
+        )
+        if (response.ok) {
+          const snapshot = (await response.json()) as {
+            extensions: Array<{
+              commands: Array<{ name: string; description?: string }>
+            }>
+          }
+          if (active) {
+            const commands = snapshot.extensions.flatMap((extension) => extension.commands)
+            setExtensionCommands(
+              commands.filter(
+                (command, index) =>
+                  commands.findIndex((candidate) => candidate.name === command.name) === index,
+              ),
+            )
+          }
+        } else if (active) {
+          setExtensionCommands([])
+        }
+      } catch {
+        if (active) setExtensionCommands([])
+      }
+      if (active) timer = window.setTimeout(load, 2500)
+    }
+    void load()
+    return () => {
+      active = false
+      if (timer) window.clearTimeout(timer)
+    }
+  }, [activeSession])
 
   const createNewSession = async () => {
     if (!activeAgent || creatingSession) return
@@ -359,8 +424,22 @@ export function ChatView({
           prompt,
         })),
     )
+    options.push(
+      ...extensionCommands
+        .filter(
+          (command) =>
+            command.name.toLowerCase().includes(slashQuery) ||
+            command.description?.toLowerCase().includes(slashQuery),
+        )
+        .map((command) => ({
+          kind: 'extension' as const,
+          id: command.name,
+          command: command.name,
+          description: command.description || 'Extension command',
+        })),
+    )
     return options.slice(0, 8)
-  }, [selectedPrompts, slashQuery])
+  }, [extensionCommands, selectedPrompts, slashQuery])
 
   useEffect(() => {
     setSlashSelection(0)
@@ -374,6 +453,11 @@ export function ChatView({
   const executeSlashCommand = (option: SlashCommandOption) => {
     if (option.kind === 'builtin') {
       void createNewSession()
+      return
+    }
+    if (option.kind === 'extension') {
+      form.setValue('message', `/${option.command} `, { shouldDirty: true })
+      form.setFocus('message')
       return
     }
     insertPromptCommand(option.prompt)
@@ -630,6 +714,42 @@ export function ChatView({
     if (!activeSession || !activeAgent) return
     if (values.message.trim().toLowerCase() === '/new-session') {
       await createNewSession()
+      return
+    }
+    const commandMatch = values.message.trim().match(/^\/([^\s]+)(?:\s+(.*))?$/)
+    const extensionCommand = extensionCommands.find((command) => command.name === commandMatch?.[1])
+    if (extensionCommand) {
+      try {
+        const response = await fetch(
+          `/api/sessions/${encodeURIComponent(activeSession.id)}/extensions/commands/${encodeURIComponent(extensionCommand.name)}`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ args: commandMatch?.[2] ?? '' }),
+          },
+        )
+        const result = (await response.json()) as { status: string; error?: string }
+        if (!response.ok || result.status !== 'completed') {
+          throw new Error(
+            result.error ??
+              (result.status === 'session-running'
+                ? 'Wait for the active run to finish before executing this command.'
+                : 'The extension command is unavailable.'),
+          )
+        }
+        form.setValue('message', '')
+        showToast({
+          tone: 'success',
+          title: `/${extensionCommand.name}`,
+          message: 'Extension command completed.',
+        })
+      } catch (commandError) {
+        showToast({
+          tone: 'error',
+          title: `/${extensionCommand.name}`,
+          message: errorMessage(commandError, 'Extension command failed.'),
+        })
+      }
       return
     }
     const payload = {
@@ -1183,6 +1303,10 @@ export function ChatView({
             className="pointer-events-none absolute inset-x-0 bottom-0 px-5 pb-4"
           >
             <div className="pointer-events-auto relative mx-auto max-w-3xl bg-background/95 px-2 pt-2 shadow-[0_-16px_32px_-28px_rgba(24,28,36,0.45)]">
+              <ExtensionUiHost
+                sessionId={activeSession.id}
+                onEditorText={applyExtensionEditorText}
+              />
               {slashCommandOptions.length > 0 && (
                 <div className="absolute inset-x-0 bottom-full mb-2 overflow-hidden border border-border-strong bg-card shadow-xl">
                   <div className="flex items-center justify-between border-b border-border bg-panel px-4 py-2.5">
@@ -1225,6 +1349,11 @@ export function ChatView({
                             {option.kind === 'builtin' && (
                               <Tag tone="outline" className="ml-auto shrink-0">
                                 built-in
+                              </Tag>
+                            )}
+                            {option.kind === 'extension' && (
+                              <Tag tone="accent" className="ml-auto shrink-0">
+                                extension
                               </Tag>
                             )}
                           </span>

@@ -4,6 +4,22 @@
 */
 
 
+export const postApiPrompts200SourceEnum = {
+    studio: "studio",
+    global: "global",
+    project: "project",
+    package: "package"
+} as const;
+
+export type PostApiPrompts200SourceEnumKey = (typeof postApiPrompts200SourceEnum)[keyof typeof postApiPrompts200SourceEnum];
+
+export const postApiPrompts200ScopeEnum = {
+    global: "global",
+    project: "project"
+} as const;
+
+export type PostApiPrompts200ScopeEnumKey = (typeof postApiPrompts200ScopeEnum)[keyof typeof postApiPrompts200ScopeEnum];
+
 /**
  * @description OK
 */
@@ -20,6 +36,9 @@ export type PostApiPrompts200 = {
      * @type string | undefined
     */
     description?: string;
+    /**
+     * @type string | undefined
+    */
     argumentHint?: string;
     /**
      * @type string
@@ -29,8 +48,14 @@ export type PostApiPrompts200 = {
      * @type string
     */
     path: string;
-    source: "studio" | "global" | "project" | "package";
-    scope: "global" | "project";
+    /**
+     * @type string
+    */
+    source: PostApiPrompts200SourceEnumKey;
+    /**
+     * @type string
+    */
+    scope: PostApiPrompts200ScopeEnumKey;
     /**
      * @type array
     */
@@ -59,6 +84,22 @@ export type PostApiPrompts400 = {
     error: string;
 };
 
+export const postApiPromptsMutationRequestSourceEnum = {
+    studio: "studio",
+    global: "global",
+    project: "project",
+    package: "package"
+} as const;
+
+export type PostApiPromptsMutationRequestSourceEnumKey = (typeof postApiPromptsMutationRequestSourceEnum)[keyof typeof postApiPromptsMutationRequestSourceEnum];
+
+export const postApiPromptsMutationRequestScopeEnum = {
+    global: "global",
+    project: "project"
+} as const;
+
+export type PostApiPromptsMutationRequestScopeEnumKey = (typeof postApiPromptsMutationRequestScopeEnum)[keyof typeof postApiPromptsMutationRequestScopeEnum];
+
 /**
  * @description OK
 */
@@ -76,6 +117,9 @@ export type PostApiPromptsMutationRequest = {
      * @type string | undefined
     */
     description?: string;
+    /**
+     * @type string | undefined
+    */
     argumentHint?: string;
     /**
      * @minLength 1
@@ -86,8 +130,16 @@ export type PostApiPromptsMutationRequest = {
      * @type string | undefined
     */
     path?: string;
-    source?: "studio" | "global" | "project" | "package";
-    scope?: "global" | "project";
+    /**
+     * @default "studio"
+     * @type string | undefined
+    */
+    source?: PostApiPromptsMutationRequestSourceEnumKey;
+    /**
+     * @default "global"
+     * @type string | undefined
+    */
+    scope?: PostApiPromptsMutationRequestScopeEnumKey;
     /**
      * @type array | undefined
     */
