@@ -110,6 +110,7 @@ type SlashCommandOption =
     }
 
 export function ChatView({
+  agents,
   activeAgent,
   sessions,
   activeSession,
@@ -120,6 +121,7 @@ export function ChatView({
   prompts,
   mcpConfigs,
 }: {
+  agents: AgentProfile[]
   activeAgent?: AgentProfile
   sessions: AgentSessionSummary[]
   activeSession?: AgentSessionSummary
@@ -315,6 +317,18 @@ export function ChatView({
     router.push(
       `/chat?agent=${encodeURIComponent(activeAgent.id)}&session=${encodeURIComponent(sessionId)}`,
     )
+  }
+
+  const switchAgent = (agentId: string) => {
+    if (
+      !activeAgent ||
+      agentId === activeAgent.id ||
+      streamPhase !== 'idle' ||
+      creatingSession ||
+      branchPending !== null
+    )
+      return
+    router.push(`/chat?agent=${encodeURIComponent(agentId)}`)
   }
 
   const slashQuery = message.match(/^\/([^\s]*)$/)?.[1]?.toLowerCase()
@@ -1013,8 +1027,33 @@ export function ChatView({
             <span className="flex size-7 items-center justify-center border border-border-strong bg-card">
               <Bot className="size-3.5 text-accent" />
             </span>
-            <div className="min-w-0">
-              <div className="truncate text-sm font-medium text-foreground">{activeAgent.name}</div>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <Select
+                value={activeAgent.id}
+                onValueChange={(value) => {
+                  if (value !== null) switchAgent(value)
+                }}
+                disabled={streamPhase !== 'idle' || creatingSession || branchPending !== null}
+              >
+                <SelectTrigger
+                  aria-label="Switch agent"
+                  size="sm"
+                  className="h-7 max-w-[30vw] border-border bg-panel px-2 text-xs text-foreground"
+                >
+                  <SelectValue>{activeAgent.name}</SelectValue>
+                </SelectTrigger>
+                <SelectContent
+                  align="start"
+                  alignItemWithTrigger={false}
+                  className="w-max max-w-[calc(100vw-2rem)] min-w-(--anchor-width) sm:max-w-sm"
+                >
+                  {agents.map((agent) => (
+                    <SelectItem key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Select
                 value={activeSession.id}
                 onValueChange={(value) => {
@@ -1025,7 +1064,7 @@ export function ChatView({
                 <SelectTrigger
                   aria-label="Switch session"
                   size="sm"
-                  className="h-5 max-w-[40vw] border-0 bg-transparent px-0 py-0 text-[11px] text-muted-foreground hover:text-foreground focus-visible:ring-0 sm:max-w-80"
+                  className="h-7 max-w-[40vw] border-border bg-panel px-2 text-[11px] text-muted-foreground hover:text-foreground sm:max-w-80"
                 >
                   <SelectValue>
                     {activeSession.name ?? activeSession.firstUserMessage ?? 'New conversation'}

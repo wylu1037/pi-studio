@@ -55,6 +55,7 @@ export default async function ChatPage({
   return (
     <ChatView
       key={`${activeAgent?.id ?? 'none'}:${activeSession?.id ?? 'none'}`}
+      agents={agents}
       activeAgent={activeAgent}
       sessions={sessions}
       activeSession={activeSession}
