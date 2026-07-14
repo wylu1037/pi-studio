@@ -489,13 +489,16 @@ export async function validateLocalExtension(id: string, cwd: string) {
   const rootNames = files.map((file) => join(workspace.root, file.path))
   const compilerOptions: ts.CompilerOptions = {
     allowJs: true,
+    allowImportingTsExtensions: true,
     checkJs: false,
     noEmit: true,
     strict: true,
     skipLibCheck: true,
     target: ts.ScriptTarget.ES2022,
-    module: ts.ModuleKind.NodeNext,
-    moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    // Pi loads extension source through jiti, so validation must not infer CommonJS
+    // from the extension folder's lack of a package.json.
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
     esModuleInterop: true,
     allowSyntheticDefaultImports: true,
   }

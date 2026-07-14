@@ -3,12 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { Puzzle as SidebarExtensionsIcon } from 'lucide-react'
 import {
   ArrowsClockwise,
-  BracketsCurly,
   CaretRight,
   CheckCircle,
-  Code,
   File,
   FileTs,
   FloppyDisk,
@@ -40,6 +39,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import type { GlobalExtension } from '@/lib/types'
 import { errorMessage, showToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
@@ -149,12 +149,26 @@ const ExtensionsEditor = dynamic(
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
-  const body = (await response.json()) as T | { error?: string }
+  const responseText = await response.text()
+  let body: unknown
+  if (responseText) {
+    try {
+      body = JSON.parse(responseText)
+    } catch {
+      body = undefined
+    }
+  }
   if (!response.ok) {
+    const error =
+      body && typeof body === 'object' && 'error' in body && typeof body.error === 'string'
+        ? body.error
+        : undefined
     throw new Error(
-      'error' in (body as object) ? (body as { error?: string }).error : response.statusText,
+      error || `Request failed (${response.status} ${response.statusText || 'Error'}).`,
     )
   }
+  if (!responseText) throw new Error('Server returned an empty response.')
+  if (body === undefined) throw new Error('Server returned an invalid JSON response.')
   return body as T
 }
 
@@ -364,7 +378,6 @@ function TrustBanner({ cwd, onTrusted }: { cwd: string; onTrusted: (state: Trust
             Project extensions can execute files, processes, and network requests. Review the path
             before loading them.
           </p>
-          <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">{cwd}</p>
         </div>
       </div>
       <div className="flex shrink-0 flex-wrap gap-2 sm:ml-auto">
@@ -408,6 +421,15 @@ function ManageTab({
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [reloading, setReloading] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!selectedId) return
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSelectedId(null)
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [selectedId])
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()
@@ -573,59 +595,71 @@ function ManageTab({
         />
       </div>
 
-      <div className="grid min-h-0 flex-1 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="scrollbar-thin min-h-0 overflow-y-auto p-4 sm:p-6">
-          {filtered.length === 0 ? (
-            <EmptyState
-              icon={<PuzzlePiece size={28} />}
-              title="No extensions match"
-              description="Change the workspace or filters, or create a local TypeScript extension in Develop."
-            />
-          ) : (
-            <div className="divide-y divide-border border-y border-border">
-              {filtered.map((extension) => (
-                <button
-                  key={extension.id}
-                  type="button"
-                  onClick={() => setSelectedId(extension.id)}
-                  className={cn(
-                    'grid w-full gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/70 active:translate-y-px sm:grid-cols-[minmax(0,1fr)_auto_auto]',
-                    selectedId === extension.id && 'bg-muted',
-                  )}
-                >
-                  <div className="flex min-w-0 items-start gap-3">
-                    <span className="flex size-9 shrink-0 items-center justify-center border border-border bg-card text-accent">
-                      <PuzzlePiece size={16} />
-                    </span>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="truncate font-mono text-sm text-foreground">
-                          {extension.name}
-                        </span>
-                        <StatusTag extension={extension} />
-                      </div>
-                      <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
-                        {extension.package?.name ?? extension.source}
-                        {extension.package?.version ? ` · ${extension.package.version}` : ''}
-                      </p>
-                      <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground/75">
-                        {extension.relativePath ?? extension.path}
-                      </p>
+      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+        {filtered.length === 0 ? (
+          <EmptyState
+            icon={<SidebarExtensionsIcon className="size-7" />}
+            title="No extensions match"
+            description="Change the workspace or filters, or create a local TypeScript extension in Develop."
+          />
+        ) : (
+          <div className="divide-y divide-border border-y border-border">
+            {filtered.map((extension) => (
+              <div
+                key={extension.id}
+                role="button"
+                tabIndex={0}
+                aria-label={`View ${extension.name} extension details`}
+                onClick={() => setSelectedId(extension.id)}
+                onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget) return
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    setSelectedId(extension.id)
+                  }
+                }}
+                className={cn(
+                  'grid w-full cursor-pointer gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/70 focus-visible:outline focus-visible:-outline-offset-2 focus-visible:outline-ring active:translate-y-px sm:grid-cols-[minmax(0,1fr)_auto_auto]',
+                  selectedId === extension.id && 'bg-muted',
+                )}
+              >
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center border border-border bg-card text-accent">
+                    <PuzzlePiece size={16} />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate font-mono text-sm text-foreground">
+                        {extension.name}
+                      </span>
+                      <StatusTag extension={extension} />
                     </div>
+                    <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
+                      {extension.package?.name ?? extension.source}
+                      {extension.package?.version ? ` · ${extension.package.version}` : ''}
+                    </p>
+                    <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground/75">
+                      {extension.relativePath ?? extension.path}
+                    </p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
-                    <Tag tone="outline">{extension.scope}</Tag>
-                    <Tag tone="outline">
-                      {extension.packageManaged ? 'package' : extension.source}
-                    </Tag>
-                    {extension.capabilities?.tools.length ? (
-                      <Tag>{extension.capabilities.tools.length} tools</Tag>
-                    ) : null}
-                    {extension.capabilities?.commands.length ? (
-                      <Tag>{extension.capabilities.commands.length} commands</Tag>
-                    ) : null}
-                  </div>
-                  <div className="flex items-center justify-between gap-3 sm:justify-end">
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
+                  <Tag tone="outline">{extension.scope}</Tag>
+                  <Tag tone="outline">
+                    {extension.packageManaged ? 'package' : extension.source}
+                  </Tag>
+                  {extension.capabilities?.tools.length ? (
+                    <Tag>{extension.capabilities.tools.length} tools</Tag>
+                  ) : null}
+                  {extension.capabilities?.commands.length ? (
+                    <Tag>{extension.capabilities.commands.length} commands</Tag>
+                  ) : null}
+                </div>
+                <div className="flex items-center justify-between gap-3 sm:justify-end">
+                  <span
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  >
                     <Toggle
                       checked={extension.enabled}
                       onChange={() => void toggle(extension)}
@@ -635,38 +669,31 @@ function ManageTab({
                         extension.status === 'trust-required'
                       }
                     />
-                    <CaretRight size={14} className="text-muted-foreground" />
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="hidden min-h-0 border-l border-border bg-panel xl:block">
-          {selected ? (
-            <ExtensionDetails extension={selected} cwd={cwd} onClose={() => setSelectedId(null)} />
-          ) : (
-            <EmptyState
-              icon={<Code size={24} />}
-              title="Select an extension"
-              description="Inspect capabilities, runtime sessions, diagnostics, and source."
-              compact
-            />
-          )}
-        </div>
+                  </span>
+                  <CaretRight size={14} className="text-muted-foreground" />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {selected && (
         <div
-          className="fixed inset-0 bg-foreground/15 xl:hidden"
-          onClick={() => setSelectedId(null)}
+          className="fixed inset-0 z-50 flex justify-end"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${selected.name} extension details`}
         >
-          <div
-            className="absolute inset-y-0 right-0 w-full max-w-md border-l border-border bg-panel shadow-[-20px_0_50px_rgba(50,45,35,0.12)]"
-            onClick={(event) => event.stopPropagation()}
-          >
+          <button
+            type="button"
+            aria-label="Close extension details"
+            onClick={() => setSelectedId(null)}
+            className="absolute inset-0 animate-in bg-foreground/20 backdrop-blur-[1px] duration-200 fade-in"
+          />
+          <aside className="relative flex h-full w-full max-w-xl animate-in flex-col border-l border-border bg-panel shadow-[-24px_0_64px_-36px_rgba(0,0,0,0.45)] duration-300 slide-in-from-right sm:w-[min(560px,94vw)]">
             <ExtensionDetails extension={selected} cwd={cwd} onClose={() => setSelectedId(null)} />
-          </div>
+          </aside>
         </div>
       )}
     </div>
@@ -783,9 +810,12 @@ function ExtensionDetails({
           <DetailRow label="Sessions">
             <span>{extension.runtime?.sessionIds.length ?? 0}</span>
           </DetailRow>
-          <div className="border-t border-border pt-2">
-            <Label>Path</Label>
-            <p className="mt-1 font-mono text-[10px] break-all text-muted-foreground">
+          <div className="flex items-center gap-3 border-border pt-2">
+            <Label className="shrink-0">Path</Label>
+            <p
+              title={extension.path}
+              className="min-w-0 flex-1 truncate text-right font-mono text-[10px] text-muted-foreground"
+            >
               {extension.path}
             </p>
           </div>
@@ -832,9 +862,11 @@ function ExtensionDetails({
           {loading ? (
             <div className="h-32 animate-pulse bg-muted" />
           ) : source ? (
-            <pre className="max-h-80 overflow-auto border border-border bg-card p-3 font-mono text-[10px] leading-relaxed text-foreground">
-              {source}
-            </pre>
+            <ScrollArea className="h-80 border border-border bg-card">
+              <pre className="p-3 pr-5 font-mono text-[10px] leading-relaxed wrap-break-word whitespace-pre-wrap text-foreground">
+                {source}
+              </pre>
+            </ScrollArea>
           ) : (
             <p className="text-xs text-muted-foreground">Source preview is unavailable.</p>
           )}
@@ -1155,7 +1187,7 @@ function DevelopTab({
 
       {!selected ? (
         <EmptyState
-          icon={<BracketsCurly size={30} />}
+          icon={<SidebarExtensionsIcon className="size-7" />}
           title="Create a TypeScript extension"
           description="Start from a template, edit it with Pi API types, validate without executing, then reload an idle session."
           action={
@@ -1396,7 +1428,7 @@ function CreateExtensionModal({
   onCreated: (extension: GlobalExtension) => Promise<void>
 }) {
   const [name, setName] = useState('')
-  const [scope, setScope] = useState<'global' | 'project'>('project')
+  const [scope, setScope] = useState<'global' | 'project'>('global')
   const [template, setTemplate] = useState<ExtensionTemplate>('tool')
   const [creating, setCreating] = useState(false)
   const create = async () => {
@@ -1481,7 +1513,7 @@ function CreateExtensionModal({
           </div>
           <div className="space-y-2">
             <Label>Template</Label>
-            <div className="max-h-72 space-y-1 overflow-y-auto">
+            <ScrollArea className="h-72" viewportClassName="pr-3" contentClassName="space-y-1">
               {templates.map((item) => (
                 <button
                   key={item.value}
@@ -1498,7 +1530,7 @@ function CreateExtensionModal({
                   <p className="mt-0.5 text-[10px] text-muted-foreground">{item.description}</p>
                 </button>
               ))}
-            </div>
+            </ScrollArea>
           </div>
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-border bg-panel px-5 py-3">
