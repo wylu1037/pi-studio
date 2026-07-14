@@ -10,12 +10,14 @@ import type {
   GlobalPackage,
   GlobalPromptTemplate,
   GlobalSkill,
+  StudioExtension,
   SessionTreeNode,
 } from '@/lib/types'
 import { ensureStoredPrompt, removeStoredPrompt, writeStoredPrompt } from '@/lib/prompts/store'
 import { db, sqlite } from './client'
 import {
   agentMcpConfigs,
+  agentExtensions,
   agentModelProviders,
   agentModels,
   agentPrompts,
@@ -36,6 +38,7 @@ import {
   sessions,
   sessionTreeNodes,
   skillTags,
+  studioExtensions,
 } from './schema'
 
 type Row = Record<string, unknown>
@@ -101,6 +104,7 @@ export function listAgents(): AgentProfile[] {
     defaultModelId: agent.defaultModelId ?? undefined,
     defaultThinkingLevel: agent.defaultThinkingLevel as AgentProfile['defaultThinkingLevel'],
     tags: tags('agent_tags', 'agent_id', agent.id),
+    selectedExtensionIds: ids('agent_extensions', 'agent_id', 'extension_id', agent.id),
     selectedSkillIds: ids('agent_skills', 'agent_id', 'skill_id', agent.id),
     selectedPromptIds: ids('agent_prompts', 'agent_id', 'prompt_id', agent.id),
     selectedMcpConfigIds: ids('agent_mcp_configs', 'agent_id', 'mcp_config_id', agent.id),
@@ -177,6 +181,7 @@ export function updateAgentResources(
   id: string,
   input: {
     selectedSkillIds?: string[]
+    selectedExtensionIds?: string[]
     selectedPromptIds?: string[]
     selectedMcpConfigIds?: string[]
     selectedProviderIds?: string[]
@@ -195,6 +200,12 @@ export function updateAgentResources(
         .run()
   }
   replace(agentSkills, 'skillId', input.selectedSkillIds)
+  if (input.selectedExtensionIds) {
+    db.delete(agentExtensions).where(eq(agentExtensions.agentId, id)).run()
+    for (const extensionId of input.selectedExtensionIds) {
+      db.insert(agentExtensions).values({ agentId: id, extensionId }).run()
+    }
+  }
   if (input.selectedPromptIds) {
     db.delete(agentPrompts).where(eq(agentPrompts.agentId, id)).run()
     for (const promptId of input.selectedPromptIds)
@@ -256,6 +267,7 @@ export function duplicateAgent(id: string) {
   })
   if (!copy) return null
   updateAgentResources(copy.id, {
+    selectedExtensionIds: agent.selectedExtensionIds,
     selectedSkillIds: agent.selectedSkillIds,
     selectedPromptIds: agent.selectedPromptIds,
     selectedMcpConfigIds: agent.selectedMcpConfigIds,
@@ -283,6 +295,50 @@ export function listSkills(): GlobalSkill[] {
       updatedAt: skill.updatedAt,
       usedByAgents: count('agent_skills', 'skill_id', skill.id),
     }))
+}
+
+export function listStudioExtensions(): StudioExtension[] {
+  return db
+    .select()
+    .from(studioExtensions)
+    .all()
+    .map((extension) => {
+      const assignedAgentIds = ids('agent_extensions', 'extension_id', 'agent_id', extension.id)
+      return {
+        id: extension.id,
+        name: extension.name,
+        description: extension.description,
+        path: extension.path,
+        assignedAgentIds,
+        usedByAgents: assignedAgentIds.length,
+        createdAt: extension.createdAt,
+        updatedAt: extension.updatedAt,
+      }
+    })
+}
+
+export function getStudioExtension(id: string) {
+  return listStudioExtensions().find((extension) => extension.id === id) ?? null
+}
+
+export function createStudioExtension(input: { name: string; description?: string; path: string }) {
+  const id = `ex-${randomUUID()}`
+  const at = now()
+  db.insert(studioExtensions)
+    .values({
+      id,
+      name: input.name,
+      description: input.description ?? '',
+      path: input.path,
+      createdAt: at,
+      updatedAt: at,
+    })
+    .run()
+  return getStudioExtension(id)
+}
+
+export function deleteStudioExtension(id: string) {
+  db.delete(studioExtensions).where(eq(studioExtensions.id, id)).run()
 }
 
 export function createSkill(
@@ -1026,6 +1082,7 @@ function messageUsage(message: typeof chatMessages.$inferSelect): ChatMessage['u
 export function resolveAgentRunConfig(agentId: string, providerId?: string | null) {
   const agent = getAgent(agentId)
   if (!agent) return null
+  const selectedExtensionSet = new Set(agent.selectedExtensionIds)
   const selectedSkillSet = new Set(agent.selectedSkillIds)
   const selectedPromptSet = new Set(agent.selectedPromptIds)
   const selectedMcpSet = new Set(agent.selectedMcpConfigIds)
@@ -1049,6 +1106,9 @@ export function resolveAgentRunConfig(agentId: string, providerId?: string | nul
     null
   return {
     agent,
+    extensions: listStudioExtensions().filter((extension) =>
+      selectedExtensionSet.has(extension.id),
+    ),
     skills: listSkills().filter((skill) => selectedSkillSet.has(skill.id)),
     prompts: listPrompts().filter((prompt) => selectedPromptSet.has(prompt.id)),
     mcpConfigs: listMcpConfigs().filter((mcp) => selectedMcpSet.has(mcp.id)),

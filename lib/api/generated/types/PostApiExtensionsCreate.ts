@@ -169,6 +169,15 @@ export type PostApiExtensionsCreate200 = {
      * @type integer | undefined
     */
     diagnosticCount?: number;
+    /**
+     * @type array | undefined
+    */
+    assignedAgentIds?: string[];
+    /**
+     * @minLength 0
+     * @type integer | undefined
+    */
+    usedByAgents?: number;
 };
 
 /**
@@ -180,13 +189,6 @@ export type PostApiExtensionsCreate400 = {
     */
     error: string;
 };
-
-export const postApiExtensionsCreateMutationRequestScopeEnum = {
-    global: "global",
-    project: "project"
-} as const;
-
-export type PostApiExtensionsCreateMutationRequestScopeEnumKey = (typeof postApiExtensionsCreateMutationRequestScopeEnum)[keyof typeof postApiExtensionsCreateMutationRequestScopeEnum];
 
 export const postApiExtensionsCreateMutationRequestTemplateEnum = {
     empty: "empty",
@@ -210,14 +212,6 @@ export type PostApiExtensionsCreateMutationRequest = {
      * @type string
     */
     name: string;
-    /**
-     * @type string
-    */
-    scope: PostApiExtensionsCreateMutationRequestScopeEnumKey;
-    /**
-     * @type string
-    */
-    cwd: string;
     /**
      * @type string
     */

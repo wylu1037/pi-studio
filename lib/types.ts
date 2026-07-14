@@ -130,6 +130,19 @@ export interface GlobalExtension {
     lastErrorAt?: string
   }
   diagnosticCount?: number
+  assignedAgentIds?: string[]
+  usedByAgents?: number
+}
+
+export interface StudioExtension {
+  id: string
+  name: string
+  description: string
+  path: string
+  assignedAgentIds: string[]
+  usedByAgents: number
+  createdAt: string
+  updatedAt: string
 }
 
 export interface AgentProfile {
@@ -140,6 +153,7 @@ export interface AgentProfile {
   icon?: string
   color: string
   defaultCwd?: string
+  selectedExtensionIds: string[]
   selectedSkillIds: string[]
   selectedPromptIds: string[]
   selectedMcpConfigIds: string[]

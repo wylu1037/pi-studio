@@ -46,7 +46,9 @@ export const postApiExtensionsIdState200Schema = z.array(z.object({
 "lastLoadedAt": z.optional(z.string()),
 "lastErrorAt": z.optional(z.string())
     })),
-"diagnosticCount": z.optional(z.int().min(0))
+"diagnosticCount": z.optional(z.int().min(0)),
+"assignedAgentIds": z.optional(z.array(z.string())),
+"usedByAgents": z.optional(z.int().min(0))
     }))
 
 /**

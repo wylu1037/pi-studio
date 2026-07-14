@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic'
 
 export default async function ExtensionsPage() {
   const { listExtensionsWithRuntime } = await import('@/lib/extensions/extension-service')
+  const { listAgents } = await import('@/lib/db/repository')
   const { listExtensionWorkspaces } = await import('@/lib/extensions/workspaces')
   const { getProjectTrustState } = await import('@/lib/extensions/project-trust')
   const workspaces = listExtensionWorkspaces()
@@ -15,6 +16,7 @@ export default async function ExtensionsPage() {
     <ExtensionsView
       initialCwd={cwd}
       initialExtensions={await listExtensionsWithRuntime(cwd)}
+      initialAgents={listAgents()}
       initialWorkspaces={workspaces}
       initialTrust={getProjectTrustState(cwd)}
     />

@@ -1,11 +1,25 @@
 import { existsSync } from 'node:fs'
-import { lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { getAgentDir, withFileMutationQueue } from '@earendil-works/pi-coding-agent'
+import {
+  lstat,
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { withFileMutationQueue } from '@earendil-works/pi-coding-agent'
 import ts from 'typescript'
-import { decodeExtensionId, listRuntimeExtensions } from '@/lib/packages/package-service'
-import { canonicalWorkspacePath, isProjectTrusted, setProjectTrust } from './project-trust'
-import { assertExtensionWorkspace } from './workspaces'
+import {
+  createStudioExtension,
+  deleteStudioExtension,
+  getStudioExtension,
+  listStudioExtensions,
+} from '@/lib/db/repository'
 
 export type ExtensionTemplate =
   | 'empty'
@@ -63,49 +77,59 @@ function pathInside(root: string, target: string) {
   return value === '' || (!value.startsWith(`..${sep}`) && value !== '..' && !isAbsolute(value))
 }
 
-function extensionScopeRoot(scope: 'global' | 'project', cwd: string) {
-  return scope === 'global'
-    ? join(getAgentDir(), 'extensions')
-    : join(canonicalWorkspacePath(cwd), '.pi', 'extensions')
+function studioExtensionsDir() {
+  return join(homedir(), '.pi-studio', 'extensions')
 }
 
-async function resolveExtensionRoot(id: string, cwd: string) {
-  const decoded = decodeExtensionId(id)
-  if (!decoded) throw new Error('Invalid extension ID.')
-  const workspace = assertExtensionWorkspace(cwd)
-  const scopeRoot = extensionScopeRoot(decoded.scope, workspace)
-  const absolutePath = resolve(decoded.path)
-  const parent = dirname(absolutePath)
-  const isDirectoryEntry =
-    basename(absolutePath).replace(/\.(?:m?[jt]s|c[jt]s)$/, '') === 'index' &&
-    resolve(parent) !== resolve(scopeRoot)
-  const candidate = parent
+let legacyMigration: Promise<void> | undefined
 
-  if (!pathInside(resolve(scopeRoot), candidate)) {
-    throw new Error('The extension is outside the editable extension roots.')
-  }
-
-  const existingRoot = existsSync(candidate) ? await realpath(candidate) : resolve(candidate)
-  const existingScopeRoot = existsSync(scopeRoot) ? await realpath(scopeRoot) : resolve(scopeRoot)
-  if (!pathInside(existingScopeRoot, existingRoot)) {
-    throw new Error('The extension path escapes its configured root.')
-  }
-
-  return {
-    scope: decoded.scope,
-    cwd: workspace,
-    root: existingRoot,
-    scopeRoot: existingScopeRoot,
-    singleFile: isDirectoryEntry ? undefined : basename(absolutePath),
+async function migrateLegacyManagedExtensions() {
+  const legacyRoot = join(homedir(), '.pi', 'agent', 'extensions')
+  if (!existsSync(legacyRoot)) return
+  await mkdir(studioExtensionsDir(), { recursive: true })
+  const existingNames = new Set(listStudioExtensions().map((extension) => extension.name))
+  const entries = await readdir(legacyRoot, { withFileTypes: true })
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(entry.name)) continue
+    const source = join(legacyRoot, entry.name)
+    if (!existsSync(join(source, MANAGED_MARKER))) continue
+    const target = join(studioExtensionsDir(), entry.name)
+    if (existingNames.has(entry.name) || existsSync(target)) continue
+    await rename(source, target)
+    try {
+      createStudioExtension({ name: entry.name, path: target })
+      existingNames.add(entry.name)
+    } catch (error) {
+      await rename(target, source)
+      throw error
+    }
   }
 }
 
-async function targetExtensionFile(id: string, cwd: string, requestedPath: string) {
-  const workspace = await resolveExtensionRoot(id, cwd)
+function ensureLegacyMigration() {
+  legacyMigration ??= migrateLegacyManagedExtensions()
+  return legacyMigration
+}
+
+async function resolveExtensionRoot(id: string) {
+  const extension = getStudioExtension(id)
+  if (!extension) throw new Error('Extension not found.')
+  const requestedLibraryRoot = resolve(studioExtensionsDir())
+  const libraryRoot = existsSync(requestedLibraryRoot)
+    ? await realpath(requestedLibraryRoot)
+    : requestedLibraryRoot
+  const root = resolve(extension.path)
+  if (!existsSync(root)) throw new Error('The extension source directory is missing.')
+  const realRoot = await realpath(root)
+  if (!pathInside(libraryRoot, realRoot)) {
+    throw new Error('The extension source directory uses a symlink outside the library.')
+  }
+  return { extension, root: realRoot, libraryRoot }
+}
+
+async function targetExtensionFile(id: string, requestedPath: string) {
+  const workspace = await resolveExtensionRoot(id)
   const relativePath = normalizeRelativePath(requestedPath)
-  if (workspace.singleFile && relativePath !== workspace.singleFile) {
-    throw new Error('This top-level extension exposes only its source file.')
-  }
   const target = resolve(workspace.root, relativePath)
   if (!pathInside(workspace.root, target)) throw new Error('The extension path escapes its root.')
 
@@ -142,16 +166,14 @@ async function collectFiles(root: string, base = root, result: ExtensionFileEntr
 }
 
 export async function listExtensionFiles(id: string, cwd: string) {
-  const workspace = await resolveExtensionRoot(id, cwd)
-  if (workspace.singleFile) {
-    const details = await stat(workspace.root)
-    return [{ path: workspace.singleFile, type: 'file' as const, size: details.size }]
-  }
+  void cwd
+  const workspace = await resolveExtensionRoot(id)
   return collectFiles(workspace.root)
 }
 
 export async function readExtensionFile(id: string, cwd: string, path: string) {
-  const file = await targetExtensionFile(id, cwd, path)
+  void cwd
+  const file = await targetExtensionFile(id, path)
   const details = await stat(file.target)
   if (!details.isFile()) throw new Error('The requested extension path is not a file.')
   if (details.size > MAX_FILE_BYTES) throw new Error('The requested extension file is too large.')
@@ -162,38 +184,33 @@ export async function writeExtensionFile(id: string, cwd: string, path: string, 
   if (Buffer.byteLength(content, 'utf8') > MAX_FILE_BYTES) {
     throw new Error('The extension file is too large.')
   }
-  const file = await targetExtensionFile(id, cwd, path)
-  if (file.scope === 'project' && !isProjectTrusted(file.cwd)) {
-    throw new Error('Trust this project before editing its extensions.')
-  }
+  void cwd
+  const file = await targetExtensionFile(id, path)
   await withFileMutationQueue(file.target, () => writeFile(file.target, content, 'utf8'))
   return { path: file.relativePath, content }
 }
 
 export async function getExtensionSource(id: string, cwd: string) {
-  const workspace = assertExtensionWorkspace(cwd)
-  const extension = (await listRuntimeExtensions(workspace)).find((item) => item.id === id)
-  if (!extension) throw new Error('Extension not found.')
-  const existingSource = await realpath(extension.path)
-  const details = await stat(existingSource)
+  void cwd
+  const workspace = await resolveExtensionRoot(id)
+  const sourcePath = join(workspace.root, 'index.ts')
+  const details = await stat(sourcePath)
   if (!details.isFile() || details.size > MAX_FILE_BYTES) {
     throw new Error('The extension source cannot be previewed.')
   }
-  return { path: existingSource, content: await readFile(existingSource, 'utf8') }
+  return { path: sourcePath, content: await readFile(sourcePath, 'utf8') }
 }
 
 export async function listExtensionsWithRuntime(cwd: string) {
-  const workspace = assertExtensionWorkspace(cwd)
-  const [extensions, runtime] = await Promise.all([
-    listRuntimeExtensions(workspace),
-    import('@/lib/chat/sdk-session-manager'),
-  ])
-  const snapshots = runtime.listSdkSessionExtensionSnapshots(workspace)
-  const diagnostics = runtime.listSdkExtensionDiagnostics(workspace)
+  await ensureLegacyMigration()
+  const runtime = await import('@/lib/chat/sdk-session-manager')
+  const extensions = listStudioExtensions()
+  const snapshots = runtime.listSdkSessionExtensionSnapshots(cwd)
+  const diagnostics = runtime.listSdkExtensionDiagnostics(cwd)
 
   return Promise.all(
     extensions.map(async (extension) => {
-      const extensionPath = resolve(extension.path)
+      const extensionPath = resolve(extension.path, 'index.ts')
       const loadedIn = snapshots.filter((snapshot) =>
         snapshot.extensions.some((item) => resolve(item.path) === extensionPath),
       )
@@ -228,11 +245,11 @@ export async function listExtensionsWithRuntime(cwd: string) {
         ui: [],
       }
       try {
-        const details = await stat(extension.path)
+        const details = await stat(extensionPath)
         if (details.isFile() && details.size <= MAX_FILE_BYTES) {
           staticCapabilities = inspectSource(
-            await readFile(extension.path, 'utf8'),
-            extension.path,
+            await readFile(extensionPath, 'utf8'),
+            extensionPath,
           ).capabilities
         }
       } catch {
@@ -247,36 +264,38 @@ export async function listExtensionsWithRuntime(cwd: string) {
         ),
       )
       return {
-        ...extension,
-        canToggle: Boolean(extension.relativePath),
+        id: extension.id,
+        name: extension.name,
+        path: extensionPath,
+        relativePath: extension.id,
+        source: 'pi-studio',
+        scope: 'global' as const,
+        origin: 'top-level' as const,
+        enabled: extension.usedByAgents > 0,
+        packageManaged: false,
+        canToggle: false,
+        assignedAgentIds: extension.assignedAgentIds,
+        usedByAgents: extension.usedByAgents,
         compatibility: hasTuiOnlyCapability
           ? hasWebUiCapability
             ? ('partial' as const)
             : ('tui-only' as const)
           : ('web' as const),
-        status:
-          extension.status === 'trust-required'
-            ? extension.status
-            : lastError
-              ? ('load-error' as const)
-              : loadedIn.length > 0
-                ? ('loaded' as const)
-                : extension.status,
+        status: lastError
+          ? ('load-error' as const)
+          : loadedIn.length > 0
+            ? ('loaded' as const)
+            : extension.usedByAgents > 0
+              ? ('enabled' as const)
+              : ('disabled' as const),
         capabilities: {
           tools: [...new Set([...tools, ...staticCapabilities.tools])],
           commands: [...new Set([...commands, ...staticCapabilities.commands])],
-          shortcuts: extension.capabilities?.shortcuts ?? [],
+          shortcuts: [],
           flags: [...new Set(flags)],
-          providers: [
-            ...new Set([
-              ...(extension.capabilities?.providers ?? []),
-              ...staticCapabilities.providers,
-            ]),
-          ],
-          hooks: [
-            ...new Set([...(extension.capabilities?.hooks ?? []), ...staticCapabilities.hooks]),
-          ],
-          ui: Boolean(extension.capabilities?.ui || staticCapabilities.ui.length),
+          providers: [...new Set(staticCapabilities.providers)],
+          hooks: [...new Set(staticCapabilities.hooks)],
+          ui: Boolean(staticCapabilities.ui.length),
         },
         runtime: {
           loaded: loadedIn.length > 0,
@@ -337,55 +356,59 @@ function titleCase(value: string) {
 
 export async function createLocalExtension(input: {
   name: string
-  scope: 'global' | 'project'
-  cwd: string
   template: ExtensionTemplate
+  cwd?: string
 }) {
+  await ensureLegacyMigration()
   const name = input.name.trim().toLowerCase()
   if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(name)) {
     throw new Error(
       'Extension names may contain lowercase letters, numbers, hyphens, and underscores.',
     )
   }
-  const cwd = assertExtensionWorkspace(input.cwd)
-  if (input.scope === 'project' && !isProjectTrusted(cwd)) {
-    throw new Error('Trust this project before creating a project extension.')
-  }
-  if (input.scope === 'project') setProjectTrust(cwd, 'once')
-  const scopeRoot = extensionScopeRoot(input.scope, cwd)
+  const scopeRoot = studioExtensionsDir()
   const root = join(scopeRoot, name)
   if (existsSync(root)) throw new Error('An extension with this name already exists.')
+  if (listStudioExtensions().some((extension) => extension.name === name)) {
+    throw new Error('An extension with this name already exists.')
+  }
 
   await mkdir(root, { recursive: true })
-  await writeFile(join(root, 'index.ts'), templateSource(name, input.template), 'utf8')
-  await writeFile(
-    join(root, 'README.md'),
-    `# ${titleCase(name.replaceAll('-', ' '))}\n\nCreated by Pi Studio. Review the source before enabling it.\n`,
-    'utf8',
-  )
-  await writeFile(
-    join(root, MANAGED_MARKER),
-    `${JSON.stringify({ version: 1, createdAt: new Date().toISOString() }, null, 2)}\n`,
-    'utf8',
-  )
+  const created = createStudioExtension({ name, path: root })
+  if (!created) throw new Error('Unable to create extension metadata.')
+  try {
+    await writeFile(join(root, 'index.ts'), templateSource(name, input.template), 'utf8')
+    await writeFile(
+      join(root, 'README.md'),
+      `# ${titleCase(name.replaceAll('-', ' '))}\n\nCreated by Pi Studio. Assign this extension to an agent before it can run.\n`,
+      'utf8',
+    )
+    await writeFile(
+      join(root, MANAGED_MARKER),
+      `${JSON.stringify({ version: 2, id: created.id, createdAt: new Date().toISOString() }, null, 2)}\n`,
+      'utf8',
+    )
+  } catch (error) {
+    deleteStudioExtension(created.id)
+    await rm(root, { recursive: true, force: true })
+    throw error
+  }
 
-  const path = await realpath(join(root, 'index.ts'))
-  const extension = (await listRuntimeExtensions(cwd)).find((item) => resolve(item.path) === path)
-  if (!extension) throw new Error('The extension was created but could not be discovered.')
+  const extension = (await listExtensionsWithRuntime(input.cwd ?? process.cwd())).find(
+    (item) => item.id === created.id,
+  )
+  if (!extension) throw new Error('The extension was created but could not be listed.')
   return extension
 }
 
 export async function deleteLocalExtension(id: string, cwd: string) {
-  const workspace = await resolveExtensionRoot(id, cwd)
-  if (workspace.singleFile)
-    throw new Error('Only Pi Studio managed extension folders can be deleted.')
+  void cwd
+  const workspace = await resolveExtensionRoot(id)
   if (!existsSync(join(workspace.root, MANAGED_MARKER))) {
-    throw new Error('This extension was not created by Pi Studio and will not be deleted.')
-  }
-  if (workspace.scope === 'project' && !isProjectTrusted(workspace.cwd)) {
-    throw new Error('Trust this project before deleting its extensions.')
+    throw new Error('Only Pi Studio managed extensions can be deleted.')
   }
   await rm(workspace.root, { recursive: true, force: false })
+  deleteStudioExtension(workspace.extension.id)
   return { deleted: true }
 }
 
@@ -485,7 +508,7 @@ export async function validateLocalExtension(id: string, cwd: string) {
   const files = (await listExtensionFiles(id, cwd)).filter(
     (file) => file.type === 'file' && /\.[cm]?[jt]sx?$/.test(file.path),
   )
-  const workspace = await resolveExtensionRoot(id, cwd)
+  const workspace = await resolveExtensionRoot(id)
   const rootNames = files.map((file) => join(workspace.root, file.path))
   const compilerOptions: ts.CompilerOptions = {
     allowJs: true,

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -18,6 +18,10 @@ import {
   Cpu,
   History,
   Coins,
+  Puzzle,
+  ChevronUp,
+  Folder,
+  LoaderCircle,
 } from 'lucide-react'
 import type {
   AgentProfile,
@@ -26,6 +30,7 @@ import type {
   GlobalModelProvider,
   GlobalPromptTemplate,
   GlobalSkill,
+  StudioExtension,
 } from '@/lib/types'
 import { deleteApiAgentsId } from '@/lib/api/generated/clients/deleteApiAgentsId'
 import { patchApiAgentsId } from '@/lib/api/generated/clients/patchApiAgentsId'
@@ -46,7 +51,16 @@ import {
 } from '@/components/pi-ui'
 import { cn } from '@/lib/utils'
 
-const TABS = ['Overview', 'Skills', 'Prompts', 'MCP', 'Models', 'Sessions', 'Settings'] as const
+const TABS = [
+  'Overview',
+  'Extensions',
+  'Skills',
+  'Prompts',
+  'MCP',
+  'Models',
+  'Sessions',
+  'Settings',
+] as const
 type TabName = (typeof TABS)[number]
 const thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 const settingsSchema = z.object({
@@ -59,6 +73,7 @@ type SettingsForm = z.infer<typeof settingsSchema>
 
 export function AgentDetail({
   agent,
+  extensions,
   skills,
   prompts,
   mcpConfigs,
@@ -66,6 +81,7 @@ export function AgentDetail({
   sessions,
 }: {
   agent: AgentProfile
+  extensions: StudioExtension[]
   skills: GlobalSkill[]
   prompts: GlobalPromptTemplate[]
   mcpConfigs: GlobalMcpConfig[]
@@ -168,7 +184,22 @@ export function AgentDetail({
 
       {/* Body */}
       <div className="scrollbar-thin flex-1 overflow-y-auto p-6">
-        {tab === 'Overview' && <OverviewTab agent={agent} sessions={sessions} />}
+        {tab === 'Overview' && <OverviewTab agent={agent} />}
+        {tab === 'Extensions' && (
+          <ResourcePicker
+            title="Extensions"
+            agentId={agent.id}
+            kind="extension"
+            items={extensions.map((extension) => ({
+              id: extension.id,
+              name: extension.name,
+              description: extension.description || 'Pi Studio extension library source.',
+              tags: [],
+              meta: 'library',
+            }))}
+            selectedIds={agent.selectedExtensionIds}
+          />
+        )}
         {tab === 'Skills' && (
           <ResourcePicker
             title="Skills"
@@ -237,15 +268,10 @@ export function AgentDetail({
   )
 }
 
-function OverviewTab({
-  agent,
-  sessions,
-}: {
-  agent: AgentProfile
-  sessions: AgentSessionSummary[]
-}) {
+function OverviewTab({ agent }: { agent: AgentProfile }) {
   const stats = [
     { icon: Sparkles, value: agent.selectedSkillIds.length, label: 'Skills' },
+    { icon: Puzzle, value: agent.selectedExtensionIds.length, label: 'Extensions' },
     { icon: FileText, value: agent.selectedPromptIds.length, label: 'Prompts' },
     { icon: Plug, value: agent.selectedMcpConfigIds.length, label: 'MCP' },
     { icon: Cpu, value: agent.selectedModelIds.length, label: 'Models' },
@@ -263,59 +289,34 @@ function OverviewTab({
   ]
 
   return (
-    <div className="grid gap-6 lg:grid-cols-3">
-      <div className="space-y-6 lg:col-span-2">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-          {stats.map((s) => {
-            const Icon = s.icon
-            return (
-              <Panel key={s.label} className="flex flex-col gap-1.5 p-3">
-                <Icon className="size-4 text-accent" />
-                <span className="font-serif text-2xl text-foreground italic">{s.value}</span>
-                <Label>{s.label}</Label>
-              </Panel>
-            )
-          })}
-        </div>
-
-        <Panel>
-          <div className="border-b border-border bg-panel px-4 py-2.5">
-            <Label>Metadata</Label>
-          </div>
-          <dl className="divide-y divide-border">
-            {meta.map(([k, v]) => (
-              <div key={k} className="grid grid-cols-3 gap-4 px-4 py-2.5 text-sm">
-                <dt className="font-mono text-xs tracking-wider text-muted-foreground uppercase">
-                  {k}
-                </dt>
-                <dd className="col-span-2 font-mono text-[13px] text-foreground">{v}</dd>
-              </div>
-            ))}
-          </dl>
-        </Panel>
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
+        {stats.map((s) => {
+          const Icon = s.icon
+          return (
+            <Panel key={s.label} className="flex flex-col gap-1.5 p-3">
+              <Icon className="size-4 text-accent" />
+              <span className="font-serif text-2xl text-foreground italic">{s.value}</span>
+              <Label>{s.label}</Label>
+            </Panel>
+          )
+        })}
       </div>
 
-      <Panel className="h-fit">
+      <Panel>
         <div className="border-b border-border bg-panel px-4 py-2.5">
-          <Label>Recent sessions</Label>
+          <Label>Metadata</Label>
         </div>
-        <ul className="divide-y divide-border">
-          {sessions.length === 0 && (
-            <li className="px-4 py-6 text-center font-mono text-xs text-muted-foreground">
-              No sessions yet
-            </li>
-          )}
-          {sessions.map((s) => (
-            <li key={s.id} className="px-4 py-3">
-              <p className="truncate font-mono text-[13px] text-foreground">{s.name}</p>
-              <p className="mt-1 flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
-                <span>{s.updatedAt}</span>
-                <span>·</span>
-                <span>{s.messageCount} msgs</span>
-              </p>
-            </li>
+        <dl className="divide-y divide-border">
+          {meta.map(([k, v]) => (
+            <div key={k} className="grid grid-cols-3 gap-4 px-4 py-2.5 text-sm">
+              <dt className="font-mono text-xs tracking-wider text-muted-foreground uppercase">
+                {k}
+              </dt>
+              <dd className="col-span-2 font-mono text-[13px] text-foreground">{v}</dd>
+            </div>
           ))}
-        </ul>
+        </dl>
       </Panel>
     </div>
   )
@@ -338,7 +339,7 @@ function ResourcePicker({
 }: {
   title: string
   agentId: string
-  kind: 'skill' | 'prompt' | 'mcp'
+  kind: 'extension' | 'skill' | 'prompt' | 'mcp'
   items: PickerItem[]
   selectedIds: string[]
 }) {
@@ -671,6 +672,8 @@ function SettingsTab({
   const {
     register,
     handleSubmit,
+    setValue,
+    watch,
     formState: { isSubmitting, errors },
   } = useForm<SettingsForm>({
     resolver: zodResolver(settingsSchema as never),
@@ -681,6 +684,8 @@ function SettingsTab({
       tags: agent.tags.join(', '),
     },
   })
+  const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false)
+  const defaultCwd = watch('defaultCwd')
 
   const save = async (values: SettingsForm) => {
     await patchApiAgentsId(agent.id, {
@@ -712,10 +717,17 @@ function SettingsTab({
           />
         </Field>
         <Field label="Default working directory">
-          <input
-            {...register('defaultCwd')}
-            className="w-full border border-input bg-panel px-3 py-2 font-mono text-[13px] text-foreground outline-none focus:border-ring"
-          />
+          <button
+            type="button"
+            onClick={() => setDirectoryPickerOpen(true)}
+            className="flex w-full items-center gap-2 border border-input bg-panel px-3 py-2 text-left transition-colors outline-none hover:bg-muted focus:border-ring"
+          >
+            <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-foreground">
+              {defaultCwd || 'Select a folder'}
+            </span>
+            <span className="font-mono text-[11px] text-accent">Browse</span>
+          </button>
         </Field>
         <Field label="Tags (comma separated)">
           <input
@@ -732,7 +744,190 @@ function SettingsTab({
           Save changes
         </ActionButton>
       </div>
+      <DirectoryPickerDialog
+        open={directoryPickerOpen}
+        initialPath={defaultCwd}
+        onClose={() => setDirectoryPickerOpen(false)}
+        onSelect={(path) => {
+          setValue('defaultCwd', path, { shouldDirty: true })
+          setDirectoryPickerOpen(false)
+        }}
+      />
     </form>
+  )
+}
+
+type DirectoryEntry = {
+  name: string
+  path: string
+}
+
+type DirectoryListing = {
+  path: string
+  parent?: string
+  entries: DirectoryEntry[]
+}
+
+function DirectoryPickerDialog({
+  open,
+  initialPath,
+  onClose,
+  onSelect,
+}: {
+  open: boolean
+  initialPath?: string
+  onClose: () => void
+  onSelect: (path: string) => void
+}) {
+  const [requestedPath, setRequestedPath] = useState('')
+  const [directory, setDirectory] = useState<DirectoryListing | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
+
+  useEffect(() => {
+    if (!open) return
+    setRequestedPath(initialPath || '')
+  }, [initialPath, open])
+
+  useEffect(() => {
+    if (!open) return
+
+    const controller = new AbortController()
+    const query = new URLSearchParams()
+    if (requestedPath) query.set('path', requestedPath)
+
+    setLoading(true)
+    setError(null)
+    fetch(`/api/directories?${query}`, { signal: controller.signal })
+      .then(async (response) => {
+        const body = (await response.json()) as DirectoryListing & { error?: string }
+        if (!response.ok) throw new Error(body.error ?? 'Unable to load this directory.')
+        setDirectory(body)
+      })
+      .catch((requestError: unknown) => {
+        if (controller.signal.aborted) return
+        setDirectory(null)
+        setError(
+          requestError instanceof Error ? requestError.message : 'Unable to load this directory.',
+        )
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [open, reloadKey, requestedPath])
+
+  useEffect(() => {
+    if (!open) return
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [onClose, open])
+
+  if (!open) return null
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="directory-picker-title"
+    >
+      <button
+        type="button"
+        aria-label="Close folder picker"
+        onClick={onClose}
+        className="absolute inset-0 bg-foreground/25"
+      />
+      <div className="relative flex w-full max-w-xl flex-col border border-border bg-card shadow-xl">
+        <header className="border-b border-border bg-panel px-4 py-3">
+          <h2 id="directory-picker-title" className="font-serif text-lg text-foreground italic">
+            Select working directory
+          </h2>
+          <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+            Choose the folder used for new conversations with this agent.
+          </p>
+        </header>
+
+        <div className="space-y-3 p-4">
+          <div className="flex items-center gap-2 border border-input bg-panel p-2">
+            <ActionButton
+              title="Go to parent folder"
+              onClick={() => directory?.parent && setRequestedPath(directory.parent)}
+              disabled={!directory?.parent || loading}
+              className="px-2"
+            >
+              <ChevronUp className="size-3.5" />
+            </ActionButton>
+            <p
+              className="min-w-0 flex-1 truncate font-mono text-[12px] text-foreground"
+              title={directory?.path}
+            >
+              {directory?.path ?? (loading ? 'Loading directory…' : 'Choose a directory')}
+            </p>
+          </div>
+
+          <div className="h-72 overflow-y-auto border border-border bg-panel">
+            {loading && !directory ? (
+              <div className="flex h-full items-center justify-center gap-2 font-mono text-xs text-muted-foreground">
+                <LoaderCircle className="size-4 animate-spin" />
+                Loading folders
+              </div>
+            ) : error ? (
+              <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+                <p className="font-mono text-xs text-destructive">{error}</p>
+                <div className="flex items-center gap-2">
+                  {requestedPath && (
+                    <ActionButton onClick={() => setRequestedPath('')}>
+                      Open home folder
+                    </ActionButton>
+                  )}
+                  <ActionButton onClick={() => setReloadKey((value) => value + 1)}>
+                    Retry
+                  </ActionButton>
+                </div>
+              </div>
+            ) : directory?.entries.length === 0 ? (
+              <p className="px-4 py-10 text-center font-mono text-xs text-muted-foreground">
+                No subfolders in this directory.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {directory?.entries.map((entry) => (
+                  <li key={entry.path}>
+                    <button
+                      type="button"
+                      onClick={() => setRequestedPath(entry.path)}
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-muted"
+                    >
+                      <Folder className="size-4 shrink-0 text-accent" />
+                      <span className="truncate font-mono text-[13px] text-foreground">
+                        {entry.name}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+
+        <footer className="flex items-center justify-end gap-2 border-t border-border bg-panel px-4 py-3">
+          <ActionButton onClick={onClose}>Cancel</ActionButton>
+          <ActionButton
+            variant="accent"
+            onClick={() => directory && onSelect(directory.path)}
+            disabled={!directory || loading}
+          >
+            Select folder
+          </ActionButton>
+        </footer>
+      </div>
+    </div>
   )
 }
 

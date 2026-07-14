@@ -1069,10 +1069,8 @@ api.openapi(
   async (c) => {
     const { id } = c.req.valid('param')
     const { cwd } = c.req.valid('query')
-    const packageService = await import('@/lib/packages/package-service')
-    const extension = (await packageService.listRuntimeExtensions(cwd)).find(
-      (item) => item.id === id,
-    )
+    const { listExtensionsWithRuntime } = await import('@/lib/extensions/extension-service')
+    const extension = (await listExtensionsWithRuntime(cwd)).find((item) => item.id === id)
     if (!extension) return c.json({ error: 'Extension not found.' }, 404)
     const runtime = await import('@/lib/chat/sdk-session-manager')
     return c.json(
@@ -1534,6 +1532,8 @@ api.openapi(
         ? Array.from(new Set([...values, body.resourceId]))
         : values.filter((value) => value !== body.resourceId)
     const updated = updateAgentResources(id, {
+      selectedExtensionIds:
+        body.kind === 'extension' ? toggle(agent.selectedExtensionIds) : undefined,
       selectedSkillIds: body.kind === 'skill' ? toggle(agent.selectedSkillIds) : undefined,
       selectedPromptIds: body.kind === 'prompt' ? toggle(agent.selectedPromptIds) : undefined,
       selectedMcpConfigIds: body.kind === 'mcp' ? toggle(agent.selectedMcpConfigIds) : undefined,
@@ -1823,6 +1823,10 @@ api.get('/runs/:id/events', (c) => {
         baseUrl: config.provider?.baseUrl ?? undefined,
         model: run.modelId ?? config.agent.defaultModelId,
         thinkingLevel: run.thinkingLevel,
+        extensions: config.extensions.map((extension) => ({
+          id: extension.id,
+          path: extension.path,
+        })),
         skills: config.skills.map((skill) => ({
           name: skill.name,
           path: skill.path,

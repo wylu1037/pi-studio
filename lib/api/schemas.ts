@@ -22,6 +22,7 @@ export const AgentSchema = z.object({
   icon: z.string().optional(),
   color: z.string(),
   defaultCwd: z.string().optional(),
+  selectedExtensionIds: z.array(z.string()),
   selectedSkillIds: z.array(z.string()),
   selectedPromptIds: z.array(z.string()),
   selectedMcpConfigIds: z.array(z.string()),
@@ -47,6 +48,7 @@ export const AgentInputSchema = z.object({
 })
 
 export const AgentResourcesSchema = z.object({
+  selectedExtensionIds: z.array(z.string()).optional(),
   selectedSkillIds: z.array(z.string()).optional(),
   selectedPromptIds: z.array(z.string()).optional(),
   selectedMcpConfigIds: z.array(z.string()).optional(),
@@ -285,6 +287,8 @@ export const ExtensionSchema = z.object({
     })
     .optional(),
   diagnosticCount: z.number().int().nonnegative().optional(),
+  assignedAgentIds: z.array(z.string()).optional(),
+  usedByAgents: z.number().int().nonnegative().optional(),
 })
 
 export const ToggleExtensionSchema = z.object({
@@ -361,8 +365,6 @@ export const ExtensionTemplateSchema = z.enum([
 
 export const CreateExtensionSchema = z.object({
   name: z.string().min(1),
-  scope: z.enum(['global', 'project']),
-  cwd: z.string(),
   template: ExtensionTemplateSchema,
 })
 
@@ -538,7 +540,7 @@ export const AssignToAgentSchema = z.object({
   agentId: z.string(),
   resourceId: z.string(),
   enabled: z.boolean().default(true),
-  kind: z.enum(['skill', 'prompt', 'mcp', 'provider', 'model']),
+  kind: z.enum(['extension', 'skill', 'prompt', 'mcp', 'provider', 'model']),
 })
 
 export const ChatMessageSchema = z.object({

@@ -42,7 +42,9 @@ export const postApiExtensionsCreate200Schema = z.object({
 "lastLoadedAt": z.optional(z.string()),
 "lastErrorAt": z.optional(z.string())
     })),
-"diagnosticCount": z.optional(z.int().min(0))
+"diagnosticCount": z.optional(z.int().min(0)),
+"assignedAgentIds": z.optional(z.array(z.string())),
+"usedByAgents": z.optional(z.int().min(0))
     })
 
 /**
@@ -57,8 +59,6 @@ export const postApiExtensionsCreate400Schema = z.object({
  */
 export const postApiExtensionsCreateMutationRequestSchema = z.object({
     "name": z.string().min(1),
-"scope": z.enum(["global", "project"]),
-"cwd": z.string(),
 "template": z.enum(["empty", "tool", "command", "permission-gate", "lifecycle", "context-modifier", "provider", "session-state"])
     })
 

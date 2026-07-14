@@ -42,6 +42,7 @@ class StudioAgentSession {
     readonly inner: AgentSession,
     resourceSignature: string,
     readonly cwd: string,
+    readonly extensionPaths: string[],
     readonly promptPaths: string[],
     diagnostics: SdkExtensionDiagnostic[] = [],
   ) {
@@ -126,9 +127,14 @@ export async function getOrCreateSdkSession(input: {
   modelProvider?: string
   modelId?: string
   thinkingLevel?: string
+  extensionPaths?: string[]
   promptPaths?: string[]
 }) {
-  const resourceSignature = await createResourceSignature(input.cwd, input.promptPaths ?? [])
+  const resourceSignature = await createResourceSignature(
+    input.cwd,
+    input.extensionPaths ?? [],
+    input.promptPaths ?? [],
+  )
   const existing = sessions().get(input.studioSessionId)
   if (existing?.isAlive() && existing.resourceSignature === resourceSignature) {
     existing.touch()
@@ -155,6 +161,8 @@ export async function getOrCreateSdkSession(input: {
         resolveProjectTrust: async () => isProjectTrusted(input.cwd),
       },
       resourceLoaderOptions: {
+        noExtensions: true,
+        additionalExtensionPaths: input.extensionPaths ?? [],
         additionalPromptTemplatePaths: input.promptPaths ?? [],
         promptsOverride: (base) => {
           const selected = new Set(input.promptPaths ?? [])
@@ -232,6 +240,7 @@ export async function getOrCreateSdkSession(input: {
       session,
       resourceSignature,
       input.cwd,
+      input.extensionPaths ?? [],
       input.promptPaths ?? [],
       diagnostics,
     )
@@ -244,18 +253,18 @@ export async function getOrCreateSdkSession(input: {
   return starting
 }
 
-async function createResourceSignature(cwd: string, promptPaths: string[]) {
-  const { listRuntimeExtensions } = await import('@/lib/packages/package-service')
-  const extensions = await listRuntimeExtensions(cwd)
-  const files = [...promptPaths, ...extensions.map((extension) => extension.path)]
-    .sort()
-    .map((path) => {
-      try {
-        return [path, statSync(path).mtimeMs]
-      } catch {
-        return [path, 0]
-      }
-    })
+async function createResourceSignature(
+  cwd: string,
+  extensionPaths: string[],
+  promptPaths: string[],
+) {
+  const files = [...promptPaths, ...extensionPaths].sort().map((path) => {
+    try {
+      return [path, statSync(path).mtimeMs]
+    } catch {
+      return [path, 0]
+    }
+  })
   const settings = SettingsManager.create(cwd, getAgentDir(), {
     projectTrusted: isProjectTrusted(cwd),
   })
@@ -263,8 +272,7 @@ async function createResourceSignature(cwd: string, promptPaths: string[]) {
     files,
     globalPackages: settings.getGlobalSettings().packages ?? [],
     projectPackages: settings.getProjectSettings().packages ?? [],
-    globalExtensions: settings.getGlobalSettings().extensions ?? [],
-    projectExtensions: settings.getProjectSettings().extensions ?? [],
+    extensionPaths: [...extensionPaths].sort(),
     projectTrusted: isProjectTrusted(cwd),
   })
 }
@@ -367,7 +375,11 @@ export async function reloadSdkSessions(input: {
     try {
       if (running) await session.inner.abort()
       await session.inner.reload({ beforeSessionStart: () => session.touch() })
-      session.resourceSignature = await createResourceSignature(session.cwd, session.promptPaths)
+      session.resourceSignature = await createResourceSignature(
+        session.cwd,
+        session.extensionPaths,
+        session.promptPaths,
+      )
       session.recordDiagnostic({
         event: 'reload',
         level: 'info',

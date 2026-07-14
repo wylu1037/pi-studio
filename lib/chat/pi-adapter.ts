@@ -52,6 +52,7 @@ export interface PiRunInput {
   baseUrl?: string
   model?: string
   thinkingLevel?: string
+  extensions: Array<{ id: string; path: string }>
   skills: Array<{ name: string; path: string }>
   prompts: string[]
   mcpConfigs?: PiMcpConfig[]
@@ -72,6 +73,7 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
     modelProvider: provider,
     modelId: input.model,
     thinkingLevel: input.thinkingLevel,
+    extensionPaths: input.extensions.map((extension) => extension.path),
     promptPaths: input.prompts,
   })
   if (session.inner.sessionFile) {

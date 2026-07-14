@@ -58,6 +58,10 @@ export type PatchApiAgentsIdResources200 = {
     /**
      * @type array
     */
+    selectedExtensionIds: string[];
+    /**
+     * @type array
+    */
     selectedSkillIds: string[];
     /**
      * @type array
@@ -131,6 +135,10 @@ export type PatchApiAgentsIdResourcesMutationRequestDefaultThinkingLevelEnumKey 
  * @description OK
 */
 export type PatchApiAgentsIdResourcesMutationRequest = {
+    /**
+     * @type array | undefined
+    */
+    selectedExtensionIds?: string[];
     /**
      * @type array | undefined
     */

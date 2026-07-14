@@ -169,6 +169,15 @@ export type PostApiExtensionsToggle200 = {
      * @type integer | undefined
     */
     diagnosticCount?: number;
+    /**
+     * @type array | undefined
+    */
+    assignedAgentIds?: string[];
+    /**
+     * @minLength 0
+     * @type integer | undefined
+    */
+    usedByAgents?: number;
 }[];
 
 export const postApiExtensionsToggleMutationRequestScopeEnum = {

@@ -1,24 +1,29 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { validateLocalExtension } from './extension-service'
+import {
+  createLocalExtension,
+  deleteLocalExtension,
+  validateLocalExtension,
+  writeExtensionFile,
+} from './extension-service'
 
-function extensionId(path: string) {
-  return `pi-extension:global:${Buffer.from('test').toString('base64url')}:${Buffer.from(path).toString('base64url')}`
-}
-
-test('validates ESM-style TypeScript extensions outside a module package', async () => {
+test('validates ESM-style TypeScript extensions stored in the Studio library', async () => {
   const root = await mkdtemp(join(tmpdir(), 'pi-studio-extension-'))
-  const previousAgentDir = process.env.PI_CODING_AGENT_DIR
-  const extensionPath = join(root, 'extensions', 'count-characters', 'index.ts')
+  const previousHome = process.env.HOME
+  const name = `count-characters-${Date.now()}`
+  let extensionId: string | undefined
 
   try {
-    process.env.PI_CODING_AGENT_DIR = root
-    await mkdir(join(root, 'extensions', 'count-characters'), { recursive: true })
-    await writeFile(
-      extensionPath,
+    process.env.HOME = root
+    const extension = await createLocalExtension({ name, template: 'tool', cwd: process.cwd() })
+    extensionId = extension.id
+    await writeExtensionFile(
+      extension.id,
+      process.cwd(),
+      'index.ts',
       [
         "import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'",
         "import { Type } from 'typebox'",
@@ -42,17 +47,17 @@ test('validates ESM-style TypeScript extensions outside a module package', async
         '}',
         '',
       ].join('\n'),
-      'utf8',
     )
 
-    const result = await validateLocalExtension(extensionId(extensionPath), process.cwd())
+    const result = await validateLocalExtension(extension.id, process.cwd())
 
     assert.equal(result.valid, true)
     assert.deepEqual(result.diagnostics, [])
     assert.deepEqual(result.capabilities.tools, ['count_characters'])
   } finally {
-    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR
-    else process.env.PI_CODING_AGENT_DIR = previousAgentDir
+    if (extensionId) await deleteLocalExtension(extensionId, process.cwd())
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
     await rm(root, { recursive: true, force: true })
   }
 })

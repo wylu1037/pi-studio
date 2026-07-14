@@ -58,6 +58,10 @@ export type PostApiAgentsIdDuplicate200 = {
     /**
      * @type array
     */
+    selectedExtensionIds: string[];
+    /**
+     * @type array
+    */
     selectedSkillIds: string[];
     /**
      * @type array

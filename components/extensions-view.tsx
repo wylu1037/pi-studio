@@ -24,13 +24,12 @@ import {
 } from '@phosphor-icons/react'
 import {
   ActionButton,
-  BracketButton,
+  ConfirmDialog,
   Label,
   PageHeader,
   PanelHeader,
   Tag,
   TextInput,
-  Toggle,
 } from '@/components/pi-ui'
 import {
   Select,
@@ -40,12 +39,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import type { GlobalExtension } from '@/lib/types'
+import type { AgentProfile, GlobalExtension } from '@/lib/types'
 import { errorMessage, showToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
 type ExtensionsTab = 'manage' | 'develop'
-type ExtensionScopeFilter = 'effective' | 'global' | 'project'
 type ExtensionTemplate =
   | 'empty'
   | 'tool'
@@ -183,11 +181,13 @@ function queryUrl(path: string, values: Record<string, string | number | undefin
 export function ExtensionsView({
   initialCwd,
   initialExtensions,
+  initialAgents,
   initialWorkspaces,
   initialTrust,
 }: {
   initialCwd: string
   initialExtensions: GlobalExtension[]
+  initialAgents: AgentProfile[]
   initialWorkspaces: Workspace[]
   initialTrust: TrustState
 }) {
@@ -327,12 +327,11 @@ export function ExtensionsView({
       )}
 
       {tab === 'manage' ? (
-        <ManageTab items={items} cwd={cwd} onItems={setItems} onRefresh={() => refresh()} />
+        <ManageTab items={items} agents={initialAgents} cwd={cwd} onRefresh={() => refresh()} />
       ) : (
         <DevelopTab
           items={items}
           cwd={cwd}
-          trusted={trust.trusted}
           initialExtensionId={searchParams.get('extension') ?? undefined}
           onRefresh={() => refresh()}
           onLocation={(extensionId) => updateLocation('develop', extensionId)}
@@ -405,20 +404,18 @@ function TrustBanner({ cwd, onTrusted }: { cwd: string; onTrusted: (state: Trust
 
 function ManageTab({
   items,
+  agents,
   cwd,
-  onItems,
   onRefresh,
 }: {
   items: GlobalExtension[]
+  agents: AgentProfile[]
   cwd: string
-  onItems: (items: GlobalExtension[]) => void
   onRefresh: () => Promise<void>
 }) {
-  const [scope, setScope] = useState<ExtensionScopeFilter>('effective')
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('all')
   const [capability, setCapability] = useState('all')
-  const [pendingId, setPendingId] = useState<string | null>(null)
   const [reloading, setReloading] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
@@ -434,7 +431,6 @@ function ManageTab({
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()
     return items.filter((extension) => {
-      if (scope !== 'effective' && extension.scope !== scope) return false
       if (status === 'enabled' && !extension.enabled) return false
       if (status === 'disabled' && extension.enabled) return false
       if (
@@ -462,7 +458,7 @@ function ManageTab({
         extension.package?.name?.toLowerCase().includes(normalized)
       )
     })
-  }, [capability, items, query, scope, status])
+  }, [capability, items, query, status])
 
   const selected = items.find((item) => item.id === selectedId)
   const metrics = {
@@ -470,33 +466,7 @@ function ManageTab({
     enabled: items.filter((item) => item.enabled).length,
     loaded: items.filter((item) => item.status === 'loaded').length,
     errors: items.filter((item) => item.status === 'load-error').length,
-    trust: items.filter((item) => item.status === 'trust-required').length,
-  }
-
-  const toggle = async (extension: GlobalExtension) => {
-    setPendingId(extension.id)
-    try {
-      const next = await requestJson<GlobalExtension[]>(
-        `/api/extensions/${encodeURIComponent(extension.id)}/state`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ enabled: !extension.enabled, cwd }),
-        },
-      )
-      onItems(next)
-      showToast({
-        tone: 'success',
-        message: `${extension.name} ${extension.enabled ? 'disabled' : 'enabled'}.`,
-      })
-    } catch (toggleError) {
-      showToast({
-        tone: 'error',
-        message: errorMessage(toggleError, 'Unable to update extension.'),
-      })
-    } finally {
-      setPendingId(null)
-    }
+    unassigned: items.filter((item) => !item.usedByAgents).length,
   }
 
   const reload = async (all = false) => {
@@ -531,29 +501,20 @@ function ManageTab({
         <TextInput
           value={query}
           onChange={setQuery}
-          placeholder="Search name, package, or path"
+          placeholder="Search name or library path"
           icon={<MagnifyingGlass size={14} />}
           className="w-full sm:w-72"
         />
-        <div className="flex items-center gap-1">
-          {(['effective', 'global', 'project'] as const).map((value) => (
-            <BracketButton key={value} active={scope === value} onClick={() => setScope(value)}>
-              {value}
-            </BracketButton>
-          ))}
-        </div>
         <Select value={status} onValueChange={(value) => value && setStatus(value)}>
           <SelectTrigger className="h-8 w-auto min-w-32 border-border bg-panel px-2 font-mono text-[11px]">
             <SelectValue>{status === 'all' ? 'All status' : status}</SelectValue>
           </SelectTrigger>
           <SelectContent alignItemWithTrigger={false} className="w-max min-w-(--anchor-width)">
-            {['all', 'loaded', 'enabled', 'disabled', 'load-error', 'trust-required'].map(
-              (value) => (
-                <SelectItem key={value} value={value}>
-                  {value === 'all' ? 'All status' : value}
-                </SelectItem>
-              ),
-            )}
+            {['all', 'loaded', 'enabled', 'disabled', 'load-error'].map((value) => (
+              <SelectItem key={value} value={value}>
+                {value === 'all' ? 'All status' : value}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <Select value={capability} onValueChange={(value) => value && setCapability(value)}>
@@ -581,18 +542,14 @@ function ManageTab({
 
       <div className="grid grid-cols-2 divide-x divide-border border-b border-border sm:grid-cols-5">
         <Metric label="Total" value={metrics.total} />
-        <Metric label="Enabled" value={metrics.enabled} />
+        <Metric label="Assigned" value={metrics.enabled} />
         <Metric label="Loaded" value={metrics.loaded} />
         <Metric
           label="Errors"
           value={metrics.errors}
           tone={metrics.errors ? 'danger' : undefined}
         />
-        <Metric
-          label="Trust required"
-          value={metrics.trust}
-          tone={metrics.trust ? 'warning' : undefined}
-        />
+        <Metric label="Unassigned" value={metrics.unassigned} />
       </div>
 
       <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
@@ -600,7 +557,7 @@ function ManageTab({
           <EmptyState
             icon={<SidebarExtensionsIcon className="size-7" />}
             title="No extensions match"
-            description="Change the workspace or filters, or create a local TypeScript extension in Develop."
+            description="Change the filters, or create a TypeScript extension in Develop."
           />
         ) : (
           <div className="divide-y divide-border border-y border-border">
@@ -644,9 +601,9 @@ function ManageTab({
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
-                  <Tag tone="outline">{extension.scope}</Tag>
-                  <Tag tone="outline">
-                    {extension.packageManaged ? 'package' : extension.source}
+                  <Tag tone="outline">library</Tag>
+                  <Tag tone={extension.usedByAgents ? 'accent' : 'outline'}>
+                    {extension.usedByAgents ?? 0} agent{extension.usedByAgents === 1 ? '' : 's'}
                   </Tag>
                   {extension.capabilities?.tools.length ? (
                     <Tag>{extension.capabilities.tools.length} tools</Tag>
@@ -656,20 +613,6 @@ function ManageTab({
                   ) : null}
                 </div>
                 <div className="flex items-center justify-between gap-3 sm:justify-end">
-                  <span
-                    onClick={(event) => event.stopPropagation()}
-                    onKeyDown={(event) => event.stopPropagation()}
-                  >
-                    <Toggle
-                      checked={extension.enabled}
-                      onChange={() => void toggle(extension)}
-                      disabled={
-                        !extension.canToggle ||
-                        pendingId === extension.id ||
-                        extension.status === 'trust-required'
-                      }
-                    />
-                  </span>
                   <CaretRight size={14} className="text-muted-foreground" />
                 </div>
               </div>
@@ -692,7 +635,13 @@ function ManageTab({
             className="absolute inset-0 animate-in bg-foreground/20 backdrop-blur-[1px] duration-200 fade-in"
           />
           <aside className="relative flex h-full w-full max-w-xl animate-in flex-col border-l border-border bg-panel shadow-[-24px_0_64px_-36px_rgba(0,0,0,0.45)] duration-300 slide-in-from-right sm:w-[min(560px,94vw)]">
-            <ExtensionDetails extension={selected} cwd={cwd} onClose={() => setSelectedId(null)} />
+            <ExtensionDetails
+              extension={selected}
+              agents={agents}
+              cwd={cwd}
+              onClose={() => setSelectedId(null)}
+              onAssignmentsChanged={onRefresh}
+            />
           </aside>
         </div>
       )}
@@ -739,16 +688,21 @@ function StatusTag({ extension }: { extension: GlobalExtension }) {
 
 function ExtensionDetails({
   extension,
+  agents,
   cwd,
   onClose,
+  onAssignmentsChanged,
 }: {
   extension: GlobalExtension
+  agents: AgentProfile[]
   cwd: string
   onClose: () => void
+  onAssignmentsChanged: () => Promise<void>
 }) {
   const [source, setSource] = useState<string | null>(null)
   const [diagnostics, setDiagnostics] = useState<ExtensionDiagnostic[]>([])
   const [loading, setLoading] = useState(true)
+  const [assigningAgentId, setAssigningAgentId] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -770,6 +724,30 @@ function ExtensionDetails({
       active = false
     }
   }, [cwd, extension.id])
+
+  const toggleAssignment = async (agent: AgentProfile) => {
+    const enabled = !extension.assignedAgentIds?.includes(agent.id)
+    setAssigningAgentId(agent.id)
+    try {
+      await requestJson(`/api/agents/${encodeURIComponent(agent.id)}/assign`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'extension', resourceId: extension.id, enabled }),
+      })
+      await onAssignmentsChanged()
+      showToast({
+        tone: 'success',
+        message: `${extension.name} ${enabled ? 'assigned to' : 'removed from'} ${agent.name}.`,
+      })
+    } catch (assignmentError) {
+      showToast({
+        tone: 'error',
+        message: errorMessage(assignmentError, 'Unable to update extension assignment.'),
+      })
+    } finally {
+      setAssigningAgentId(null)
+    }
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -795,14 +773,13 @@ function ExtensionDetails({
       <div className="scrollbar-thin min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
         <section className="space-y-2">
           <Label>Overview</Label>
-          <DetailRow label="Status">
-            <StatusTag extension={extension} />
-          </DetailRow>
-          <DetailRow label="Scope">
-            <Tag tone="outline">{extension.scope}</Tag>
-          </DetailRow>
-          <DetailRow label="Origin">
-            <span>{extension.origin ?? 'unknown'}</span>
+          {extension.usedByAgents ? (
+            <DetailRow label="Status">
+              <StatusTag extension={extension} />
+            </DetailRow>
+          ) : null}
+          <DetailRow label="Library">
+            <span>Pi Studio</span>
           </DetailRow>
           <DetailRow label="Compatibility">
             <span>{extension.compatibility ?? 'web'}</span>
@@ -810,8 +787,8 @@ function ExtensionDetails({
           <DetailRow label="Sessions">
             <span>{extension.runtime?.sessionIds.length ?? 0}</span>
           </DetailRow>
-          <div className="flex items-center gap-3 border-border pt-2">
-            <Label className="shrink-0">Path</Label>
+          <div className="flex items-center gap-3 border-t border-border pt-2">
+            <Label className="shrink-0">Source</Label>
             <p
               title={extension.path}
               className="min-w-0 flex-1 truncate text-right font-mono text-[10px] text-muted-foreground"
@@ -819,6 +796,44 @@ function ExtensionDetails({
               {extension.path}
             </p>
           </div>
+        </section>
+        <section className="space-y-2 border-t border-border pt-4">
+          <div className="flex items-center justify-between gap-3">
+            <Label>Assigned agents</Label>
+            <Tag tone={extension.usedByAgents ? 'accent' : 'outline'}>
+              {extension.usedByAgents ?? 0}
+            </Tag>
+          </div>
+          {agents.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Create an agent before assigning extensions.
+            </p>
+          ) : (
+            <div className="divide-y divide-border border-y border-border">
+              {agents.map((agent) => {
+                const assigned = extension.assignedAgentIds?.includes(agent.id) ?? false
+                return (
+                  <div key={agent.id} className="flex items-center justify-between gap-3 px-2 py-2">
+                    <div className="min-w-0">
+                      <p className="truncate font-mono text-xs text-foreground">{agent.name}</p>
+                      {agent.description && (
+                        <p className="mt-0.5 line-clamp-1 text-[10px] text-muted-foreground">
+                          {agent.description}
+                        </p>
+                      )}
+                    </div>
+                    <ActionButton
+                      variant={assigned ? 'ghost' : 'accent'}
+                      disabled={assigningAgentId === agent.id}
+                      onClick={() => void toggleAssignment(agent)}
+                    >
+                      {assigningAgentId === agent.id ? 'Saving' : assigned ? 'Unassign' : 'Assign'}
+                    </ActionButton>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </section>
         <section className="space-y-2 border-t border-border pt-4">
           <Label>Capabilities</Label>
@@ -903,14 +918,12 @@ function CapabilityList({ label, values }: { label: string; values: string[] }) 
 function DevelopTab({
   items,
   cwd,
-  trusted,
   initialExtensionId,
   onRefresh,
   onLocation,
 }: {
   items: GlobalExtension[]
   cwd: string
-  trusted: boolean
   initialExtensionId?: string
   onRefresh: () => Promise<void>
   onLocation: (extensionId?: string) => void
@@ -932,6 +945,8 @@ function DevelopTab({
   const [loadingFiles, setLoadingFiles] = useState(false)
   const [saving, setSaving] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  const [deleteRequested, setDeleteRequested] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [mobilePane, setMobilePane] = useState<'files' | 'editor' | 'inspector'>('editor')
 
   const selected = localExtensions.find((item) => item.id === extensionId)
@@ -1102,8 +1117,7 @@ function DevelopTab({
 
   const deleteExtension = async () => {
     if (!extensionId || !selected) return
-    if (!window.confirm(`Delete ${selected.name}? Only Pi Studio managed folders can be removed.`))
-      return
+    setDeleting(true)
     try {
       await requestJson(queryUrl(`/api/extensions/${encodeURIComponent(extensionId)}`, { cwd }), {
         method: 'DELETE',
@@ -1117,6 +1131,9 @@ function DevelopTab({
         tone: 'error',
         message: errorMessage(deleteError, 'Unable to delete extension.'),
       })
+    } finally {
+      setDeleting(false)
+      setDeleteRequested(false)
     }
   }
 
@@ -1128,7 +1145,7 @@ function DevelopTab({
           onValueChange={(value) => value && selectExtension(value)}
         >
           <SelectTrigger className="h-8 w-auto max-w-[65vw] min-w-56 border-border bg-panel px-2 font-mono text-xs">
-            <SelectValue>{selected?.name ?? 'Select local extension'}</SelectValue>
+            <SelectValue>{selected?.name ?? 'Select library extension'}</SelectValue>
           </SelectTrigger>
           <SelectContent
             alignItemWithTrigger={false}
@@ -1139,7 +1156,6 @@ function DevelopTab({
                 <span className="flex items-center gap-2">
                   <FileTs size={14} />
                   {extension.name}
-                  <span className="text-muted-foreground">· {extension.scope}</span>
                 </span>
               </SelectItem>
             ))}
@@ -1148,7 +1164,7 @@ function DevelopTab({
         <ActionButton variant="accent" onClick={() => setCreateOpen(true)}>
           <Plus size={14} /> New extension
         </ActionButton>
-        {selected && <Tag tone="outline">{selected.scope}</Tag>}
+        {selected && <Tag tone="outline">library</Tag>}
         {dirty && <Tag tone="warning">unsaved</Tag>}
         <div className="ml-auto flex flex-wrap gap-2">
           <ActionButton disabled={!activeFile || saving || !dirty} onClick={() => void save()}>
@@ -1296,11 +1312,7 @@ function DevelopTab({
           >
             <TerminalWindow size={14} /> Open test session
           </ActionButton>
-          <ActionButton
-            variant="danger"
-            disabled={!trusted && selected.scope === 'project'}
-            onClick={() => void deleteExtension()}
-          >
+          <ActionButton variant="danger" onClick={() => setDeleteRequested(true)}>
             <Trash size={14} /> Delete
           </ActionButton>
         </div>
@@ -1308,8 +1320,6 @@ function DevelopTab({
 
       {createOpen && (
         <CreateExtensionModal
-          cwd={cwd}
-          trusted={trusted}
           onClose={() => setCreateOpen(false)}
           onCreated={async (extension) => {
             setCreateOpen(false)
@@ -1319,6 +1329,15 @@ function DevelopTab({
           }}
         />
       )}
+      <ConfirmDialog
+        open={deleteRequested}
+        title="Delete extension"
+        description={`Delete "${selected?.name ?? ''}" from the Pi Studio extension library? Its agent assignments and source files will be removed.`}
+        confirmLabel="Delete extension"
+        busy={deleting}
+        onCancel={() => setDeleteRequested(false)}
+        onConfirm={() => void deleteExtension()}
+      />
     </div>
   )
 }
@@ -1417,18 +1436,13 @@ function Inspector({
 }
 
 function CreateExtensionModal({
-  cwd,
-  trusted,
   onClose,
   onCreated,
 }: {
-  cwd: string
-  trusted: boolean
   onClose: () => void
   onCreated: (extension: GlobalExtension) => Promise<void>
 }) {
   const [name, setName] = useState('')
-  const [scope, setScope] = useState<'global' | 'project'>('global')
   const [template, setTemplate] = useState<ExtensionTemplate>('tool')
   const [creating, setCreating] = useState(false)
   const create = async () => {
@@ -1437,7 +1451,7 @@ function CreateExtensionModal({
       const extension = await requestJson<GlobalExtension>('/api/extensions/create', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name, scope, cwd, template }),
+        body: JSON.stringify({ name, template }),
       })
       await onCreated(extension)
       showToast({ tone: 'success', message: `${extension.name} created.` })
@@ -1463,7 +1477,8 @@ function CreateExtensionModal({
           <div>
             <h2 className="font-mono text-sm">Create TypeScript extension</h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              A folder with index.ts and a Pi Studio ownership marker will be created.
+              Source is stored in the Pi Studio extension library and runs only when assigned to an
+              agent.
             </p>
           </div>
           <button
@@ -1488,27 +1503,10 @@ function CreateExtensionModal({
                 Lowercase letters, numbers, hyphens, and underscores.
               </p>
             </div>
-            <div className="space-y-2">
-              <Label>Scope</Label>
-              <Select
-                value={scope}
-                onValueChange={(value) => value && setScope(value as 'global' | 'project')}
-              >
-                <SelectTrigger className="h-9 w-full border-border bg-panel font-mono text-xs">
-                  <SelectValue>{scope}</SelectValue>
-                </SelectTrigger>
-                <SelectContent alignItemWithTrigger={false} className="min-w-(--anchor-width)">
-                  <SelectItem value="project" disabled={!trusted}>
-                    Project · {trusted ? 'current workspace' : 'trust required'}
-                  </SelectItem>
-                  <SelectItem value="global">Global · all workspaces</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
             <div className="border border-warning/30 bg-warning/8 p-3 text-xs text-muted-foreground">
               <Warning size={16} className="mb-2 text-warning" />
-              Validate is static and does not execute code. Save and reload executes the extension
-              in selected idle sessions.
+              Validate is static and does not execute code. Save and reload updates idle sessions
+              for agents already assigned this extension.
             </div>
           </div>
           <div className="space-y-2">
@@ -1537,7 +1535,7 @@ function CreateExtensionModal({
           <ActionButton onClick={onClose}>Cancel</ActionButton>
           <ActionButton
             variant="accent"
-            disabled={creating || !name.trim() || (scope === 'project' && !trusted)}
+            disabled={creating || !name.trim()}
             onClick={() => void create()}
           >
             <Plus size={14} />
