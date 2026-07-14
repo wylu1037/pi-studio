@@ -14,9 +14,11 @@ import type {
   SessionTreeNode,
 } from '@/lib/types'
 import { ensureStoredPrompt, removeStoredPrompt, writeStoredPrompt } from '@/lib/prompts/store'
+import { installedPackagePaths } from '@/lib/packages/studio-package-store'
 import { db, sqlite } from './client'
 import {
   agentMcpConfigs,
+  agentPackageSources,
   agentExtensions,
   agentModelProviders,
   agentModels,
@@ -105,6 +107,7 @@ export function listAgents(): AgentProfile[] {
     defaultThinkingLevel: agent.defaultThinkingLevel as AgentProfile['defaultThinkingLevel'],
     tags: tags('agent_tags', 'agent_id', agent.id),
     selectedExtensionIds: ids('agent_extensions', 'agent_id', 'extension_id', agent.id),
+    selectedPackageSources: ids('agent_package_sources', 'agent_id', 'source', agent.id),
     selectedSkillIds: ids('agent_skills', 'agent_id', 'skill_id', agent.id),
     selectedPromptIds: ids('agent_prompts', 'agent_id', 'prompt_id', agent.id),
     selectedMcpConfigIds: ids('agent_mcp_configs', 'agent_id', 'mcp_config_id', agent.id),
@@ -177,11 +180,16 @@ export function deleteAgent(id: string) {
   db.delete(agents).where(eq(agents.id, id)).run()
 }
 
+export function removePackageSourceFromAgents(source: string) {
+  db.delete(agentPackageSources).where(eq(agentPackageSources.source, source)).run()
+}
+
 export function updateAgentResources(
   id: string,
   input: {
     selectedSkillIds?: string[]
     selectedExtensionIds?: string[]
+    selectedPackageSources?: string[]
     selectedPromptIds?: string[]
     selectedMcpConfigIds?: string[]
     selectedProviderIds?: string[]
@@ -200,6 +208,12 @@ export function updateAgentResources(
         .run()
   }
   replace(agentSkills, 'skillId', input.selectedSkillIds)
+  if (input.selectedPackageSources) {
+    db.delete(agentPackageSources).where(eq(agentPackageSources.agentId, id)).run()
+    for (const source of input.selectedPackageSources) {
+      db.insert(agentPackageSources).values({ agentId: id, source }).run()
+    }
+  }
   if (input.selectedExtensionIds) {
     db.delete(agentExtensions).where(eq(agentExtensions.agentId, id)).run()
     for (const extensionId of input.selectedExtensionIds) {
@@ -268,6 +282,7 @@ export function duplicateAgent(id: string) {
   if (!copy) return null
   updateAgentResources(copy.id, {
     selectedExtensionIds: agent.selectedExtensionIds,
+    selectedPackageSources: agent.selectedPackageSources,
     selectedSkillIds: agent.selectedSkillIds,
     selectedPromptIds: agent.selectedPromptIds,
     selectedMcpConfigIds: agent.selectedMcpConfigIds,
@@ -1083,6 +1098,7 @@ export function resolveAgentRunConfig(agentId: string, providerId?: string | nul
   const agent = getAgent(agentId)
   if (!agent) return null
   const selectedExtensionSet = new Set(agent.selectedExtensionIds)
+  const packagePaths = installedPackagePaths(agent.selectedPackageSources, process.cwd())
   const selectedSkillSet = new Set(agent.selectedSkillIds)
   const selectedPromptSet = new Set(agent.selectedPromptIds)
   const selectedMcpSet = new Set(agent.selectedMcpConfigIds)
@@ -1109,6 +1125,7 @@ export function resolveAgentRunConfig(agentId: string, providerId?: string | nul
     extensions: listStudioExtensions().filter((extension) =>
       selectedExtensionSet.has(extension.id),
     ),
+    packagePaths,
     skills: listSkills().filter((skill) => selectedSkillSet.has(skill.id)),
     prompts: listPrompts().filter((prompt) => selectedPromptSet.has(prompt.id)),
     mcpConfigs: listMcpConfigs().filter((mcp) => selectedMcpSet.has(mcp.id)),

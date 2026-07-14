@@ -174,6 +174,20 @@ export const agentSkills = sqliteTable(
   ],
 )
 
+export const agentPackageSources = sqliteTable(
+  'agent_package_sources',
+  {
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    source: text('source').notNull(),
+  },
+  (table) => [
+    index('agent_package_sources_agent_idx').on(table.agentId),
+    index('agent_package_sources_source_idx').on(table.source),
+  ],
+)
+
 export const agentExtensions = sqliteTable(
   'agent_extensions',
   {
@@ -371,6 +385,7 @@ export const agentsRelations = relations(agents, ({ many }) => ({
   tags: many(agentTags),
   extensions: many(agentExtensions),
   skills: many(agentSkills),
+  packageSources: many(agentPackageSources),
   prompts: many(agentPrompts),
   mcpConfigs: many(agentMcpConfigs),
   modelProviders: many(agentModelProviders),

@@ -31,7 +31,6 @@ import {
   getPackageCatalogItem,
   listAgents,
   listMcpConfigs,
-  listPackageGallery,
   listPrompts,
   listProviders,
   listSessionMessages,
@@ -118,7 +117,7 @@ export const api = new OpenAPIHono().basePath('/api')
 
 async function runtimePackageCollection(cwd: string) {
   const { listRuntimePackages } = await import('@/lib/packages/package-service')
-  const gallery = await loadPackageGallery(listPackageGallery())
+  const gallery = await loadPackageGallery()
   return listRuntimePackages(cwd, gallery)
 }
 
@@ -473,7 +472,7 @@ api.openapi(
     request: { body: json(AgentInputSchema) },
     responses: { 200: json(AgentSchema), 400: json(ErrorSchema) },
   }),
-  (c) => {
+  async (c) => {
     const agent = createAgent(c.req.valid('json'))
     if (!agent) return c.json({ error: 'Unable to create agent' }, 400)
     return c.json(agent)
@@ -488,7 +487,7 @@ api.openapi(
     request: { params: z.object({ id: z.string() }) },
     responses: { 200: json(AgentSchema), 404: json(ErrorSchema) },
   }),
-  (c) => {
+  async (c) => {
     const agent = getAgent(c.req.valid('param').id)
     if (!agent) return c.json({ error: 'Agent not found' }, 404)
     return c.json(agent)
@@ -506,7 +505,7 @@ api.openapi(
     },
     responses: { 200: json(AgentSchema), 404: json(ErrorSchema) },
   }),
-  (c) => {
+  async (c) => {
     const agent = updateAgent(c.req.valid('param').id, c.req.valid('json'))
     if (!agent) return c.json({ error: 'Agent not found' }, 404)
     return c.json(agent)
@@ -1522,7 +1521,7 @@ api.openapi(
     },
     responses: { 200: json(AgentSchema), 404: json(ErrorSchema) },
   }),
-  (c) => {
+  async (c) => {
     const id = c.req.valid('param').id
     const body = c.req.valid('json')
     const agent = getAgent(id)
@@ -1531,9 +1530,21 @@ api.openapi(
       body.enabled
         ? Array.from(new Set([...values, body.resourceId]))
         : values.filter((value) => value !== body.resourceId)
+    const packageService =
+      body.kind === 'package' ? await import('@/lib/packages/package-service') : null
+    const packageSource = packageService?.decodePackageId(body.resourceId)?.source
+    if (body.kind === 'package' && !packageSource) {
+      return c.json({ error: 'Package not found' }, 404)
+    }
     const updated = updateAgentResources(id, {
       selectedExtensionIds:
         body.kind === 'extension' ? toggle(agent.selectedExtensionIds) : undefined,
+      selectedPackageSources:
+        body.kind === 'package' && packageSource
+          ? body.enabled
+            ? Array.from(new Set([...agent.selectedPackageSources, packageSource]))
+            : agent.selectedPackageSources.filter((source) => source !== packageSource)
+          : undefined,
       selectedSkillIds: body.kind === 'skill' ? toggle(agent.selectedSkillIds) : undefined,
       selectedPromptIds: body.kind === 'prompt' ? toggle(agent.selectedPromptIds) : undefined,
       selectedMcpConfigIds: body.kind === 'mcp' ? toggle(agent.selectedMcpConfigIds) : undefined,
@@ -1832,6 +1843,7 @@ api.get('/runs/:id/events', (c) => {
           path: skill.path,
         })),
         prompts: config.prompts.map((prompt) => prompt.path),
+        packagePaths: config.packagePaths,
         mcpConfigs: (config.mcpConfigs ?? []).map((mcp) => ({
           id: mcp.id,
           name: mcp.name,

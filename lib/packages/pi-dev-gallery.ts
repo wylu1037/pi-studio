@@ -78,11 +78,10 @@ export async function listPiDevPackages(): Promise<GlobalPackage[]> {
   return packages
 }
 
-export async function loadPackageGallery(fallback: GlobalPackage[] = []) {
+export async function loadPackageGallery() {
   try {
-    const packages = await listPiDevPackages()
-    return packages.length > 0 ? packages : fallback
+    return await listPiDevPackages()
   } catch {
-    return fallback
+    return []
   }
 }

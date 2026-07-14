@@ -55,6 +55,10 @@ export type PostApiAgents200 = {
     /**
      * @type array
     */
+    selectedPackageSources: string[];
+    /**
+     * @type array
+    */
     selectedSkillIds: string[];
     /**
      * @type array

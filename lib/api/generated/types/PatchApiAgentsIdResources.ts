@@ -62,6 +62,10 @@ export type PatchApiAgentsIdResources200 = {
     /**
      * @type array
     */
+    selectedPackageSources: string[];
+    /**
+     * @type array
+    */
     selectedSkillIds: string[];
     /**
      * @type array
@@ -139,6 +143,10 @@ export type PatchApiAgentsIdResourcesMutationRequest = {
      * @type array | undefined
     */
     selectedExtensionIds?: string[];
+    /**
+     * @type array | undefined
+    */
+    selectedPackageSources?: string[];
     /**
      * @type array | undefined
     */

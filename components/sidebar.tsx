@@ -25,7 +25,7 @@ const nav = [
   { href: '/extensions', label: 'Extensions', icon: Puzzle },
   { href: '/skills', label: 'Skills', icon: Sparkles },
   { href: '/prompts', label: 'Prompts', icon: FileText },
-  { href: '/mcp', label: 'MCP', icon: Plug },
+  { href: '/mcp', label: 'MCP', icon: Plug, hidden: true },
   { href: '/models', label: 'Models', icon: Cpu },
   { href: '/environment', label: 'Environment', icon: FileKey2 },
   { href: '/settings', label: 'Settings', icon: Settings },
@@ -61,34 +61,36 @@ export function Sidebar({ piVersion }: { piVersion: string }) {
       {/* Nav */}
       <nav className="scrollbar-thin flex-1 overflow-y-auto px-2 py-3">
         <ul className="space-y-0.5">
-          {nav.map((item) => {
-            const active =
-              item.href === '/'
-                ? pathname === '/' || pathname.startsWith('/agents')
-                : pathname.startsWith(item.href)
-            const Icon = item.icon
-            return (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  className={cn(
-                    'group flex items-center gap-2.5 border border-transparent px-2.5 py-1.5 font-mono text-[13px] transition-colors',
-                    active
-                      ? 'border-sidebar-border bg-card text-foreground'
-                      : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
-                  )}
-                >
-                  <Icon
+          {nav
+            .filter((item) => !item.hidden)
+            .map((item) => {
+              const active =
+                item.href === '/'
+                  ? pathname === '/' || pathname.startsWith('/agents')
+                  : pathname.startsWith(item.href)
+              const Icon = item.icon
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
                     className={cn(
-                      'size-4 shrink-0',
-                      active ? 'text-accent' : 'text-muted-foreground',
+                      'group flex items-center gap-2.5 border border-transparent px-2.5 py-1.5 font-mono text-[13px] transition-colors',
+                      active
+                        ? 'border-sidebar-border bg-card text-foreground'
+                        : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
                     )}
-                  />
-                  <span className="tracking-wide">{item.label}</span>
-                </Link>
-              </li>
-            )
-          })}
+                  >
+                    <Icon
+                      className={cn(
+                        'size-4 shrink-0',
+                        active ? 'text-accent' : 'text-muted-foreground',
+                      )}
+                    />
+                    <span className="tracking-wide">{item.label}</span>
+                  </Link>
+                </li>
+              )
+            })}
         </ul>
       </nav>
 

@@ -62,6 +62,10 @@ export type PatchApiAgentsId200 = {
     /**
      * @type array
     */
+    selectedPackageSources: string[];
+    /**
+     * @type array
+    */
     selectedSkillIds: string[];
     /**
      * @type array

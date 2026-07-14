@@ -23,6 +23,7 @@ export const AgentSchema = z.object({
   color: z.string(),
   defaultCwd: z.string().optional(),
   selectedExtensionIds: z.array(z.string()),
+  selectedPackageSources: z.array(z.string()),
   selectedSkillIds: z.array(z.string()),
   selectedPromptIds: z.array(z.string()),
   selectedMcpConfigIds: z.array(z.string()),
@@ -49,6 +50,7 @@ export const AgentInputSchema = z.object({
 
 export const AgentResourcesSchema = z.object({
   selectedExtensionIds: z.array(z.string()).optional(),
+  selectedPackageSources: z.array(z.string()).optional(),
   selectedSkillIds: z.array(z.string()).optional(),
   selectedPromptIds: z.array(z.string()).optional(),
   selectedMcpConfigIds: z.array(z.string()).optional(),
@@ -540,7 +542,7 @@ export const AssignToAgentSchema = z.object({
   agentId: z.string(),
   resourceId: z.string(),
   enabled: z.boolean().default(true),
-  kind: z.enum(['extension', 'skill', 'prompt', 'mcp', 'provider', 'model']),
+  kind: z.enum(['extension', 'package', 'skill', 'prompt', 'mcp', 'provider', 'model']),
 })
 
 export const ChatMessageSchema = z.object({

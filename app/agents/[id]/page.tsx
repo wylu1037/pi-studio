@@ -17,10 +17,13 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   const agent = getAgent(id)
   if (!agent) notFound()
   const { hydrateSessionSummariesFromSdk } = await import('@/lib/chat/session-branches')
+  const { listRuntimePackages } = await import('@/lib/packages/package-service')
+  const packages = await listRuntimePackages(process.cwd())
   return (
     <AgentDetail
       agent={agent}
       extensions={listStudioExtensions()}
+      packages={packages.installed}
       skills={listSkills()}
       prompts={listPrompts()}
       mcpConfigs={listMcpConfigs()}

@@ -149,8 +149,10 @@ export function removeStoredSkill(skill: Pick<GlobalSkill, 'name' | 'path'>) {
   }
 }
 
-export function syncPiSkillLinks(skills: Array<Pick<GlobalSkill, 'name' | 'path'>>) {
-  const targetDir = piSkillsDir()
+export function syncPiSkillLinks(
+  skills: Array<Pick<GlobalSkill, 'name' | 'path'>>,
+  targetDir = piSkillsDir(),
+) {
   const storeRoot = studioSkillsDir()
   mkdirSync(targetDir, { recursive: true })
 

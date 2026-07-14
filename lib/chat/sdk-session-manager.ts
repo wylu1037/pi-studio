@@ -42,6 +42,7 @@ class StudioAgentSession {
     readonly inner: AgentSession,
     resourceSignature: string,
     readonly cwd: string,
+    readonly agentDir: string,
     readonly extensionPaths: string[],
     readonly promptPaths: string[],
     diagnostics: SdkExtensionDiagnostic[] = [],
@@ -124,6 +125,7 @@ export async function getOrCreateSdkSession(input: {
   sessionFile?: string
   sessionDir: string
   cwd: string
+  agentDir: string
   modelProvider?: string
   modelId?: string
   thinkingLevel?: string
@@ -134,6 +136,7 @@ export async function getOrCreateSdkSession(input: {
     input.cwd,
     input.extensionPaths ?? [],
     input.promptPaths ?? [],
+    input.agentDir,
   )
   const existing = sessions().get(input.studioSessionId)
   if (existing?.isAlive() && existing.resourceSignature === resourceSignature) {
@@ -150,12 +153,12 @@ export async function getOrCreateSdkSession(input: {
       input.sessionFile && existsSync(input.sessionFile)
         ? SessionManager.open(input.sessionFile, input.sessionDir)
         : SessionManager.create(input.cwd, input.sessionDir)
-    const settingsManager = SettingsManager.create(input.cwd, getAgentDir(), {
+    const settingsManager = SettingsManager.create(input.cwd, input.agentDir, {
       projectTrusted: isProjectTrusted(input.cwd),
     })
     const services = await createAgentSessionServices({
       cwd: input.cwd,
-      agentDir: getAgentDir(),
+      agentDir: input.agentDir,
       settingsManager,
       resourceLoaderReloadOptions: {
         resolveProjectTrust: async () => isProjectTrusted(input.cwd),
@@ -240,6 +243,7 @@ export async function getOrCreateSdkSession(input: {
       session,
       resourceSignature,
       input.cwd,
+      input.agentDir,
       input.extensionPaths ?? [],
       input.promptPaths ?? [],
       diagnostics,
@@ -257,6 +261,7 @@ async function createResourceSignature(
   cwd: string,
   extensionPaths: string[],
   promptPaths: string[],
+  agentDir = getAgentDir(),
 ) {
   const files = [...promptPaths, ...extensionPaths].sort().map((path) => {
     try {
@@ -265,7 +270,7 @@ async function createResourceSignature(
       return [path, 0]
     }
   })
-  const settings = SettingsManager.create(cwd, getAgentDir(), {
+  const settings = SettingsManager.create(cwd, agentDir, {
     projectTrusted: isProjectTrusted(cwd),
   })
   return JSON.stringify({
@@ -379,6 +384,7 @@ export async function reloadSdkSessions(input: {
         session.cwd,
         session.extensionPaths,
         session.promptPaths,
+        session.agentDir,
       )
       session.recordDiagnostic({
         event: 'reload',

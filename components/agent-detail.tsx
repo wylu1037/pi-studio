@@ -28,6 +28,7 @@ import type {
   AgentSessionSummary,
   GlobalMcpConfig,
   GlobalModelProvider,
+  GlobalPackage,
   GlobalPromptTemplate,
   GlobalSkill,
   StudioExtension,
@@ -54,6 +55,7 @@ import { cn } from '@/lib/utils'
 const TABS = [
   'Overview',
   'Extensions',
+  'Packages',
   'Skills',
   'Prompts',
   'MCP',
@@ -74,6 +76,7 @@ type SettingsForm = z.infer<typeof settingsSchema>
 export function AgentDetail({
   agent,
   extensions,
+  packages,
   skills,
   prompts,
   mcpConfigs,
@@ -82,6 +85,7 @@ export function AgentDetail({
 }: {
   agent: AgentProfile
   extensions: StudioExtension[]
+  packages: GlobalPackage[]
   skills: GlobalSkill[]
   prompts: GlobalPromptTemplate[]
   mcpConfigs: GlobalMcpConfig[]
@@ -198,6 +202,23 @@ export function AgentDetail({
               meta: 'library',
             }))}
             selectedIds={agent.selectedExtensionIds}
+          />
+        )}
+        {tab === 'Packages' && (
+          <ResourcePicker
+            title="Packages"
+            agentId={agent.id}
+            kind="package"
+            items={packages.map((pkg) => ({
+              id: pkg.id,
+              name: pkg.name,
+              description: pkg.description,
+              tags: [pkg.type],
+              meta: pkg.version,
+            }))}
+            selectedIds={packages
+              .filter((pkg) => agent.selectedPackageSources.includes(pkg.source))
+              .map((pkg) => pkg.id)}
           />
         )}
         {tab === 'Skills' && (
@@ -339,7 +360,7 @@ function ResourcePicker({
 }: {
   title: string
   agentId: string
-  kind: 'extension' | 'skill' | 'prompt' | 'mcp'
+  kind: 'extension' | 'package' | 'skill' | 'prompt' | 'mcp'
   items: PickerItem[]
   selectedIds: string[]
 }) {

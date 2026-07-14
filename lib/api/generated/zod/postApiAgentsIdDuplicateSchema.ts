@@ -21,6 +21,7 @@ export const postApiAgentsIdDuplicate200Schema = z.object({
 "color": z.string(),
 "defaultCwd": z.optional(z.string()),
 "selectedExtensionIds": z.array(z.string()),
+"selectedPackageSources": z.array(z.string()),
 "selectedSkillIds": z.array(z.string()),
 "selectedPromptIds": z.array(z.string()),
 "selectedMcpConfigIds": z.array(z.string()),

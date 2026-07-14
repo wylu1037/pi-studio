@@ -154,6 +154,7 @@ export interface AgentProfile {
   color: string
   defaultCwd?: string
   selectedExtensionIds: string[]
+  selectedPackageSources: string[]
   selectedSkillIds: string[]
   selectedPromptIds: string[]
   selectedMcpConfigIds: string[]

@@ -8,6 +8,8 @@ import {
   createStudioExtension,
   deleteAgent,
   deleteStudioExtension,
+  duplicateAgent,
+  getAgent,
   resolveAgentRunConfig,
   updateAgentResources,
 } from './repository'
@@ -35,5 +37,22 @@ test('resolves only extensions assigned to an agent', async () => {
     if (agent) deleteAgent(agent.id)
     if (extension) deleteStudioExtension(extension.id)
     await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('persists package sources assigned to an agent and its copy', () => {
+  const agent = createAgent({ name: `Package test ${Date.now()}` })
+  const source = '/tmp/pi-studio-package-test'
+
+  try {
+    assert.ok(agent)
+    updateAgentResources(agent!.id, { selectedPackageSources: [source] })
+    assert.deepEqual(getAgent(agent!.id)?.selectedPackageSources, [source])
+
+    const copy = duplicateAgent(agent!.id)
+    assert.deepEqual(copy?.selectedPackageSources, [source])
+    if (copy) deleteAgent(copy.id)
+  } finally {
+    if (agent) deleteAgent(agent.id)
   }
 })

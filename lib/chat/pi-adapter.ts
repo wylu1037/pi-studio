@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { syncPiSkillLinks } from '@/lib/skills/store'
+import { agentRuntimeDir } from '@/lib/packages/studio-package-store'
 import { updateSessionFilePath } from '@/lib/db/repository'
 import { resolvePiProviderConnection } from '@/lib/models/provider-connection'
 import type { GlobalModelProvider } from '@/lib/types'
@@ -55,13 +55,14 @@ export interface PiRunInput {
   extensions: Array<{ id: string; path: string }>
   skills: Array<{ name: string; path: string }>
   prompts: string[]
+  packagePaths: string[]
   mcpConfigs?: PiMcpConfig[]
 }
 
 export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
   const { getOrCreateSdkSession } = await import('./sdk-session-manager')
   mkdirSync(input.sessionDir, { recursive: true })
-  syncUserAgentDir(input)
+  const agentDir = syncAgentRuntime(input)
   const provider = input.providerConfig
     ? studioProviderName(input.providerConfig.id)
     : input.provider
@@ -70,6 +71,7 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
     sessionFile: input.sessionFile,
     sessionDir: input.sessionDir,
     cwd: existsSync(input.cwd) ? input.cwd : process.cwd(),
+    agentDir,
     modelProvider: provider,
     modelId: input.model,
     thinkingLevel: input.thinkingLevel,
@@ -143,10 +145,10 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
   }
 }
 
-export function syncUserAgentDir(input: PiRunInput) {
-  const agentDir = join(homedir(), '.pi', 'agent')
+export function syncAgentRuntime(input: PiRunInput) {
+  const agentDir = agentRuntimeDir(input.agentId)
   mkdirSync(agentDir, { recursive: true })
-  syncPiSkillLinks(input.skills)
+  syncPiSkillLinks(input.skills, join(agentDir, 'skills'))
   syncSettingsJson(agentDir, input)
   syncMcpConfig(agentDir, input)
 
@@ -219,6 +221,7 @@ function syncSettingsJson(agentDir: string, input: PiRunInput) {
       defaultThinkingLevel: input.thinkingLevel ?? settings.defaultThinkingLevel,
       skills: input.skills.map((skill) => skill.name),
       prompts: input.prompts,
+      packages: input.packagePaths,
       piStudioActiveAgent: {
         id: input.agentId,
         name: input.agentName,

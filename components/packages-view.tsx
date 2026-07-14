@@ -21,7 +21,6 @@ import { refreshAfterMutation } from '@/lib/api/refresh'
 import { errorMessage, showToast } from '@/lib/toast'
 import {
   ActionButton,
-  BracketButton,
   CommandBox,
   ConfirmDialog,
   Label,
@@ -54,14 +53,12 @@ export function PackagesView({
   const [query, setQuery] = useState('')
   const [showGallery, setShowGallery] = useState(false)
   const [showInstall, setShowInstall] = useState(false)
-  const [scope, setScope] = useState<'global' | 'project'>('global')
 
   const filtered = installed.filter(
     (p) =>
-      p.scope === scope &&
-      (!query ||
-        p.name.toLowerCase().includes(query.toLowerCase()) ||
-        p.description.toLowerCase().includes(query.toLowerCase())),
+      !query ||
+      p.name.toLowerCase().includes(query.toLowerCase()) ||
+      p.description.toLowerCase().includes(query.toLowerCase()),
   )
 
   return (
@@ -98,12 +95,6 @@ export function PackagesView({
           icon={<Search className="size-3.5" />}
           className="w-64"
         />
-        <BracketButton active={scope === 'global'} onClick={() => setScope('global')}>
-          Global
-        </BracketButton>
-        <BracketButton active={scope === 'project'} onClick={() => setScope('project')}>
-          Project
-        </BracketButton>
         <span className="ml-auto font-mono text-xs text-muted-foreground">
           {filtered.length} installed
         </span>
@@ -132,30 +123,14 @@ export function PackagesView({
         )}
       </div>
 
-      {showGallery && (
-        <GalleryDrawer gallery={gallery} scope={scope} onClose={() => setShowGallery(false)} />
-      )}
-      <InstallPackageDialog
-        key={`${showInstall}:${scope}`}
-        open={showInstall}
-        initialScope={scope}
-        onClose={() => setShowInstall(false)}
-      />
+      {showGallery && <GalleryDrawer gallery={gallery} onClose={() => setShowGallery(false)} />}
+      <InstallPackageDialog open={showInstall} onClose={() => setShowInstall(false)} />
     </div>
   )
 }
 
-function InstallPackageDialog({
-  open,
-  initialScope,
-  onClose,
-}: {
-  open: boolean
-  initialScope: 'global' | 'project'
-  onClose: () => void
-}) {
+function InstallPackageDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [source, setSource] = useState('')
-  const [scope, setScope] = useState<'global' | 'project'>(initialScope)
   const [busy, setBusy] = useState(false)
 
   if (!open) return null
@@ -165,7 +140,7 @@ function InstallPackageDialog({
     if (!value || busy) return
     setBusy(true)
     try {
-      await postApiPackages({ source: value, scope })
+      await postApiPackages({ source: value })
       refreshAfterMutation()
       onClose()
     } catch (installError) {
@@ -203,17 +178,9 @@ function InstallPackageDialog({
             <Label>Package source</Label>
             <TextInput value={source} onChange={setSource} placeholder="npm:@scope/package" />
           </div>
-          <div className="space-y-1.5">
-            <Label>Install scope</Label>
-            <div className="flex gap-2">
-              <BracketButton active={scope === 'global'} onClick={() => setScope('global')}>
-                Global
-              </BracketButton>
-              <BracketButton active={scope === 'project'} onClick={() => setScope('project')}>
-                Project
-              </BracketButton>
-            </div>
-          </div>
+          <p className="text-xs text-muted-foreground">
+            Packages are stored in the Studio library and can then be assigned to individual agents.
+          </p>
           <div className="flex items-start gap-2 border border-warning/30 bg-warning/10 p-3 text-xs text-muted-foreground">
             <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning" />
             Packages may execute arbitrary code through extensions. Review the source before
@@ -255,8 +222,7 @@ function PackagesEmptyState({
       <div>
         <h2 className="font-serif text-2xl text-foreground italic">No packages installed</h2>
         <p className="mt-2 text-sm text-pretty text-muted-foreground">
-          Install packages to bring in shared skills, prompts, extensions, and themes for your local
-          Pi workspace.
+          Install packages into the Studio library, then assign them to the agents that need them.
         </p>
       </div>
       <div className="flex items-center gap-2">
@@ -390,15 +356,7 @@ function PackageCard({ pkg }: { pkg: GlobalPackage }) {
   )
 }
 
-function GalleryDrawer({
-  gallery,
-  scope,
-  onClose,
-}: {
-  gallery: GlobalPackage[]
-  scope: 'global' | 'project'
-  onClose: () => void
-}) {
+function GalleryDrawer({ gallery, onClose }: { gallery: GlobalPackage[]; onClose: () => void }) {
   const [query, setQuery] = useState('')
   const [pendingId, setPendingId] = useState<string | null>(null)
   const filtered = gallery.filter(
@@ -408,7 +366,7 @@ function GalleryDrawer({
   const installPackage = async (pkg: GlobalPackage) => {
     setPendingId(pkg.id)
     try {
-      await postApiPackages({ source: pkg.source, scope })
+      await postApiPackages({ source: pkg.source })
       refreshAfterMutation()
     } finally {
       setPendingId(null)
