@@ -561,51 +561,34 @@ function AddEnvFileDialog({
       <button
         type="button"
         aria-label="Close add environment file"
-        onClick={onClose}
-        className="absolute inset-0 animate-in bg-foreground/20 backdrop-blur-[1px] duration-200 fade-in"
+        onClick={pending ? undefined : onClose}
+        className="absolute inset-0 bg-foreground/25"
       />
-      <div className="relative w-full max-w-lg animate-in border border-border bg-card shadow-[0_24px_64px_-32px_rgba(0,0,0,0.45)] duration-200 zoom-in-95 fade-in">
-        <div className="flex items-start justify-between gap-4 border-border bg-card px-5 py-4">
-          <div className="flex min-w-0 items-start gap-3">
-            <span className="flex size-9 shrink-0 items-center justify-center border border-border-strong bg-card text-accent">
-              <FileKey2 className="size-4" />
-            </span>
-            <div>
-              <Label>Environment</Label>
-              <h2
-                id="add-env-file-title"
-                className="mt-1 font-mono text-[12px] font-normal text-muted-foreground"
-              >
-                Add environment file
-              </h2>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={pending}
-            className="p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
-            aria-label="Close dialog"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (path.trim() && !pending) onAdd()
+        }}
+        className="relative w-full max-w-lg border border-border bg-card shadow-xl"
+      >
+        <header className="border-b border-border bg-panel px-4 py-3">
+          <h2 id="add-env-file-title" className="font-serif text-lg text-foreground italic">
+            Add environment file
+          </h2>
+        </header>
 
-        <div className="space-y-5 bg-card p-5">
+        <div className="space-y-4 p-4">
           <div>
-            <Label className="mb-2 block">Environment file path</Label>
+            <Label className="mb-1.5 block">Environment file path</Label>
             <input
               value={path}
               onChange={(event) => onPathChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && path.trim() && !pending) onAdd()
-              }}
               placeholder="/path/to/project/.env"
               autoFocus
               spellCheck={false}
-              className="w-full border border-input bg-panel px-3 py-2 font-mono text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-ring"
+              className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-ring"
             />
-            <p className="mt-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
+            <p className="mt-1 font-mono text-[10px] leading-relaxed text-muted-foreground">
               The parent directory must exist. Supported names include .env, .env.local, and
               .env.production.local.
             </p>
@@ -618,21 +601,21 @@ function AddEnvFileDialog({
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-border bg-card px-5 py-3.5">
+        <footer className="flex items-center justify-end gap-2 border-t border-border bg-panel px-4 py-3">
           <ActionButton onClick={onClose} disabled={pending}>
             Cancel
           </ActionButton>
           <ActionButton
             variant="accent"
-            onClick={onAdd}
+            type="submit"
             disabled={!path.trim() || pending}
             className="active:scale-[0.98]"
           >
             <Plus className="size-3.5" />
             {pending ? 'Adding' : 'Add file'}
           </ActionButton>
-        </div>
-      </div>
+        </footer>
+      </form>
     </div>
   )
 }

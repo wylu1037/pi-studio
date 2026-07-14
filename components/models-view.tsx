@@ -1,12 +1,13 @@
 'use client'
 
-import { useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Controller, useForm } from 'react-hook-form'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import { z } from 'zod'
 import {
   Plus,
   Info,
+  CircleHelp,
   Star,
   Zap,
   Check,
@@ -38,7 +39,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { NumberField } from '@/components/ui/number-field'
 import { cn } from '@/lib/utils'
+
+const DEFAULT_CONTEXT_WINDOW = 128_000
+const DEFAULT_MAX_OUTPUT = 8_192
+const inputTypeOptions = [
+  { value: 'text', label: 'Text' },
+  { value: 'image', label: 'Image' },
+] as const
 
 const providerFormSchema = z.object({
   name: z.string().min(1),
@@ -57,18 +66,7 @@ const addModelFormSchema = z.object({
   id: z.string().min(1),
   name: z.string().optional(),
   reasoning: z.boolean(),
-  inputText: z
-    .string()
-    .min(1)
-    .refine(
-      (value) =>
-        value
-          .split(',')
-          .map((item) => item.trim())
-          .filter(Boolean)
-          .every((item) => item === 'text' || item === 'image'),
-      'Use text, image, or both separated by commas.',
-    ),
+  inputTypes: z.array(z.enum(['text', 'image'])).min(1, 'Select at least one input type.'),
   contextWindow: z
     .string()
     .optional()
@@ -358,7 +356,7 @@ function ProviderDetail({
   const [modelDeleteTarget, setModelDeleteTarget] = useState<string | null>(null)
   const [showAddModel, setShowAddModel] = useState(false)
   const [editingModel, setEditingModel] = useState<GlobalModel | null>(null)
-  const [showApiKey, setShowApiKey] = useState(false)
+  const [showApiKey, setShowApiKey] = useState(true)
   const [availableModels, setAvailableModels] = useState<Array<{ id: string; name: string }>>([])
   const [loadingModels, setLoadingModels] = useState(false)
 
@@ -774,6 +772,7 @@ function ModelDialog({
     control,
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<AddModelForm>({
     resolver: zodResolver(addModelFormSchema as never),
@@ -781,9 +780,23 @@ function ModelDialog({
       id: model?.id ?? '',
       name: model?.name ?? '',
       reasoning: model?.reasoning ?? false,
-      inputText: model?.input.join(', ') ?? 'text',
-      contextWindow: model?.contextWindow ? String(model.contextWindow) : '',
-      maxTokens: model?.maxTokens ? String(model.maxTokens) : '',
+      inputTypes: model?.input ?? ['text'],
+      contextWindow: String(model?.contextWindow ?? DEFAULT_CONTEXT_WINDOW),
+      maxTokens: String(model?.maxTokens ?? DEFAULT_MAX_OUTPUT),
+    },
+  })
+  const modelId = useWatch({ control, name: 'id' })
+  const displayNameEdited = useRef(mode === 'edit')
+
+  useEffect(() => {
+    if (mode === 'add' && !displayNameEdited.current && modelId) {
+      setValue('name', modelId)
+    }
+  }, [mode, modelId, setValue])
+
+  const displayNameField = register('name', {
+    onChange: () => {
+      displayNameEdited.current = true
     },
   })
 
@@ -793,10 +806,7 @@ function ModelDialog({
       originalId: mode === 'edit' ? model?.id : undefined,
       name: values.name || values.id,
       reasoning: values.reasoning,
-      input: values.inputText
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean),
+      input: values.inputTypes,
       contextWindow: values.contextWindow ? Number(values.contextWindow) : undefined,
       maxTokens: values.maxTokens ? Number(values.maxTokens) : undefined,
     })
@@ -822,11 +832,11 @@ function ModelDialog({
         onSubmit={handleSubmit(submit)}
         className="relative w-full max-w-lg border border-border bg-card shadow-xl"
       >
-        <div className="border-b border-border bg-panel px-4 py-3">
+        <header className="border-b border-border bg-panel px-4 py-3">
           <h2 id="model-dialog-title" className="font-serif text-lg text-foreground italic">
             {mode === 'add' ? 'Add model' : 'Edit model'}
           </h2>
-        </div>
+        </header>
         <div className="space-y-4 p-4">
           <Config label="Model ID" error={errors.id?.message}>
             {mode === 'add' && (loadingModels || availableModels.length > 0) ? (
@@ -868,29 +878,101 @@ function ModelDialog({
           </Config>
           <Config label="Display name">
             <input
-              {...register('name')}
+              {...displayNameField}
               className="w-full border border-input bg-panel px-3 py-1.5 text-[13px] text-foreground outline-none focus:border-ring"
             />
           </Config>
-          <Config label="Input types (comma separated)" error={errors.inputText?.message}>
-            <input
-              {...register('inputText')}
-              className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+          <Config label="Input types" error={errors.inputTypes?.message}>
+            <Controller
+              control={control}
+              name="inputTypes"
+              render={({ field }) => (
+                <Select<'text' | 'image', true>
+                  multiple
+                  items={inputTypeOptions}
+                  value={field.value}
+                  onValueChange={field.onChange}
+                >
+                  <SelectTrigger
+                    ref={field.ref}
+                    onBlur={field.onBlur}
+                    aria-invalid={Boolean(errors.inputTypes)}
+                    className="w-full text-[13px]"
+                  >
+                    <SelectValue placeholder="Select input types">
+                      {(value) =>
+                        Array.isArray(value) && value.length > 0
+                          ? value
+                              .map(
+                                (item) =>
+                                  inputTypeOptions.find((option) => option.value === item)?.label ??
+                                  item,
+                              )
+                              .join(', ')
+                          : 'Select input types'
+                      }
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent align="start">
+                    {inputTypeOptions.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             />
           </Config>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Config label="Context window">
-              <input
-                {...register('contextWindow')}
-                inputMode="numeric"
-                className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+            <Config
+              label={
+                <>
+                  Context window
+                  <FieldHint text="Maximum number of tokens the model can use across the prompt, conversation history, tools, and output." />
+                </>
+              }
+              error={errors.contextWindow?.message}
+            >
+              <Controller
+                control={control}
+                name="contextWindow"
+                render={({ field }) => (
+                  <NumberField
+                    name={field.name}
+                    ref={field.ref}
+                    value={field.value}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    min={1}
+                    aria-invalid={Boolean(errors.contextWindow)}
+                  />
+                )}
               />
             </Config>
-            <Config label="Max output">
-              <input
-                {...register('maxTokens')}
-                inputMode="numeric"
-                className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+            <Config
+              label={
+                <>
+                  Max output
+                  <FieldHint text="Maximum number of tokens the model may generate in a single response, including reasoning tokens." />
+                </>
+              }
+              error={errors.maxTokens?.message}
+            >
+              <Controller
+                control={control}
+                name="maxTokens"
+                render={({ field }) => (
+                  <NumberField
+                    name={field.name}
+                    ref={field.ref}
+                    value={field.value}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    min={1}
+                    aria-invalid={Boolean(errors.maxTokens)}
+                  />
+                )}
               />
             </Config>
           </div>
@@ -899,14 +981,14 @@ function ModelDialog({
             Reasoning model
           </label>
         </div>
-        <div className="flex items-center justify-end gap-2 border-t border-border bg-panel px-4 py-3">
+        <footer className="flex items-center justify-end gap-2 border-t border-border bg-panel px-4 py-3">
           <ActionButton onClick={onCancel} disabled={busy}>
             Cancel
           </ActionButton>
           <ActionButton variant="accent" type="submit" disabled={busy}>
             {mode === 'add' ? 'Add model' : 'Save model'}
           </ActionButton>
-        </div>
+        </footer>
       </form>
     </div>
   )
@@ -917,15 +999,35 @@ function Config({
   children,
   error,
 }: {
-  label: string
+  label: React.ReactNode
   children: React.ReactNode
   error?: string
 }) {
   return (
     <div>
-      <Label className="mb-1.5 block">{label}</Label>
+      <Label className="mb-1.5 flex items-center gap-1.5">{label}</Label>
       {children}
       {error && <p className="mt-1 font-mono text-[11px] text-destructive">{error}</p>}
     </div>
+  )
+}
+
+function FieldHint({ text }: { text: string }) {
+  return (
+    <span className="group relative inline-flex">
+      <button
+        type="button"
+        aria-label={text}
+        className="inline-flex size-4 items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+      >
+        <CircleHelp className="size-3.5" aria-hidden="true" />
+      </button>
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 w-56 -translate-x-1/2 border border-border bg-popover px-2.5 py-2 text-left font-mono text-[10px] leading-relaxed tracking-normal text-popover-foreground normal-case opacity-0 shadow-md transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
+      >
+        {text}
+      </span>
+    </span>
   )
 }
