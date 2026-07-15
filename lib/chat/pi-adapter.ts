@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { syncPiSkillLinks } from '@/lib/skills/store'
-import { agentRuntimeDir } from '@/lib/packages/studio-package-store'
+import { piAgentDir, syncPiSkillLinks } from '@/lib/skills/store'
 import { updateSessionFilePath } from '@/lib/db/repository'
 import { resolvePiProviderConnection } from '@/lib/models/provider-connection'
 import type { GlobalModelProvider } from '@/lib/types'
@@ -146,7 +145,7 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
 }
 
 export function syncAgentRuntime(input: PiRunInput) {
-  const agentDir = agentRuntimeDir(input.agentId)
+  const agentDir = piAgentDir()
   mkdirSync(agentDir, { recursive: true })
   syncPiSkillLinks(input.skills, join(agentDir, 'skills'))
   syncSettingsJson(agentDir, input)

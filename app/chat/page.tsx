@@ -5,12 +5,12 @@ import {
   getSession,
   getSessionTree,
   listAgents,
-  listMcpConfigs,
   listProviders,
   listPrompts,
   listSessionMessages,
   listSessions,
   listSkills,
+  listStudioExtensions,
 } from '@/lib/db/repository'
 
 export const dynamic = 'force-dynamic'
@@ -62,9 +62,9 @@ export default async function ChatPage({
       messages={messages}
       tree={tree}
       providers={listProviders()}
+      extensions={listStudioExtensions()}
       skills={listSkills()}
       prompts={listPrompts()}
-      mcpConfigs={listMcpConfigs()}
     />
   )
 }

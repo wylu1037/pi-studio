@@ -23,6 +23,7 @@ export { getApiModelProviders } from "./getApiModelProviders.ts";
 export { getApiModelProvidersIdAvailableModels } from "./getApiModelProvidersIdAvailableModels.ts";
 export { getApiModelProvidersProvideridModelsModelidCapabilities } from "./getApiModelProvidersProvideridModelsModelidCapabilities.ts";
 export { getApiPackages } from "./getApiPackages.ts";
+export { getApiPackagesGallery } from "./getApiPackagesGallery.ts";
 export { getApiPrompts } from "./getApiPrompts.ts";
 export { getApiRunsId } from "./getApiRunsId.ts";
 export { getApiSessions } from "./getApiSessions.ts";

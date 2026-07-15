@@ -38,6 +38,8 @@ export type { GetApiModelProvidersProvideridModelsModelidCapabilitiesQueryKey } 
 export type { GetApiModelProvidersProvideridModelsModelidCapabilitiesSuspenseQueryKey } from "./useGetApiModelProvidersProvideridModelsModelidCapabilitiesSuspense.ts";
 export type { GetApiModelProvidersSuspenseQueryKey } from "./useGetApiModelProvidersSuspense.ts";
 export type { GetApiPackagesQueryKey } from "./useGetApiPackages.ts";
+export type { GetApiPackagesGalleryQueryKey } from "./useGetApiPackagesGallery.ts";
+export type { GetApiPackagesGallerySuspenseQueryKey } from "./useGetApiPackagesGallerySuspense.ts";
 export type { GetApiPackagesSuspenseQueryKey } from "./useGetApiPackagesSuspense.ts";
 export type { GetApiPromptsQueryKey } from "./useGetApiPrompts.ts";
 export type { GetApiPromptsSuspenseQueryKey } from "./useGetApiPromptsSuspense.ts";
@@ -218,6 +220,12 @@ export { useGetApiModelProvidersSuspense } from "./useGetApiModelProvidersSuspen
 export { getApiPackagesQueryKey } from "./useGetApiPackages.ts";
 export { getApiPackagesQueryOptions } from "./useGetApiPackages.ts";
 export { useGetApiPackages } from "./useGetApiPackages.ts";
+export { getApiPackagesGalleryQueryKey } from "./useGetApiPackagesGallery.ts";
+export { getApiPackagesGalleryQueryOptions } from "./useGetApiPackagesGallery.ts";
+export { useGetApiPackagesGallery } from "./useGetApiPackagesGallery.ts";
+export { getApiPackagesGallerySuspenseQueryKey } from "./useGetApiPackagesGallerySuspense.ts";
+export { getApiPackagesGallerySuspenseQueryOptions } from "./useGetApiPackagesGallerySuspense.ts";
+export { useGetApiPackagesGallerySuspense } from "./useGetApiPackagesGallerySuspense.ts";
 export { getApiPackagesSuspenseQueryKey } from "./useGetApiPackagesSuspense.ts";
 export { getApiPackagesSuspenseQueryOptions } from "./useGetApiPackagesSuspense.ts";
 export { useGetApiPackagesSuspense } from "./useGetApiPackagesSuspense.ts";

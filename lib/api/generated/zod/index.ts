@@ -22,6 +22,7 @@ export { getApiMcp200Schema, getApiMcpQueryResponseSchema } from "./getApiMcpSch
 export { getApiModelProvidersIdAvailableModels200Schema, getApiModelProvidersIdAvailableModels404Schema, getApiModelProvidersIdAvailableModels502Schema, getApiModelProvidersIdAvailableModelsPathParamsSchema, getApiModelProvidersIdAvailableModelsQueryResponseSchema } from "./getApiModelProvidersIdAvailableModelsSchema.ts";
 export { getApiModelProvidersProvideridModelsModelidCapabilities200Schema, getApiModelProvidersProvideridModelsModelidCapabilities404Schema, getApiModelProvidersProvideridModelsModelidCapabilitiesPathParamsSchema, getApiModelProvidersProvideridModelsModelidCapabilitiesQueryResponseSchema } from "./getApiModelProvidersProvideridModelsModelidCapabilitiesSchema.ts";
 export { getApiModelProviders200Schema, getApiModelProvidersQueryResponseSchema } from "./getApiModelProvidersSchema.ts";
+export { getApiPackagesGallery200Schema, getApiPackagesGalleryQueryParamsSchema, getApiPackagesGalleryQueryResponseSchema } from "./getApiPackagesGallerySchema.ts";
 export { getApiPackages200Schema, getApiPackagesQueryResponseSchema } from "./getApiPackagesSchema.ts";
 export { getApiPrompts200Schema, getApiPromptsQueryResponseSchema } from "./getApiPromptsSchema.ts";
 export { getApiRunsId200Schema, getApiRunsId404Schema, getApiRunsIdPathParamsSchema, getApiRunsIdQueryResponseSchema } from "./getApiRunsIdSchema.ts";

@@ -7,7 +7,7 @@ import { streamSSE } from 'hono/streaming'
 import { abortRun as abortRegisteredRun } from '@/lib/chat/run-registry'
 import { defaultPiSessionDir, runPiCli } from '@/lib/chat/pi-adapter'
 import { runNpx } from '@/lib/npx'
-import { loadPackageGallery } from '@/lib/packages/pi-dev-gallery'
+import { loadPiPackageCatalog } from '@/lib/packages/pi-dev-gallery'
 import { materializeInstalledSkill, removeStoredSkill, studioRootDir } from '@/lib/skills/store'
 import {
   appendRunEvent,
@@ -82,6 +82,8 @@ import {
   InstallPackageSchema,
   ModelInputSchema,
   PackageCollectionSchema,
+  PiPackageCatalogQuerySchema,
+  PiPackageCatalogSchema,
   PromptInputSchema,
   PromptSchema,
   ProviderInputSchema,
@@ -117,8 +119,8 @@ export const api = new OpenAPIHono().basePath('/api')
 
 async function runtimePackageCollection(cwd: string) {
   const { listRuntimePackages } = await import('@/lib/packages/package-service')
-  const gallery = await loadPackageGallery()
-  return listRuntimePackages(cwd, gallery)
+  const catalog = await loadPiPackageCatalog()
+  return listRuntimePackages(cwd, catalog.packages)
 }
 
 function normalizeRegistryKey(value: string) {
@@ -386,6 +388,17 @@ api.openapi(
 api.openapi(
   createRoute({
     method: 'get',
+    path: '/packages/gallery',
+    tags: ['Packages'],
+    request: { query: PiPackageCatalogQuerySchema },
+    responses: { 200: json(PiPackageCatalogSchema) },
+  }),
+  async (c) => c.json(await loadPiPackageCatalog(c.req.valid('query'))),
+)
+
+api.openapi(
+  createRoute({
+    method: 'get',
     path: '/health',
     tags: ['System'],
     responses: { 200: json(z.object({ ok: z.boolean() })) },
@@ -424,6 +437,53 @@ api.openapi(
     )
   },
 )
+
+api.get('/sessions/:id/live-events', async (c) => {
+  const { getSdkSession } = await import('@/lib/chat/sdk-session-manager')
+  const { parseSdkEvent } = await import('@/lib/chat/pi-events')
+  const session = getSdkSession(c.req.param('id'))
+  if (!session) return c.json({ error: 'Agent session is not active.' }, 404)
+
+  return streamSSE(c, async (stream) => {
+    const queue: Array<ReturnType<typeof parseSdkEvent>[number]> = []
+    let aborted = false
+    let wake: (() => void) | null = null
+    const notify = () => {
+      wake?.()
+      wake = null
+    }
+    const unsubscribe = session.subscribe((event) => {
+      queue.push(...parseSdkEvent(event))
+      notify()
+    })
+    stream.onAbort(() => {
+      aborted = true
+      notify()
+    })
+
+    try {
+      while (!aborted && (!session.inner.isIdle || queue.length > 0)) {
+        if (queue.length === 0) {
+          await new Promise<void>((resolve) => {
+            const timeout = setTimeout(resolve, 1000)
+            wake = () => {
+              clearTimeout(timeout)
+              resolve()
+            }
+          })
+        }
+        while (!aborted && queue.length > 0) {
+          const event = queue.shift()
+          if (event) await stream.writeSSE({ event: event.type, data: JSON.stringify(event) })
+        }
+      }
+      if (!aborted)
+        await stream.writeSSE({ event: 'done', data: JSON.stringify({ recovered: true }) })
+    } finally {
+      unsubscribe()
+    }
+  })
+})
 
 for (const behavior of ['steer', 'follow-up'] as const) {
   api.openapi(

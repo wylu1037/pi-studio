@@ -43,6 +43,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { getApiRunsId } from '@/lib/api/generated/clients/getApiRunsId'
+import { getApiSessionsIdAgentState } from '@/lib/api/generated/clients/getApiSessionsIdAgentState'
 import { postApiRunsIdAbort } from '@/lib/api/generated/clients/postApiRunsIdAbort'
 import { postApiSessions } from '@/lib/api/generated/clients/postApiSessions'
 import { postApiSessionsIdFollowUp } from '@/lib/api/generated/clients/postApiSessionsIdFollowUp'
@@ -54,11 +55,11 @@ import type {
   AgentSessionSummary,
   ChatMessage,
   ChatMessageType,
-  GlobalMcpConfig,
   GlobalModelProvider,
   GlobalPromptTemplate,
   GlobalSkill,
   SessionTreeNode,
+  StudioExtension,
   TreeNodeRole,
 } from '@/lib/types'
 import { errorMessage, showToast } from '@/lib/toast'
@@ -124,9 +125,9 @@ export function ChatView({
   messages,
   tree,
   providers,
+  extensions,
   skills,
   prompts,
-  mcpConfigs,
 }: {
   agents: AgentProfile[]
   activeAgent?: AgentProfile
@@ -135,9 +136,9 @@ export function ChatView({
   messages: ChatMessage[]
   tree: SessionTreeNode | null
   providers: GlobalModelProvider[]
+  extensions: StudioExtension[]
   skills: GlobalSkill[]
   prompts: GlobalPromptTemplate[]
-  mcpConfigs: GlobalMcpConfig[]
 }) {
   const router = useRouter()
   const [streamMessages, setStreamMessages] = useState<ChatMessage[]>([])
@@ -149,6 +150,7 @@ export function ChatView({
   const [streamPhase, setStreamPhase] = useState<StreamPhase>('idle')
   const [optimisticMessage, setOptimisticMessage] = useState<ChatMessage | null>(null)
   const [runId, setRunId] = useState<string | null>(null)
+  const [sdkSessionRunning, setSdkSessionRunning] = useState(false)
   const [abortingRun, setAbortingRun] = useState(false)
   const [streamError, setStreamError] = useState<string | null>(null)
   const [queueingMessage, setQueueingMessage] = useState<'steer' | 'follow-up' | null>(null)
@@ -181,6 +183,7 @@ export function ChatView({
   const latestStreamingAssistantIdRef = useRef<string | null>(null)
   const streamMessageSequenceRef = useRef(0)
   const sourceMessageCountAtRunStartRef = useRef(messages.length)
+  const sdkSessionWasRunningRef = useRef(false)
 
   const availableModelOptions = useMemo(() => {
     const enabledProviders = new Set(activeAgent?.selectedProviderIds ?? [])
@@ -293,6 +296,12 @@ export function ChatView({
     const selected = new Set(activeAgent?.selectedPromptIds ?? [])
     return prompts.filter((prompt) => selected.has(prompt.id))
   }, [activeAgent?.selectedPromptIds, prompts])
+  const extensionNames = useMemo(() => {
+    const selected = new Set(activeAgent?.selectedExtensionIds ?? [])
+    return extensions
+      .filter((extension) => selected.has(extension.id))
+      .map((extension) => extension.name)
+  }, [activeAgent?.selectedExtensionIds, extensions])
 
   useEffect(() => {
     let active = true
@@ -336,7 +345,7 @@ export function ChatView({
 
   const createNewSession = async () => {
     if (!activeAgent || creatingSession) return
-    if (runId) {
+    if (runId || sdkSessionRunning) {
       showToast({
         tone: 'error',
         title: 'Run in progress',
@@ -375,6 +384,7 @@ export function ChatView({
       !activeAgent ||
       sessionId === activeSession?.id ||
       streamPhase !== 'idle' ||
+      sdkSessionRunning ||
       creatingSession ||
       branchPending !== null
     )
@@ -389,6 +399,7 @@ export function ChatView({
       !activeAgent ||
       agentId === activeAgent.id ||
       streamPhase !== 'idle' ||
+      sdkSessionRunning ||
       creatingSession ||
       branchPending !== null
     )
@@ -462,10 +473,6 @@ export function ChatView({
     }
     insertPromptCommand(option.prompt)
   }
-  const mcpNames = useMemo(() => {
-    const selected = new Set(activeAgent?.selectedMcpConfigIds ?? [])
-    return mcpConfigs.filter((mcp) => selected.has(mcp.id)).map((mcp) => mcp.name)
-  }, [activeAgent?.selectedMcpConfigIds, mcpConfigs])
   const sourceMessages = branchMessages ?? messages
 
   useEffect(() => {
@@ -476,6 +483,42 @@ export function ChatView({
       }
     }
   }, [])
+
+  useEffect(() => {
+    let active = true
+    let timer: number | undefined
+    sdkSessionWasRunningRef.current = false
+    setSdkSessionRunning(false)
+
+    const poll = async () => {
+      if (!activeSession) return
+      try {
+        const state = await getApiSessionsIdAgentState(activeSession.id, {
+          headers: { 'cache-control': 'no-cache' },
+        })
+        if (!active) return
+        const wasRunning = sdkSessionWasRunningRef.current
+        sdkSessionWasRunningRef.current = state.running
+        setSdkSessionRunning(state.running)
+        if (wasRunning && !state.running) {
+          if (!activeRunIdRef.current) {
+            setStreamPhase('idle')
+            setStreamDone(true)
+          }
+          router.refresh()
+        }
+      } catch {
+        // Keep the last known state during transient polling failures.
+      }
+      if (active) timer = window.setTimeout(poll, RUN_RECONCILE_POLL_MS)
+    }
+
+    void poll()
+    return () => {
+      active = false
+      if (timer) window.clearTimeout(timer)
+    }
+  }, [activeSession, router])
 
   useEffect(() => {
     setSelectedNodeId(findCurrentTreeNodeId(tree))
@@ -649,66 +692,177 @@ export function ChatView({
     reconcileTimerRef.current = window.setTimeout(poll, RUN_RECONCILE_INITIAL_DELAY_MS)
   }
 
-  const startStreamingAssistant = () => {
+  const startStreamingAssistant = useCallback(() => {
     const id = `stream-assistant-${Date.now()}-${streamMessageSequenceRef.current++}`
     currentStreamingAssistantIdRef.current = id
     latestStreamingAssistantIdRef.current = id
     return id
-  }
+  }, [])
 
-  const appendStreamingAssistantDelta = (content: string) => {
-    if (!content) return
-    const id = currentStreamingAssistantIdRef.current ?? startStreamingAssistant()
-    setStreamMessages((current) => {
-      const existing = current.find((message) => message.id === id)
-      if (existing) {
-        return current.map((message) =>
-          message.id === id ? { ...message, content: message.content + content } : message,
-        )
-      }
-      return [
-        ...current,
-        {
-          id,
-          type: 'assistant',
-          content,
-          timestamp: 'streaming',
-        },
-      ]
-    })
-  }
+  const appendStreamingAssistantDelta = useCallback(
+    (content: string) => {
+      if (!content) return
+      const id = currentStreamingAssistantIdRef.current ?? startStreamingAssistant()
+      setStreamMessages((current) => {
+        const existing = current.find((message) => message.id === id)
+        if (existing) {
+          return current.map((message) =>
+            message.id === id ? { ...message, content: message.content + content } : message,
+          )
+        }
+        return [
+          ...current,
+          {
+            id,
+            type: 'assistant',
+            content,
+            timestamp: 'streaming',
+          },
+        ]
+      })
+    },
+    [startStreamingAssistant],
+  )
 
-  const appendStreamProcessMessage = (
-    type: Extract<ChatMessageType, 'thinking' | 'tool_call' | 'tool_result' | 'bash'>,
-    content: string,
-    title?: string,
-  ) => {
-    if (!content) return
-    setStreamMessages((current) => {
-      if (type === 'thinking') {
+  const appendStreamProcessMessage = useCallback(
+    (
+      type: Extract<ChatMessageType, 'thinking' | 'tool_call' | 'tool_result' | 'bash'>,
+      content: string,
+      title?: string,
+    ) => {
+      if (!content) return
+      setStreamMessages((current) => {
+        if (type === 'thinking') {
+          const last = current.at(-1)
+          if (last?.type === 'thinking') {
+            return [...current.slice(0, -1), { ...last, content: last.content + content }]
+          }
+        }
+
         const last = current.at(-1)
-        if (last?.type === 'thinking') {
+        if (last?.type === type && last.title === title && type === 'bash') {
           return [...current.slice(0, -1), { ...last, content: last.content + content }]
         }
-      }
 
-      const last = current.at(-1)
-      if (last?.type === type && last.title === title && type === 'bash') {
-        return [...current.slice(0, -1), { ...last, content: last.content + content }]
-      }
+        return [
+          ...current,
+          {
+            id: `stream-${type}-${Date.now()}-${current.length}`,
+            type,
+            title,
+            content,
+            timestamp: 'streaming',
+          },
+        ]
+      })
+    },
+    [],
+  )
 
-      return [
-        ...current,
-        {
-          id: `stream-${type}-${Date.now()}-${current.length}`,
-          type,
-          title,
-          content,
-          timestamp: 'streaming',
-        },
-      ]
+  useEffect(() => {
+    if (!activeSession || !sdkSessionRunning || runId) return
+
+    setStreamStartedAt(Date.now())
+    setStreamDone(false)
+    setStreamError(null)
+    setStreamPhase('thinking')
+    currentStreamingAssistantIdRef.current = null
+    latestStreamingAssistantIdRef.current = null
+
+    const source = new EventSource(
+      `/api/sessions/${encodeURIComponent(activeSession.id)}/live-events`,
+    )
+    eventSourceRef.current = source
+    source.addEventListener('assistant_message_start', () => startStreamingAssistant())
+    source.addEventListener('assistant_message_end', () => {
+      currentStreamingAssistantIdRef.current = null
     })
-  }
+    source.addEventListener('message_delta', (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as { content?: string }
+      setStreamPhase('streaming')
+      appendStreamingAssistantDelta(payload.content ?? '')
+    })
+    source.addEventListener('thinking_delta', (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as { content?: string }
+      setStreamPhase('thinking')
+      appendStreamProcessMessage('thinking', payload.content ?? '', 'Thinking')
+    })
+    source.addEventListener('tool_call_delta', (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as {
+        content?: string
+        title?: string
+      }
+      setStreamPhase('thinking')
+      appendStreamProcessMessage('tool_call', payload.content ?? '', payload.title ?? 'Tool call')
+    })
+    source.addEventListener('tool_result_delta', (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as {
+        content?: string
+        title?: string
+      }
+      setStreamPhase('thinking')
+      appendStreamProcessMessage(
+        'tool_result',
+        payload.content ?? '',
+        payload.title ?? 'Tool result',
+      )
+    })
+    source.addEventListener('bash_output', (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as {
+        content?: string
+        stream?: 'stdout' | 'stderr'
+      }
+      setStreamPhase('thinking')
+      appendStreamProcessMessage('bash', payload.content ?? '', payload.stream ?? 'stderr')
+    })
+    source.addEventListener('usage', (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as { usage?: StreamUsage }
+      const assistantId = latestStreamingAssistantIdRef.current
+      if (!assistantId || !payload.usage) return
+      const usage = {
+        input: payload.usage.input ?? 0,
+        output: payload.usage.output ?? 0,
+        cacheRead: payload.usage.cacheRead ?? 0,
+        cacheWrite: payload.usage.cacheWrite ?? 0,
+        cost: payload.usage.cost,
+      }
+      setStreamMessages((current) =>
+        current.map((message) =>
+          message.id === assistantId
+            ? { ...message, tokens: payload.usage?.totalTokens, usage }
+            : message,
+        ),
+      )
+    })
+    source.addEventListener('error', (event) => {
+      const data = (event as MessageEvent).data
+      if (typeof data !== 'string' || !data) return
+      const payload = JSON.parse(data) as { message?: string }
+      setStreamError(payload.message ?? 'pi run failed.')
+    })
+    source.addEventListener('done', () => {
+      source.close()
+      if (eventSourceRef.current === source) eventSourceRef.current = null
+      sdkSessionWasRunningRef.current = false
+      setSdkSessionRunning(false)
+      setStreamPhase('idle')
+      setStreamDone(true)
+      router.refresh()
+    })
+
+    return () => {
+      source.close()
+      if (eventSourceRef.current === source) eventSourceRef.current = null
+    }
+  }, [
+    activeSession,
+    appendStreamProcessMessage,
+    appendStreamingAssistantDelta,
+    router,
+    runId,
+    sdkSessionRunning,
+    startStreamingAssistant,
+  ])
 
   const submit = form.handleSubmit(async (values) => {
     if (!activeSession || !activeAgent) return
@@ -758,6 +912,23 @@ export function ChatView({
     }
     if (!postApiSessionsIdRunsMutationRequestSchema.safeParse(payload).success) {
       return
+    }
+    try {
+      const state = await getApiSessionsIdAgentState(activeSession.id, {
+        headers: { 'cache-control': 'no-cache' },
+      })
+      if (state.running) {
+        sdkSessionWasRunningRef.current = true
+        setSdkSessionRunning(true)
+        showToast({
+          tone: 'warning',
+          title: 'Agent is processing',
+          message: 'Use Steer now or Follow up to queue this message.',
+        })
+        return
+      }
+    } catch {
+      // Starting the run remains the source of truth if the preflight check is unavailable.
     }
     eventSourceRef.current?.close()
     clearReconciliation()
@@ -919,11 +1090,25 @@ export function ChatView({
       })
       scheduleRunReconciliation(currentRunId, eventSource)
     } catch (error) {
+      const message = errorMessage(error, 'Unable to start pi run.')
       setStreamPhase('idle')
       setRunId(null)
       setAbortingRun(false)
       activeRunIdRef.current = null
-      setStreamError(error instanceof Error ? error.message : 'Unable to start pi run.')
+      setOptimisticMessage(null)
+      setStreamStartedAt(null)
+      if (/already processing|streamingBehavior/i.test(message)) {
+        sdkSessionWasRunningRef.current = true
+        setSdkSessionRunning(true)
+        setStreamError(null)
+        showToast({
+          tone: 'warning',
+          title: 'Agent is processing',
+          message: 'Use Steer now or Follow up to queue this message.',
+        })
+      } else {
+        setStreamError(message)
+      }
       return
     }
   })
@@ -1046,11 +1231,14 @@ export function ChatView({
   }
 
   const isStartingRun = streamPhase === 'starting' && !runId
-  const isRunningRun = Boolean(runId)
+  const isRunningRun = Boolean(runId) || sdkSessionRunning
+  const canAbortRun = Boolean(runId)
   const sendButtonLabel = abortingRun
     ? 'Stopping'
     : isRunningRun
-      ? 'Stop'
+      ? canAbortRun
+        ? 'Stop'
+        : 'Working'
       : creatingSession
         ? 'Creating'
         : isStartingRun
@@ -1153,7 +1341,12 @@ export function ChatView({
                 onValueChange={(value) => {
                   if (value !== null) switchAgent(value)
                 }}
-                disabled={streamPhase !== 'idle' || creatingSession || branchPending !== null}
+                disabled={
+                  streamPhase !== 'idle' ||
+                  sdkSessionRunning ||
+                  creatingSession ||
+                  branchPending !== null
+                }
               >
                 <SelectTrigger
                   aria-label="Switch agent"
@@ -1179,7 +1372,12 @@ export function ChatView({
                 onValueChange={(value) => {
                   if (value !== null) switchSession(value)
                 }}
-                disabled={streamPhase !== 'idle' || creatingSession || branchPending !== null}
+                disabled={
+                  streamPhase !== 'idle' ||
+                  sdkSessionRunning ||
+                  creatingSession ||
+                  branchPending !== null
+                }
               >
                 <SelectTrigger
                   aria-label="Switch session"
@@ -1209,10 +1407,10 @@ export function ChatView({
               <Circle
                 className={cn(
                   'size-2',
-                  runId ? 'fill-success text-success' : 'text-muted-foreground',
+                  isRunningRun ? 'fill-success text-success' : 'text-muted-foreground',
                 )}
               />
-              {runId ? 'running' : 'ready'}
+              {isRunningRun ? 'running' : 'ready'}
             </Tag>
             <Tag tone="outline">{activeSession.messageCount} msgs</Tag>
             {!showActiveContext && (
@@ -1322,9 +1520,7 @@ export function ChatView({
                           type="button"
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={() => executeSlashCommand(option)}
-                          disabled={
-                            option.kind === 'builtin' && (Boolean(runId) || creatingSession)
-                          }
+                          disabled={option.kind === 'builtin' && (isRunningRun || creatingSession)}
                           className={cn(
                             'flex w-full flex-col gap-1 border-l-2 border-transparent px-4 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45',
                             index === slashSelection
@@ -1457,7 +1653,7 @@ export function ChatView({
                     }}
                     rows={1}
                     placeholder={
-                      runId
+                      isRunningRun
                         ? 'Add guidance to the active run...'
                         : 'Reply to the agent...  (Enter to send, Shift+Enter for newline)'
                     }
@@ -1466,23 +1662,31 @@ export function ChatView({
                 </ScrollArea>
                 <button
                   type={isRunningRun ? 'button' : 'submit'}
-                  onClick={isRunningRun ? abort : undefined}
+                  onClick={canAbortRun ? abort : undefined}
                   disabled={
-                    isRunningRun ? abortingRun : isStartingRun || creatingSession || !canSend
+                    isRunningRun
+                      ? !canAbortRun || abortingRun
+                      : isStartingRun || creatingSession || !canSend
                   }
                   className={cn(
                     'flex h-9 items-center justify-center gap-1.5 border font-mono text-[11px] uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-70',
                     composerIsScrollable && 'col-start-3 row-start-2',
-                    isRunningRun
+                    canAbortRun
                       ? 'border-destructive/70 bg-destructive/10 px-3 text-destructive hover:bg-destructive hover:text-destructive-foreground'
-                      : 'border-accent bg-accent px-2.5 text-accent-foreground hover:opacity-90',
+                      : isRunningRun
+                        ? 'border-border bg-muted px-3 text-muted-foreground'
+                        : 'border-accent bg-accent px-2.5 text-accent-foreground hover:opacity-90',
                   )}
-                  aria-label={isRunningRun ? 'Abort run' : 'Send message'}
+                  aria-label={
+                    canAbortRun ? 'Abort run' : isRunningRun ? 'Agent processing' : 'Send message'
+                  }
                 >
                   {abortingRun || isStartingRun || creatingSession ? (
                     <LoaderCircle className="size-3.5 animate-spin" />
-                  ) : isRunningRun ? (
+                  ) : canAbortRun ? (
                     <Square className="size-3 fill-current" />
+                  ) : isRunningRun ? (
+                    <LoaderCircle className="size-3.5 animate-spin" />
                   ) : isNewSessionCommand ? (
                     <MessageSquarePlus className="size-3.5" />
                   ) : (
@@ -1691,17 +1895,34 @@ export function ChatView({
               </Panel>
               <Panel>
                 <PanelHeader>
-                  <Label>MCP tools</Label>
-                  <Tag>{mcpNames.length}</Tag>
+                  <Label>Prompts</Label>
+                  <Tag>{selectedPrompts.length}</Tag>
                 </PanelHeader>
                 <ul className="divide-y divide-border">
-                  {mcpNames.map((s) => (
+                  {selectedPrompts.map((prompt) => (
                     <li
-                      key={s}
+                      key={prompt.id}
+                      className="flex items-center gap-2 px-3 py-2 font-mono text-[11px] text-muted-foreground"
+                    >
+                      <Terminal className="size-3 shrink-0 text-accent" />
+                      {prompt.name}
+                    </li>
+                  ))}
+                </ul>
+              </Panel>
+              <Panel>
+                <PanelHeader>
+                  <Label>Extensions</Label>
+                  <Tag>{extensionNames.length}</Tag>
+                </PanelHeader>
+                <ul className="divide-y divide-border">
+                  {extensionNames.map((name) => (
+                    <li
+                      key={name}
                       className="flex items-center gap-2 px-3 py-2 font-mono text-[11px] text-muted-foreground"
                     >
                       <Wrench className="size-3 shrink-0 text-accent" />
-                      {s}
+                      {name}
                     </li>
                   ))}
                 </ul>

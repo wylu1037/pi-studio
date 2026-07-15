@@ -246,6 +246,23 @@ export const PackageCollectionSchema = z.object({
   gallery: z.array(PackageSchema),
 })
 
+export const PiPackageCatalogQuerySchema = z.object({
+  name: z.string().trim().max(200).optional(),
+  type: z.enum(['extension', 'skill', 'theme', 'prompt']).optional(),
+  sort: z.enum(['downloads', 'recent', 'name']).optional(),
+  page: z.coerce.number().int().positive().optional(),
+})
+
+export const PiPackageCatalogSchema = z.object({
+  packages: z.array(PackageSchema),
+  recentlyPublished: z.array(PackageSchema),
+  page: z.number().int().positive(),
+  total: z.number().int().nonnegative(),
+  totalPages: z.number().int().positive(),
+  start: z.number().int().nonnegative(),
+  end: z.number().int().nonnegative(),
+})
+
 export const ExtensionSchema = z.object({
   id: z.string(),
   name: z.string(),

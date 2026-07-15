@@ -73,6 +73,8 @@ export interface GlobalModelProvider {
 
 export type PackageType = 'npm' | 'git' | 'local'
 export type PackageStatus = 'installed' | 'update-available' | 'pinned' | 'error'
+export type PiPackageTypeFilter = 'extension' | 'skill' | 'theme' | 'prompt'
+export type PiPackageSort = 'downloads' | 'recent' | 'name'
 
 export interface GlobalPackage {
   id: string
@@ -93,6 +95,20 @@ export interface GlobalPackage {
   hasExtensions: boolean
   status: PackageStatus
   updatedAt: string
+  publishedAt?: string
+  npmUrl?: string
+  repoUrl?: string
+  reportUrl?: string
+}
+
+export interface PiPackageCatalog {
+  packages: GlobalPackage[]
+  recentlyPublished: GlobalPackage[]
+  page: number
+  total: number
+  totalPages: number
+  start: number
+  end: number
 }
 
 export interface GlobalExtension {

@@ -7,10 +7,6 @@ export function studioPackagesDir() {
   return join(homedir(), '.pi-studio', 'packages')
 }
 
-export function agentRuntimeDir(agentId: string) {
-  return join(homedir(), '.pi-studio', 'agents', agentId, '.pi')
-}
-
 export function createStudioPackageManager(cwd: string) {
   const agentDir = studioPackagesDir()
   mkdirSync(agentDir, { recursive: true })
