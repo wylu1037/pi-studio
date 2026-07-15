@@ -34,17 +34,45 @@ Pi is a minimal and extensible terminal coding agent. Pi Studio adds a visual wo
 - [pnpm](https://pnpm.io/)
 - The [Pi](https://pi.dev/) CLI installed and available as `pi`
 
-### Run locally
+### Install
 
 ```bash
 git clone https://github.com/wylu1037/pi-studio.git
 cd pi-studio
 pnpm install
 pnpm db:migrate
+```
+
+Make sure the project root contains the required `.env` configuration before starting the application.
+
+### Development
+
+Run the development server with hot reload:
+
+```bash
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000), then:
+Open [http://localhost:3000](http://localhost:3000).
+
+### Production build
+
+Compile and run the optimized production application:
+
+```bash
+pnpm build
+pnpm start
+```
+
+To use a different port:
+
+```bash
+pnpm start -- -p 3001
+```
+
+Then open [http://localhost:3001](http://localhost:3001).
+
+After Pi Studio is running:
 
 1. Add a model provider and its available models.
 2. Import or create the skills, prompts, packages, and MCP configurations you need.
