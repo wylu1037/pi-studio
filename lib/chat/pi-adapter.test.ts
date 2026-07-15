@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { createModelRuntimeSignature } from './pi-adapter'
 import { parseSdkEvent } from './pi-events'
 
 const usage = {
@@ -9,6 +10,38 @@ const usage = {
   cacheWrite: 0,
   totalTokens: 180,
 }
+
+test('model runtime signature changes with provider connection or model configuration', () => {
+  const base = [
+    {
+      id: 'provider-a',
+      name: 'Provider A',
+      baseUrl: 'https://api.example.com/v1',
+      api: 'openai-responses',
+      apiKey: 'key-a',
+      headers: { 'X-Tenant': 'one', Authorization: 'Bearer token' },
+      models: [{ id: 'model-a', input: ['text'] as Array<'text' | 'image'> }],
+    },
+  ]
+
+  const reordered = [
+    {
+      ...base[0],
+      headers: { Authorization: 'Bearer token', 'X-Tenant': 'one' },
+    },
+  ]
+  const changedUrl = [{ ...base[0], baseUrl: 'https://api.example.com/v2' }]
+  const changedModel = [
+    {
+      ...base[0],
+      models: [{ id: 'model-b', input: ['text'] as Array<'text' | 'image'> }],
+    },
+  ]
+
+  assert.equal(createModelRuntimeSignature(base), createModelRuntimeSignature(reordered))
+  assert.notEqual(createModelRuntimeSignature(base), createModelRuntimeSignature(changedUrl))
+  assert.notEqual(createModelRuntimeSignature(base), createModelRuntimeSignature(changedModel))
+})
 
 test('uses SDK text deltas across assistant messages separated by a tool call', () => {
   const sdkEvents = [

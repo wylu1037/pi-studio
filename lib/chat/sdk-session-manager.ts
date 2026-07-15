@@ -45,6 +45,7 @@ class StudioAgentSession {
     readonly agentDir: string,
     readonly extensionPaths: string[],
     readonly promptPaths: string[],
+    readonly modelRuntimeSignature: string,
     diagnostics: SdkExtensionDiagnostic[] = [],
   ) {
     this.resourceSignature = resourceSignature
@@ -128,6 +129,7 @@ export async function getOrCreateSdkSession(input: {
   agentDir: string
   modelProvider?: string
   modelId?: string
+  modelRuntimeSignature?: string
   thinkingLevel?: string
   extensionPaths?: string[]
   promptPaths?: string[]
@@ -137,6 +139,7 @@ export async function getOrCreateSdkSession(input: {
     input.extensionPaths ?? [],
     input.promptPaths ?? [],
     input.agentDir,
+    input.modelRuntimeSignature ?? '',
   )
   const existing = sessions().get(input.studioSessionId)
   if (existing?.isAlive() && existing.resourceSignature === resourceSignature) {
@@ -181,6 +184,11 @@ export async function getOrCreateSdkSession(input: {
       input.modelProvider && input.modelId
         ? services.modelRegistry.find(input.modelProvider, input.modelId)
         : undefined
+    if (input.modelProvider && input.modelId && !model) {
+      throw new Error(
+        `Configured model not found in SDK registry: ${input.modelProvider} / ${input.modelId}`,
+      )
+    }
     const { session, extensionsResult } = await createAgentSessionFromServices({
       services,
       sessionManager,
@@ -246,6 +254,7 @@ export async function getOrCreateSdkSession(input: {
       input.agentDir,
       input.extensionPaths ?? [],
       input.promptPaths ?? [],
+      input.modelRuntimeSignature ?? '',
       diagnostics,
     )
     wrappedRef.current = wrapped
@@ -262,6 +271,7 @@ async function createResourceSignature(
   extensionPaths: string[],
   promptPaths: string[],
   agentDir = getAgentDir(),
+  modelRuntimeSignature = '',
 ) {
   const files = [...promptPaths, ...extensionPaths].sort().map((path) => {
     try {
@@ -278,6 +288,7 @@ async function createResourceSignature(
     globalPackages: settings.getGlobalSettings().packages ?? [],
     projectPackages: settings.getProjectSettings().packages ?? [],
     extensionPaths: [...extensionPaths].sort(),
+    modelRuntimeSignature,
     projectTrusted: isProjectTrusted(cwd),
   })
 }
@@ -385,6 +396,7 @@ export async function reloadSdkSessions(input: {
         session.extensionPaths,
         session.promptPaths,
         session.agentDir,
+        session.modelRuntimeSignature,
       )
       session.recordDiagnostic({
         event: 'reload',

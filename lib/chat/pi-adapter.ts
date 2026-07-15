@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { piAgentDir, syncPiSkillLinks } from '@/lib/skills/store'
@@ -65,6 +66,7 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
   const provider = input.providerConfig
     ? studioProviderName(input.providerConfig.id)
     : input.provider
+  const modelRuntimeSignature = createModelRuntimeSignature(input.providerConfigs ?? [])
   const session = await getOrCreateSdkSession({
     studioSessionId: input.sessionId,
     sessionFile: input.sessionFile,
@@ -73,6 +75,7 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
     agentDir,
     modelProvider: provider,
     modelId: input.model,
+    modelRuntimeSignature,
     thinkingLevel: input.thinkingLevel,
     extensionPaths: input.extensions.map((extension) => extension.path),
     promptPaths: input.prompts,
@@ -80,7 +83,19 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
   if (session.inner.sessionFile) {
     updateSessionFilePath(input.sessionId, session.inner.sessionFile)
   }
-  registerRun(input.runId, () => session.inner.abort())
+
+  if (provider && input.model) {
+    const model = session.inner.modelRegistry.find(provider, input.model)
+    if (!model) {
+      throw new Error(`Configured model not found in SDK registry: ${provider} / ${input.model}`)
+    }
+    if (session.inner.model?.provider !== model.provider || session.inner.model?.id !== model.id) {
+      await session.inner.setModel(model)
+    }
+  }
+  if (input.thinkingLevel && input.thinkingLevel !== 'auto') {
+    session.inner.setThinkingLevel(input.thinkingLevel as never)
+  }
 
   const queue: PiRunEvent[] = []
   let done = false
@@ -100,19 +115,7 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
       push(event)
     }
   })
-
-  if (provider && input.model) {
-    const model = session.inner.modelRegistry.find(provider, input.model)
-    if (
-      model &&
-      (session.inner.model?.provider !== model.provider || session.inner.model?.id !== model.id)
-    ) {
-      await session.inner.setModel(model)
-    }
-  }
-  if (input.thinkingLevel && input.thinkingLevel !== 'auto') {
-    session.inner.setThinkingLevel(input.thinkingLevel as never)
-  }
+  registerRun(input.runId, () => session.inner.abort())
 
   void session.inner
     .prompt(input.prompt, { source: 'rpc' })
@@ -142,6 +145,24 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
       if (event) yield event
     }
   }
+}
+
+export function createModelRuntimeSignature(providerConfigs: PiModelProviderConfig[]) {
+  const normalized = providerConfigs
+    .map((provider) => ({
+      ...provider,
+      headers: sortRecord(provider.headers),
+      models: [...(provider.models ?? [])].sort((left, right) => left.id.localeCompare(right.id)),
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id))
+  return createHash('sha256').update(JSON.stringify(normalized)).digest('hex')
+}
+
+function sortRecord(value: Record<string, string> | undefined) {
+  if (!value) return undefined
+  return Object.fromEntries(
+    Object.entries(value).sort(([left], [right]) => left.localeCompare(right)),
+  )
 }
 
 export function syncAgentRuntime(input: PiRunInput) {
