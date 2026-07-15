@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { join } from 'node:path'
 import { and, eq, inArray } from 'drizzle-orm'
 import type {
   AgentProfile,
@@ -13,6 +14,7 @@ import type {
   StudioExtension,
   SessionTreeNode,
 } from '@/lib/types'
+import { piStudioDataDir } from '@/lib/runtime/paths'
 import { ensureStoredPrompt, removeStoredPrompt, writeStoredPrompt } from '@/lib/prompts/store'
 import { installedPackagePaths } from '@/lib/packages/studio-package-store'
 import { db, sqlite } from './client'
@@ -848,7 +850,7 @@ export function createSession(input: { agentId: string; name?: string; cwd?: str
       id,
       agentId: input.agentId,
       name: input.name ?? 'Untitled session',
-      filePath: `data/pi-sessions/${id}.jsonl`,
+      filePath: join(piStudioDataDir(), 'pi-sessions', `${id}.jsonl`),
       cwd,
       createdAt: at,
       updatedAt: at,

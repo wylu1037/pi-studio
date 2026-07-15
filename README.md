@@ -72,6 +72,49 @@ pnpm start -- -p 3001
 
 Then open [http://localhost:3001](http://localhost:3001).
 
+### Desktop application
+
+Pi Studio can be packaged as an Electron desktop application. The desktop build embeds the Next.js server and stores its database and Pi session files in the operating system application-data directory.
+
+Run the web development server and Electron together in separate terminals:
+
+```bash
+pnpm dev
+```
+
+```bash
+pnpm app:dev
+```
+
+Build a native installer for the current operating system:
+
+```bash
+pnpm app:build
+```
+
+For a faster unpacked test build without creating an installer:
+
+```bash
+pnpm app:build:dir
+```
+
+The desktop build uses `.electron-staging/` as a disposable packaging workspace.
+Next.js builds against the normal Node.js dependencies, while native modules in
+the staging copy are rebuilt for Electron. Packaging never rewrites the root
+`node_modules` or the original `.next/standalone` output.
+
+Artifacts are written to `dist/`:
+
+- macOS: DMG
+- Windows: NSIS installer
+- Linux: AppImage
+
+Desktop application data is stored outside the installation directory:
+
+- macOS: `~/Library/Application Support/Pi Studio`
+- Windows: `%APPDATA%/Pi Studio`
+- Linux: `~/.config/Pi Studio`
+
 After Pi Studio is running:
 
 1. Add a model provider and its available models.

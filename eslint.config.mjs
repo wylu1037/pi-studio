@@ -5,6 +5,8 @@ export default tseslint.config(
   {
     ignores: [
       '.next/**',
+      '.electron-staging/**',
+      'dist/**',
       'node_modules/**',
       'lib/api/generated/**',
       'drizzle/**',

@@ -1,13 +1,13 @@
 allowBuilds:
   '@google/genai': false
   better-sqlite3: true
+  electron: true
+  electron-winstaller: true
   es5-ext: true
   esbuild: true
+  msw: true
   protobufjs: false
-
-onlyBuiltDependencies:
-  - msw
-  - sharp
+  sharp: true
 
 overrides:
   hono: 4.12.25

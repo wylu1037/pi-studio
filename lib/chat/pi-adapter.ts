@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { piAgentDir, syncPiSkillLinks } from '@/lib/skills/store'
 import { updateSessionFilePath } from '@/lib/db/repository'
 import { resolvePiProviderConnection } from '@/lib/models/provider-connection'
+import { piStudioDataDir } from '@/lib/runtime/paths'
 import type { GlobalModelProvider } from '@/lib/types'
 import { parseSdkEvent, type PiRunEvent } from './pi-events'
 import { registerRun, unregisterRun } from './run-registry'
@@ -297,5 +298,5 @@ function asRecord(value: unknown) {
 }
 
 export function defaultPiSessionDir() {
-  return join(process.cwd(), 'data', 'pi-sessions')
+  return join(piStudioDataDir(), 'pi-sessions')
 }

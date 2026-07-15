@@ -12,6 +12,7 @@ __v0_jsx-dev-runtime.ts
 # Common ignores
 node_modules
 .next/
+.electron-staging/
 .DS_Store
 .pnpm-store/
 tsconfig.tsbuildinfo
@@ -24,3 +25,4 @@ data/
 out/
 videos/
 .pi/
+dist/

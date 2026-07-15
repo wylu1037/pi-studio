@@ -1,0 +1,55 @@
+appId: com.pistudio.desktop
+productName: Pi Studio
+electronVersion: 39.8.10
+npmRebuild: false
+artifactName: Pi-Studio-${version}-${os}-${arch}.${ext}
+
+directories:
+  output: ../dist
+  buildResources: ../build
+
+electronLanguages:
+  - en-US
+  - zh-CN
+
+files:
+  - main.cjs
+  - package.json
+
+extraResources:
+  - from: ../.electron-staging/web
+    to: web
+    filter:
+      - '**/*'
+      - '!node_modules{,/**/*}'
+      - '!.env'
+      - '!drizzle{,/**/*}'
+  - from: ../.electron-staging/web/node_modules
+    to: web/node_modules
+    filter:
+      - '**/*'
+  - from: ../drizzle
+    to: drizzle
+
+mac:
+  icon: build/icon.icns
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+
+win:
+  icon: build/icon.ico
+  target:
+    - nsis
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+
+linux:
+  icon: build/icon.png
+  category: Development
+  target:
+    - AppImage
