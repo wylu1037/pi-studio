@@ -39,6 +39,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { AgentProfile, GlobalExtension } from '@/lib/types'
 import { errorMessage, showToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
@@ -248,28 +249,28 @@ export function ExtensionsView({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <Tabs
+      value={tab}
+      onValueChange={(value) => {
+        if (value === 'manage' || value === 'develop') changeTab(value)
+      }}
+      className="h-full min-h-0 gap-0"
+    >
       <PageHeader
         title="Extensions"
         subtitle="Inspect, develop, validate, and reload executable Pi extensions."
       >
-        <div className="flex items-center border border-border-strong bg-panel p-0.5">
+        <TabsList className="h-auto rounded-none border border-border-strong bg-panel p-0.5 group-data-horizontal/tabs:h-auto">
           {(['manage', 'develop'] as const).map((value) => (
-            <button
+            <TabsTrigger
               key={value}
-              type="button"
-              onClick={() => changeTab(value)}
-              className={cn(
-                'px-4 py-1.5 font-mono text-[11px] tracking-[0.12em] uppercase transition-colors active:scale-[0.98]',
-                tab === value
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-              )}
+              value={value}
+              className="h-auto flex-none rounded-none px-4 py-1.5 font-mono text-[11px] tracking-[0.12em] text-muted-foreground uppercase hover:bg-muted hover:text-foreground active:scale-[0.98] data-active:bg-primary data-active:text-primary-foreground"
             >
               {value}
-            </button>
+            </TabsTrigger>
           ))}
-        </div>
+        </TabsList>
       </PageHeader>
 
       <div className="flex flex-wrap items-center gap-3 border-b border-border bg-panel/80 px-4 py-2.5 sm:px-6">
@@ -326,9 +327,10 @@ export function ExtensionsView({
         </div>
       )}
 
-      {tab === 'manage' ? (
+      <TabsContent value="manage" className="flex min-h-0 flex-1 flex-col">
         <ManageTab items={items} agents={initialAgents} cwd={cwd} onRefresh={() => refresh()} />
-      ) : (
+      </TabsContent>
+      <TabsContent value="develop" className="flex min-h-0 flex-1 flex-col">
         <DevelopTab
           items={items}
           cwd={cwd}
@@ -336,8 +338,8 @@ export function ExtensionsView({
           onRefresh={() => refresh()}
           onLocation={(extensionId) => updateLocation('develop', extensionId)}
         />
-      )}
-    </div>
+      </TabsContent>
+    </Tabs>
   )
 }
 
@@ -1220,11 +1222,11 @@ function DevelopTab({
               mobilePane !== 'files' && 'hidden md:block',
             )}
           >
-            <PanelHeader>
+            <PanelHeader className="h-10 shrink-0 py-0">
               <Label>Files</Label>
               <Tag>{files.filter((file) => file.type === 'file').length}</Tag>
             </PanelHeader>
-            <div className="scrollbar-thin h-[calc(100%-41px)] overflow-y-auto py-2">
+            <div className="scrollbar-thin h-[calc(100%-40px)] overflow-y-auto py-2">
               {loadingFiles ? (
                 <div className="space-y-2 px-3">
                   {[1, 2, 3].map((value) => (
@@ -1266,12 +1268,12 @@ function DevelopTab({
           <main
             className={cn('min-h-0 min-w-0 bg-card', mobilePane !== 'editor' && 'hidden md:block')}
           >
-            <div className="flex h-10 items-center justify-between border-b border-border bg-panel px-3">
+            <PanelHeader className="h-10 shrink-0 py-0">
               <span className="truncate font-mono text-[11px] text-muted-foreground">
                 {activeFile ?? 'No file selected'}
               </span>
               {dirty && <span className="font-mono text-[10px] text-warning">modified</span>}
-            </div>
+            </PanelHeader>
             <div className="h-[calc(100%-40px)] min-h-80">
               {activeFile ? (
                 <ExtensionsEditor path={activeFile} value={content} onChange={setContent} />
@@ -1353,7 +1355,7 @@ function Inspector({
     return (
       <div className={cn('flex h-full flex-col', inline && 'h-auto')}>
         {!inline && (
-          <PanelHeader>
+          <PanelHeader className="h-10 shrink-0 py-0">
             <Label>Inspector</Label>
           </PanelHeader>
         )}
@@ -1369,7 +1371,7 @@ function Inspector({
   return (
     <div className={cn('flex h-full min-h-0 flex-col', inline && 'h-auto')}>
       {!inline && (
-        <PanelHeader>
+        <PanelHeader className="h-10 shrink-0 py-0">
           <Label>Inspector</Label>
           <Tag tone={validation.valid ? 'success' : 'danger'}>
             {validation.valid ? 'passed' : 'failed'}

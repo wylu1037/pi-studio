@@ -10,16 +10,20 @@ import {
   ArrowLeft,
   Search,
   Check,
-  X,
   Sparkles,
   FileText,
   Cpu,
   History,
   Coins,
+  Package,
   Puzzle,
   ChevronUp,
   Folder,
   LoaderCircle,
+  MessageSquare,
+  GitBranch,
+  Clock,
+  ExternalLink,
 } from 'lucide-react'
 import type {
   AgentProfile,
@@ -46,6 +50,8 @@ import {
   Toggle,
   BracketButton,
 } from '@/components/pi-ui'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 
 const TABS = [
@@ -58,7 +64,6 @@ const TABS = [
   'Sessions',
   'Settings',
 ] as const
-type TabName = (typeof TABS)[number]
 const thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 const settingsSchema = z.object({
   name: z.string().min(1),
@@ -85,7 +90,6 @@ export function AgentDetail({
   providers: GlobalModelProvider[]
   sessions: AgentSessionSummary[]
 }) {
-  const [tab, setTab] = useState<TabName>('Overview')
   const [pending, setPending] = useState<string | null>(null)
   const [deleteRequested, setDeleteRequested] = useState(false)
   const router = useRouter()
@@ -139,100 +143,105 @@ export function AgentDetail({
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-0 overflow-x-auto border-b border-border px-4">
-        {TABS.map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={cn(
-              'border-b-2 px-4 py-2.5 font-mono text-xs tracking-wider uppercase transition-colors',
-              tab === t
-                ? 'border-accent text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
-            )}
+      <Tabs defaultValue="Overview" className="min-h-0 flex-1 gap-0">
+        <div className="overflow-x-auto border-b border-border px-4">
+          <TabsList
+            variant="line"
+            className="h-auto gap-0 p-0 group-data-horizontal/tabs:h-auto data-[variant=line]:gap-0"
           >
-            {t}
-          </button>
-        ))}
-      </div>
+            {TABS.map((tab) => (
+              <TabsTrigger
+                key={tab}
+                value={tab}
+                className="h-auto flex-none rounded-none border-0 px-4 py-2.5 font-mono text-xs tracking-wider text-muted-foreground uppercase after:bg-accent group-data-horizontal/tabs:after:bottom-0 hover:text-foreground data-active:text-foreground"
+              >
+                {tab}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
-      {/* Body */}
-      <div className="scrollbar-thin flex-1 overflow-y-auto p-6">
-        {tab === 'Overview' && <OverviewTab agent={agent} />}
-        {tab === 'Extensions' && (
-          <ResourcePicker
-            title="Extensions"
-            agentId={agent.id}
-            kind="extension"
-            items={extensions.map((extension) => ({
-              id: extension.id,
-              name: extension.name,
-              description: extension.description || 'Pi Studio extension library source.',
-              tags: [],
-              meta: 'library',
-            }))}
-            selectedIds={agent.selectedExtensionIds}
-          />
-        )}
-        {tab === 'Packages' && (
-          <ResourcePicker
-            title="Packages"
-            agentId={agent.id}
-            kind="package"
-            items={packages.map((pkg) => ({
-              id: pkg.id,
-              name: pkg.name,
-              description: pkg.description,
-              tags: [pkg.type],
-              meta: pkg.version,
-            }))}
-            selectedIds={packages
-              .filter((pkg) => agent.selectedPackageSources.includes(pkg.source))
-              .map((pkg) => pkg.id)}
-          />
-        )}
-        {tab === 'Skills' && (
-          <ResourcePicker
-            title="Skills"
-            agentId={agent.id}
-            kind="skill"
-            items={skills.map((s) => ({
-              id: s.id,
-              name: s.name,
-              description: s.description,
-              tags: s.tags,
-              meta: s.source,
-            }))}
-            selectedIds={agent.selectedSkillIds}
-          />
-        )}
-        {tab === 'Prompts' && (
-          <ResourcePicker
-            title="Prompts"
-            agentId={agent.id}
-            kind="prompt"
-            items={prompts.map((p) => ({
-              id: p.id,
-              name: p.name,
-              description: p.description ?? '',
-              tags: p.tags,
-              meta: 'template',
-            }))}
-            selectedIds={agent.selectedPromptIds}
-          />
-        )}
-        {tab === 'Models' && <ModelsTab agent={agent} providers={providers} />}
-        {tab === 'Sessions' && <SessionsTab agent={agent} sessions={sessions} />}
-        {tab === 'Settings' && (
-          <SettingsTab
-            agent={agent}
-            onDelete={() => setDeleteRequested(true)}
-            deleting={pending === 'delete'}
-          />
-        )}
-      </div>
+        <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto p-6">
+          <TabsContent value="Overview">
+            <OverviewTab agent={agent} />
+          </TabsContent>
+          <TabsContent value="Extensions">
+            <ResourcePicker
+              title="Extensions"
+              agentId={agent.id}
+              kind="extension"
+              items={extensions.map((extension) => ({
+                id: extension.id,
+                name: extension.name,
+                description: extension.description || 'Pi Studio extension library source.',
+                tags: [],
+                meta: 'library',
+              }))}
+              selectedIds={agent.selectedExtensionIds}
+            />
+          </TabsContent>
+          <TabsContent value="Packages">
+            <ResourcePicker
+              title="Packages"
+              agentId={agent.id}
+              kind="package"
+              items={packages.map((pkg) => ({
+                id: pkg.id,
+                name: pkg.name,
+                description: pkg.description,
+                tags: [pkg.type],
+                meta: pkg.version,
+              }))}
+              selectedIds={packages
+                .filter((pkg) => agent.selectedPackageSources.includes(pkg.source))
+                .map((pkg) => pkg.id)}
+            />
+          </TabsContent>
+          <TabsContent value="Skills">
+            <ResourcePicker
+              title="Skills"
+              agentId={agent.id}
+              kind="skill"
+              items={skills.map((s) => ({
+                id: s.id,
+                name: s.name,
+                description: s.description,
+                tags: s.tags,
+                meta: s.source,
+              }))}
+              selectedIds={agent.selectedSkillIds}
+            />
+          </TabsContent>
+          <TabsContent value="Prompts">
+            <ResourcePicker
+              title="Prompts"
+              agentId={agent.id}
+              kind="prompt"
+              items={prompts.map((p) => ({
+                id: p.id,
+                name: p.name,
+                description: p.description ?? '',
+                tags: p.tags,
+                meta: 'template',
+              }))}
+              selectedIds={agent.selectedPromptIds}
+            />
+          </TabsContent>
+          <TabsContent value="Models">
+            <ModelsTab agent={agent} providers={providers} />
+          </TabsContent>
+          <TabsContent value="Sessions">
+            <SessionsTab agent={agent} sessions={sessions} />
+          </TabsContent>
+          <TabsContent value="Settings">
+            <SettingsTab
+              agent={agent}
+              onDelete={() => setDeleteRequested(true)}
+              deleting={pending === 'delete'}
+            />
+          </TabsContent>
+        </div>
+      </Tabs>
       <ConfirmDialog
         open={deleteRequested}
         title="Delete agent"
@@ -248,8 +257,9 @@ export function AgentDetail({
 
 function OverviewTab({ agent }: { agent: AgentProfile }) {
   const stats = [
-    { icon: Sparkles, value: agent.selectedSkillIds.length, label: 'Skills' },
     { icon: Puzzle, value: agent.selectedExtensionIds.length, label: 'Extensions' },
+    { icon: Package, value: agent.selectedPackageSources.length, label: 'Packages' },
+    { icon: Sparkles, value: agent.selectedSkillIds.length, label: 'Skills' },
     { icon: FileText, value: agent.selectedPromptIds.length, label: 'Prompts' },
     { icon: Cpu, value: agent.selectedModelIds.length, label: 'Models' },
     { icon: History, value: agent.sessionCount, label: 'Sessions' },
@@ -362,86 +372,84 @@ function ResourcePicker({
       i.name.toLowerCase().includes(query.toLowerCase()) ||
       i.tags.some((t) => t.includes(query.toLowerCase())),
   )
-  const enabled = items.filter((i) => selected.has(i.id))
+  const ResourceIcon = {
+    extension: Puzzle,
+    package: Package,
+    skill: Sparkles,
+    prompt: FileText,
+  }[kind]
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
-      {/* Global list */}
-      <Panel>
-        <div className="flex items-center justify-between gap-3 border-b border-border bg-panel px-4 py-2.5">
-          <Label>Global {title}</Label>
-          <TextInput
-            value={query}
-            onChange={setQuery}
-            placeholder="Filter…"
-            icon={<Search className="size-3.5" />}
-            className="w-48"
-          />
-        </div>
-        <ul className="divide-y divide-border">
-          {filtered.map((item) => {
-            const on = selected.has(item.id)
-            return (
-              <li key={item.id} className="flex items-start gap-3 px-4 py-3 hover:bg-panel">
-                <button
-                  type="button"
-                  onClick={() => toggle(item.id)}
-                  disabled={pendingId === item.id}
+    <Panel>
+      <div className="flex items-center justify-between gap-3 border-b border-border bg-panel px-4 py-2.5">
+        <Label>Global {title}</Label>
+        <TextInput
+          value={query}
+          onChange={setQuery}
+          placeholder="Filter…"
+          icon={<Search className="size-3.5" />}
+          className="w-48"
+        />
+      </div>
+      <ul className="divide-y divide-border">
+        {filtered.map((item) => {
+          const on = selected.has(item.id)
+          return (
+            <li
+              key={item.id}
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-4 py-3.5 transition-colors hover:bg-panel"
+            >
+              <div className="flex min-w-0 items-start gap-3">
+                <div
                   className={cn(
-                    'mt-0.5 flex size-4.5 shrink-0 items-center justify-center border transition-colors',
+                    'flex size-9 shrink-0 items-center justify-center border transition-colors',
                     on
-                      ? 'border-accent bg-accent text-accent-foreground'
-                      : 'border-border-strong bg-card',
+                      ? 'border-accent/40 bg-accent/10 text-accent'
+                      : 'border-border-strong bg-panel text-muted-foreground',
                   )}
-                  aria-label={on ? 'Disable' : 'Enable'}
                 >
-                  {on && <Check className="size-3" />}
-                </button>
+                  <ResourceIcon className="size-4" aria-hidden="true" />
+                </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-[13px] text-foreground">{item.name}</span>
-                    <Tag tone="outline">{item.meta}</Tag>
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <span className="truncate font-mono text-[13px] text-foreground">
+                      {item.name}
+                    </span>
+                    {item.tags.slice(0, 3).map((tag) => (
+                      <Tag key={tag} tone="outline">
+                        {tag}
+                      </Tag>
+                    ))}
                   </div>
-                  <p className="mt-0.5 line-clamp-1 text-[13px] text-muted-foreground">
+                  <p className="mt-1 line-clamp-1 max-w-3xl text-[13px] text-muted-foreground">
                     {item.description}
                   </p>
                 </div>
-              </li>
-            )
-          })}
-        </ul>
-      </Panel>
-
-      {/* Enabled */}
-      <Panel className="h-fit">
-        <div className="flex items-center justify-between border-b border-border bg-panel px-4 py-2.5">
-          <Label>Enabled</Label>
-          <span className="font-mono text-xs text-accent">{enabled.length}</span>
-        </div>
-        {enabled.length === 0 ? (
-          <p className="px-4 py-8 text-center font-mono text-xs text-muted-foreground">
-            Nothing enabled yet
-          </p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {enabled.map((item) => (
-              <li key={item.id} className="flex items-center justify-between gap-2 px-4 py-2.5">
-                <span className="truncate font-mono text-[13px] text-foreground">{item.name}</span>
-                <button
-                  type="button"
-                  onClick={() => toggle(item.id)}
-                  disabled={pendingId === item.id}
-                  className="text-muted-foreground hover:text-destructive"
-                  aria-label="Remove"
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                <Tag tone="outline" className="hidden sm:inline-flex">
+                  {item.meta}
+                </Tag>
+                <span
+                  className={cn(
+                    'hidden w-16 text-right font-mono text-[10px] tracking-wider uppercase sm:inline',
+                    on ? 'text-accent' : 'text-muted-foreground',
+                  )}
                 >
-                  <X className="size-3.5" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Panel>
-    </div>
+                  {on ? 'Enabled' : 'Disabled'}
+                </span>
+                <Switch
+                  checked={on}
+                  onCheckedChange={() => void toggle(item.id)}
+                  disabled={pendingId === item.id}
+                  aria-label={`${on ? 'Disable' : 'Enable'} ${item.name}`}
+                />
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+    </Panel>
   )
 }
 
@@ -611,23 +619,42 @@ function SessionsTab({
               key={s.id}
               className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-panel"
             >
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="truncate font-mono text-[13px] text-foreground">{s.name}</p>
-                <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground">
-                  <span>{s.cwd}</span>
-                  <span className="flex items-center gap-1">
-                    <History className="size-3" />
-                    {s.messageCount}
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground">
+                  <span
+                    className="inline-flex max-w-full min-w-0 items-center gap-1.5 sm:max-w-md"
+                    title={s.cwd}
+                  >
+                    <Folder className="size-3 shrink-0 text-accent/80" aria-hidden="true" />
+                    <span className="truncate">{s.cwd}</span>
                   </span>
-                  <span className="flex items-center gap-1">
-                    <Coins className="size-3" />${s.totalCost?.toFixed(2)}
+                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                    <MessageSquare className="size-3 shrink-0 text-accent/80" aria-hidden="true" />
+                    {s.messageCount} messages
                   </span>
-                  <span>{s.branchCount} branches</span>
-                  <span>{s.updatedAt}</span>
-                </p>
+                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                    <Coins className="size-3 shrink-0 text-accent/80" aria-hidden="true" />$
+                    {(s.totalCost ?? 0).toFixed(2)}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                    <GitBranch className="size-3 shrink-0 text-accent/80" aria-hidden="true" />
+                    {s.branchCount} branches
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                    <Clock className="size-3 shrink-0 text-accent/80" aria-hidden="true" />
+                    <time dateTime={s.updatedAt}>{s.updatedAt}</time>
+                  </span>
+                </div>
               </div>
-              <Link href={`/chat?agent=${agent.id}&session=${s.id}`}>
-                <ActionButton>Open</ActionButton>
+              <Link
+                href={`/chat?agent=${agent.id}&session=${s.id}`}
+                title="Open session"
+                aria-label={`Open ${s.name ?? 'session'}`}
+                className="flex size-8 shrink-0 items-center justify-center border border-border-strong bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <ExternalLink className="size-3.5" aria-hidden="true" />
+                <span className="sr-only">Open session</span>
               </Link>
             </li>
           ))}
