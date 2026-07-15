@@ -1,7 +1,12 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Check, Info, Warning, X } from '@phosphor-icons/react'
+import {
+  CheckIcon as Check,
+  InfoIcon as Info,
+  WarningIcon as Warning,
+  XIcon as X,
+} from '@phosphor-icons/react'
 import { Label } from '@/components/pi-ui'
 import { errorMessage, takePendingToast, TOAST_EVENT, type ToastPayload } from '@/lib/toast'
 

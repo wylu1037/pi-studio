@@ -6,6 +6,13 @@ import { useRouter } from 'next/navigation'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import {
+  ArrowLineDownIcon as InputMetricIcon,
+  ArrowLineUpIcon as OutputMetricIcon,
+  ClockIcon as TimeMetricIcon,
+  CoinsIcon as CostMetricIcon,
+  DatabaseIcon as CacheMetricIcon,
+} from '@phosphor-icons/react'
+import {
   Send,
   Square,
   LoaderCircle,
@@ -2262,18 +2269,6 @@ function estimateTokens(content: string) {
   return Math.max(1, Math.ceil(content.length / 4))
 }
 
-function formatUsageSummary(usage: StreamUsage | null) {
-  if (!usage) return null
-  const parts = [
-    usage.input ? `${usage.input.toLocaleString()} in` : null,
-    usage.output ? `${usage.output.toLocaleString()} out` : null,
-    usage.cacheRead ? `${usage.cacheRead.toLocaleString()} cache` : null,
-    usage.cacheWrite ? `${usage.cacheWrite.toLocaleString()} write` : null,
-    usage.cost?.total ? `$${usage.cost.total.toFixed(4)}` : null,
-  ].filter(Boolean)
-  return parts.length > 0 ? parts.join(' · ') : null
-}
-
 function buildDisplayItems(messages: ChatMessage[]): DisplayItem[] {
   const items: DisplayItem[] = []
   let pendingProcess: ChatMessage[] = []
@@ -2450,13 +2445,11 @@ const MessageBubble = memo(function MessageBubble({
   message,
   agentName,
   streamStartedAt,
-  usageSummary,
   mediaSessionId,
 }: {
   message: ChatMessage
   agentName: string
   streamStartedAt?: number | null
-  usageSummary?: string | null
   mediaSessionId?: string
 }) {
   switch (message.type) {
@@ -2480,25 +2473,18 @@ const MessageBubble = memo(function MessageBubble({
         streamStartedAt && message.timestamp === 'streaming'
           ? Math.max(1, Math.round((Date.now() - streamStartedAt) / 1000))
           : null
-      const effectiveUsageSummary = usageSummary ?? formatUsageSummary(message.usage ?? null)
-      const meta = [
-        effectiveUsageSummary,
-        !effectiveUsageSummary && message.tokens
-          ? `${message.tokens.toLocaleString()} tok`
-          : !effectiveUsageSummary && message.timestamp === 'streaming'
-            ? `~${estimatedTokens.toLocaleString()} tok`
-            : null,
-        streamSeconds ? `${streamSeconds}s` : null,
-        message.timestamp !== 'streaming' ? message.timestamp : null,
-      ]
-        .filter(Boolean)
-        .join(' · ')
       return (
         <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
             <Bot className="size-3 text-accent" />
             <Label>{agentName}</Label>
-            {meta && <span className="font-mono text-[10px] text-muted-foreground/50">{meta}</span>}
+            <AssistantMessageMetrics
+              usage={message.usage ?? null}
+              fallbackTokens={message.tokens ?? estimatedTokens}
+              estimated={message.timestamp === 'streaming' && !message.tokens}
+              streamSeconds={streamSeconds}
+              timestamp={message.timestamp !== 'streaming' ? message.timestamp : null}
+            />
           </div>
           {message.timestamp === 'streaming' ? (
             <div className="border-l-2 border-accent/50 pl-3.5 text-sm leading-relaxed wrap-break-word whitespace-pre-wrap text-foreground">
@@ -2591,3 +2577,90 @@ const MessageBubble = memo(function MessageBubble({
       return null
   }
 })
+
+function AssistantMessageMetrics({
+  usage,
+  fallbackTokens,
+  estimated,
+  streamSeconds,
+  timestamp,
+}: {
+  usage: StreamUsage | null
+  fallbackTokens: number
+  estimated: boolean
+  streamSeconds: number | null
+  timestamp: string | null
+}) {
+  const metrics = usage
+    ? [
+        usage.input
+          ? { icon: InputMetricIcon, value: usage.input.toLocaleString(), label: 'input tokens' }
+          : null,
+        usage.output
+          ? { icon: OutputMetricIcon, value: usage.output.toLocaleString(), label: 'output tokens' }
+          : null,
+        usage.cacheRead
+          ? {
+              icon: CacheMetricIcon,
+              value: usage.cacheRead.toLocaleString(),
+              label: 'cached tokens',
+            }
+          : null,
+        usage.cacheWrite
+          ? {
+              icon: CacheMetricIcon,
+              value: usage.cacheWrite.toLocaleString(),
+              label: 'cache write',
+            }
+          : null,
+        usage.cost?.total
+          ? { icon: CostMetricIcon, value: `$${usage.cost.total.toFixed(4)}`, label: 'cost' }
+          : null,
+      ].filter(Boolean)
+    : [
+        {
+          icon: OutputMetricIcon,
+          value: `${estimated ? '~' : ''}${fallbackTokens.toLocaleString()}`,
+          label: 'tokens',
+        },
+      ]
+
+  return (
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] text-muted-foreground/60">
+      {metrics.map((metric, index) => {
+        if (!metric) return null
+        const Icon = metric.icon
+        return (
+          <span
+            key={`${metric.label}-${index}`}
+            className="inline-flex items-center gap-0.5 whitespace-nowrap"
+            title={metric.label}
+          >
+            <Icon className="size-3 text-muted-foreground/70" weight="regular" aria-hidden />
+            <span>{metric.value}</span>
+          </span>
+        )
+      })}
+      {streamSeconds ? (
+        <span className="inline-flex items-center gap-0.5 whitespace-nowrap" title="elapsed time">
+          <TimeMetricIcon
+            className="size-3 text-muted-foreground/70"
+            weight="regular"
+            aria-hidden
+          />
+          <span>{streamSeconds}s</span>
+        </span>
+      ) : null}
+      {timestamp ? (
+        <span className="inline-flex items-center gap-0.5 whitespace-nowrap" title="UTC timestamp">
+          <TimeMetricIcon
+            className="size-3 text-muted-foreground/70"
+            weight="regular"
+            aria-hidden
+          />
+          <span>{timestamp}</span>
+        </span>
+      ) : null}
+    </span>
+  )
+}

@@ -7,6 +7,12 @@ import {
 } from '@earendil-works/pi-coding-agent'
 import type { AgentSessionSummary, ChatMessage, SessionTreeNode } from '@/lib/types'
 
+export function formatUtcTimestamp(value: string | number) {
+  const timestamp = typeof value === 'number' ? value : Number(value)
+  const date = Number.isFinite(timestamp) ? new Date(timestamp) : new Date(value)
+  return Number.isNaN(date.getTime()) ? String(value) : date.toISOString()
+}
+
 function textContent(value: unknown): string {
   if (typeof value === 'string') return value
   if (Array.isArray(value)) return value.map(textContent).filter(Boolean).join('\n')
@@ -49,7 +55,7 @@ function mapTreeNode(node: PiSessionTreeNode, leafId: string | null): SessionTre
     type: node.entry.type as SessionTreeNode['type'],
     role: entryRole(node.entry),
     preview: entryPreview(node.entry),
-    timestamp: node.entry.timestamp,
+    timestamp: formatUtcTimestamp(node.entry.timestamp),
     children: node.children.map((child) => mapTreeNode(child, leafId)),
     label: node.label,
     isCurrent: node.entry.id === leafId,
@@ -66,7 +72,7 @@ function mapMessage(
         id: `sdk-user-${index}`,
         type: 'user',
         content: textContent(message.content),
-        timestamp: String(message.timestamp),
+        timestamp: formatUtcTimestamp(message.timestamp),
       },
     ]
   }
@@ -77,12 +83,12 @@ function mapMessage(
         type: 'tool_result',
         title: message.toolName,
         content: textContent(message.content),
-        timestamp: String(message.timestamp),
+        timestamp: formatUtcTimestamp(message.timestamp),
       },
     ]
   }
   if (message.role === 'assistant') {
-    const timestamp = String(message.timestamp)
+    const timestamp = formatUtcTimestamp(message.timestamp)
     const mapped: ChatMessage[] = []
     const content = Array.isArray(message.content) ? message.content : []
 

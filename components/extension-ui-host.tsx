@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, X } from '@phosphor-icons/react'
+import { CheckIcon as Check, XIcon as X } from '@phosphor-icons/react'
 import { ActionButton, Label, Tag } from '@/components/pi-ui'
 import { showToast } from '@/lib/toast'
 
