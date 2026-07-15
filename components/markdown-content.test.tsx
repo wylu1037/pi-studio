@@ -63,3 +63,14 @@ test('supports standard markdown image syntax and direct remote previews', () =>
   assert.match(markup, /<img[^>]+src="https:\/\/cdn\.example\.com\/weather\.webp"/)
   assert.doesNotMatch(markup, />!</)
 })
+
+test('renders fenced code with its normalized language and a readable fallback', () => {
+  const markup = renderToStaticMarkup(
+    <MarkdownContent content={'```ts\nconst answer: number = 42\n```'} />,
+  )
+
+  assert.match(markup, />TypeScript</)
+  assert.match(markup, /aria-label="TypeScript code"/)
+  assert.match(markup, /const answer: number = 42/)
+  assert.match(markup, /aria-busy="true"/)
+})

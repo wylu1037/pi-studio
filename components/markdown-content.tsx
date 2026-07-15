@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from 'react'
 import { AudioLines } from 'lucide-react'
+import { CodeBlock } from '@/components/code-block'
 import { MermaidDiagram } from '@/components/mermaid-diagram'
 import { MarkdownImage } from '@/components/markdown-image'
 
@@ -175,18 +176,7 @@ function renderBlock(block: MarkdownBlock, key: number, mediaSessionId?: string)
       if (block.language?.toLowerCase() === 'mermaid') {
         return <MermaidDiagram key={key} chart={block.content} />
       }
-      return (
-        <div key={key} className="bg-code max-w-full overflow-hidden border border-border">
-          {block.language && (
-            <div className="border-b border-border px-3 py-1 font-mono text-[10px] text-muted-foreground uppercase">
-              {block.language}
-            </div>
-          )}
-          <pre className="max-w-full overflow-hidden p-3 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-foreground/90">
-            <code>{block.content}</code>
-          </pre>
-        </div>
-      )
+      return <CodeBlock key={key} code={block.content} language={block.language} />
     case 'heading': {
       const level = Math.min(6, Math.max(1, block.level))
       return (
