@@ -18,6 +18,10 @@ import {
   Package as PackageIcon,
   Download,
   LoaderCircle,
+  Folder,
+  Globe2,
+  HardDrive,
+  Hash,
 } from 'lucide-react'
 import type {
   GlobalPackage,
@@ -40,6 +44,7 @@ import {
   Tag,
   TextInput,
 } from '@/components/pi-ui'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 const statusTone: Record<PackageStatus, 'success' | 'warning' | 'accent' | 'danger'> = {
   installed: 'success',
@@ -75,7 +80,13 @@ export function PackagesView({
   )
 
   return (
-    <div className="flex h-full flex-col">
+    <Tabs
+      value={tab}
+      onValueChange={(value) => {
+        if (value === 'installed' || value === 'search') setTab(value)
+      }}
+      className="h-full min-h-0 gap-0"
+    >
       <PageHeader
         title="Packages"
         subtitle="Resource sources installed from npm, git, URL, or local paths. Packages can contain extensions, skills, prompts, and themes."
@@ -86,73 +97,68 @@ export function PackagesView({
         </ActionButton>
       </PageHeader>
 
-      <div className="flex items-center gap-0 border-b border-border px-6">
-        <button
-          type="button"
-          onClick={() => setTab('installed')}
-          className={`border-b-2 px-4 py-3 font-mono text-xs tracking-wider uppercase transition-colors ${
-            tab === 'installed'
-              ? 'border-accent text-foreground'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
+      <div className="overflow-x-auto border-b border-border px-6">
+        <TabsList
+          variant="line"
+          className="h-auto gap-0 p-0 group-data-horizontal/tabs:h-auto data-[variant=line]:gap-0"
         >
-          Installed ({installed.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab('search')}
-          className={`border-b-2 px-4 py-3 font-mono text-xs tracking-wider uppercase transition-colors ${
-            tab === 'search'
-              ? 'border-accent text-foreground'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          Search pi.dev
-        </button>
+          <TabsTrigger
+            value="installed"
+            className="h-auto flex-none rounded-none border-0 px-4 py-3 font-mono text-xs tracking-wider text-muted-foreground uppercase after:bg-accent group-data-horizontal/tabs:after:bottom-0 hover:text-foreground data-active:text-foreground"
+          >
+            Installed ({installed.length})
+          </TabsTrigger>
+          <TabsTrigger
+            value="search"
+            className="h-auto flex-none rounded-none border-0 px-4 py-3 font-mono text-xs tracking-wider text-muted-foreground uppercase after:bg-accent group-data-horizontal/tabs:after:bottom-0 hover:text-foreground data-active:text-foreground"
+          >
+            Search pi.dev
+          </TabsTrigger>
+        </TabsList>
       </div>
 
-      {tab === 'installed' ? (
-        <>
-          <div className="flex flex-wrap items-center gap-3 border-b border-border px-6 py-3">
-            <TextInput
-              value={query}
-              onChange={setQuery}
-              placeholder="Filter packages…"
-              icon={<Search className="size-3.5" />}
-              className="w-64"
+      <TabsContent value="installed" className="flex min-h-0 flex-1 flex-col">
+        <div className="flex flex-wrap items-center gap-3 border-b border-border px-6 py-3">
+          <TextInput
+            value={query}
+            onChange={setQuery}
+            placeholder="Filter packages…"
+            icon={<Search className="size-3.5" />}
+            className="w-64"
+          />
+          <span className="ml-auto font-mono text-xs text-muted-foreground">
+            {filtered.length} installed
+          </span>
+        </div>
+        <div className="scrollbar-thin flex-1 overflow-y-auto p-6">
+          {installed.length === 0 ? (
+            <PackagesEmptyState
+              onBrowse={() => setTab('search')}
+              onInstall={() => setShowInstall(true)}
             />
-            <span className="ml-auto font-mono text-xs text-muted-foreground">
-              {filtered.length} installed
-            </span>
-          </div>
-          <div className="scrollbar-thin flex-1 overflow-y-auto p-6">
-            {installed.length === 0 ? (
-              <PackagesEmptyState
-                onBrowse={() => setTab('search')}
-                onInstall={() => setShowInstall(true)}
-              />
-            ) : filtered.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-2 py-24 text-center">
-                <PackageIcon className="size-6 text-muted-foreground/50" />
-                <p className="font-mono text-sm text-muted-foreground">
-                  No packages match your filters.
-                </p>
-              </div>
-            ) : (
-              <div className="grid gap-4 lg:grid-cols-2">
-                {filtered.map((p) => (
-                  <PackageCard key={p.id} pkg={p} />
-                ))}
-              </div>
-            )}
-          </div>
-        </>
-      ) : (
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-24 text-center">
+              <PackageIcon className="size-6 text-muted-foreground/50" />
+              <p className="font-mono text-sm text-muted-foreground">
+                No packages match your filters.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {filtered.map((p) => (
+                <PackageCard key={p.id} pkg={p} />
+              ))}
+            </div>
+          )}
+        </div>
+      </TabsContent>
+
+      <TabsContent value="search" className="flex min-h-0 flex-1 flex-col">
         <SearchCatalogView initialCatalog={catalog} />
-      )}
+      </TabsContent>
 
       <InstallPackageDialog open={showInstall} onClose={() => setShowInstall(false)} />
-    </div>
+    </Tabs>
   )
 }
 
@@ -313,6 +319,14 @@ function CatalogLinks({ pkg }: { pkg: GlobalPackage }) {
 function PackageCard({ pkg }: { pkg: GlobalPackage }) {
   const [pending, setPending] = useState<string | null>(null)
   const [confirmRemove, setConfirmRemove] = useState(false)
+  const SourceIcon = pkg.type === 'npm' ? Box : pkg.type === 'git' ? GitFork : HardDrive
+  const ScopeIcon = pkg.scope === 'global' ? Globe2 : Folder
+  const versionLabel =
+    pkg.version === 'unknown'
+      ? 'version unknown'
+      : pkg.version.startsWith('v')
+        ? pkg.version
+        : `v${pkg.version}`
 
   const updatePackage = async () => {
     setPending('update')
@@ -339,7 +353,7 @@ function PackageCard({ pkg }: { pkg: GlobalPackage }) {
     <>
       <Panel className="flex flex-col">
         <div className="flex items-start justify-between gap-3 border-b border-border p-4">
-          <div className="flex items-start gap-3">
+          <div className="flex min-w-0 flex-1 items-start gap-3">
             <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center border border-border bg-panel">
               <PackageIcon className="size-4 text-accent" />
             </div>
@@ -348,9 +362,26 @@ function PackageCard({ pkg }: { pkg: GlobalPackage }) {
                 <span className="font-mono text-sm text-foreground">{pkg.name}</span>
                 <Tag tone={statusTone[pkg.status]}>{statusLabel[pkg.status]}</Tag>
               </div>
-              <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-                {pkg.source} · {pkg.version} · {pkg.downloads}
-              </p>
+              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10px] text-muted-foreground">
+                <span className="flex max-w-full min-w-0 items-center gap-1.5" title={pkg.source}>
+                  <SourceIcon className="size-3 shrink-0" />
+                  <span className="truncate">{pkg.source}</span>
+                </span>
+                <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                  <Hash className="size-3" />
+                  {versionLabel}
+                </span>
+                <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                  <ScopeIcon className="size-3" />
+                  {pkg.scope}
+                </span>
+                {pkg.downloads && (
+                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                    <Download className="size-3" />
+                    {pkg.downloads}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           {pkg.hasExtensions && (

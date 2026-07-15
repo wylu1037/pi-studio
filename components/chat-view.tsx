@@ -41,6 +41,9 @@ import { ActionButton, Label, Tag, BracketButton, Panel, PanelHeader } from '@/c
 import { MarkdownContent } from '@/components/markdown-content'
 import { WorkspaceExplorer } from '@/components/workspace-explorer'
 import { ExtensionUiHost } from '@/components/extension-ui-host'
+import { Bubble, BubbleContent } from '@/components/ui/bubble'
+import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker'
+import { Message, MessageContent, MessageHeader } from '@/components/ui/message'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Select,
@@ -2324,14 +2327,16 @@ function WaitingBubble({ agentName }: { agentName: string }) {
         <Bot className="size-3 text-accent" />
         <Label>{agentName}</Label>
       </div>
-      <div className="flex items-center gap-2 border-l-2 border-accent/50 pl-3.5 font-mono text-xs text-muted-foreground">
-        <span>Thinking</span>
-        <span className="flex items-center gap-1">
-          <span className="size-1.5 animate-pulse bg-muted-foreground/60" />
-          <span className="size-1.5 animate-pulse bg-muted-foreground/60 [animation-delay:120ms]" />
-          <span className="size-1.5 animate-pulse bg-muted-foreground/60 [animation-delay:240ms]" />
-        </span>
-      </div>
+      <Marker
+        role="status"
+        aria-live="polite"
+        className="min-h-5 w-fit gap-1.5 border-l-2 border-accent/50 pl-3.5 font-mono text-xs"
+      >
+        <MarkerIcon className="flex size-3 items-center justify-center text-accent">
+          <LoaderCircle className="size-3 animate-spin" />
+        </MarkerIcon>
+        <MarkerContent>Thinking</MarkerContent>
+      </Marker>
     </div>
   )
 }
@@ -2471,17 +2476,21 @@ const MessageBubble = memo(function MessageBubble({
   switch (message.type) {
     case 'user':
       return (
-        <div className="flex flex-col items-end gap-1">
-          <div className="flex items-center gap-1.5">
-            <Label>You</Label>
-            <span className="font-mono text-[10px] text-muted-foreground/50">
-              {message.timestamp}
-            </span>
-          </div>
-          <div className="max-w-[85%] border border-border-strong bg-card px-3.5 py-2.5 text-sm leading-relaxed wrap-break-word text-foreground">
-            {message.content}
-          </div>
-        </div>
+        <Message align="end" className="gap-0">
+          <MessageContent className="items-end gap-1">
+            <MessageHeader className="justify-end gap-1.5 px-0">
+              <Label>You</Label>
+              <span className="font-mono text-[10px] text-muted-foreground/50">
+                {message.timestamp}
+              </span>
+            </MessageHeader>
+            <Bubble variant="secondary" align="end" className="max-w-[85%]">
+              <BubbleContent className="px-3.5 py-2.5 text-foreground">
+                {message.content}
+              </BubbleContent>
+            </Bubble>
+          </MessageContent>
+        </Message>
       )
     case 'assistant': {
       const estimatedTokens = message.tokens ?? estimateTokens(message.content)
@@ -2490,26 +2499,32 @@ const MessageBubble = memo(function MessageBubble({
           ? Math.max(1, Math.round((Date.now() - streamStartedAt) / 1000))
           : null
       return (
-        <div className="flex flex-col gap-1">
-          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-            <Bot className="size-3 text-accent" />
-            <Label>{agentName}</Label>
-            <AssistantMessageMetrics
-              usage={message.usage ?? null}
-              fallbackTokens={message.tokens ?? estimatedTokens}
-              estimated={message.timestamp === 'streaming' && !message.tokens}
-              streamSeconds={streamSeconds}
-              timestamp={message.timestamp !== 'streaming' ? message.timestamp : null}
-            />
-          </div>
-          {message.timestamp === 'streaming' ? (
-            <div className="border-l-2 border-accent/50 pl-3.5 text-sm leading-relaxed wrap-break-word whitespace-pre-wrap text-foreground">
-              {message.content}
-            </div>
-          ) : (
-            <MarkdownContent content={message.content} mediaSessionId={mediaSessionId} />
-          )}
-        </div>
+        <Message className="gap-0">
+          <MessageContent className="gap-1">
+            <MessageHeader className="flex-wrap gap-x-1.5 gap-y-1 px-0">
+              <Bot className="size-3 text-accent" />
+              <Label>{agentName}</Label>
+              <AssistantMessageMetrics
+                usage={message.usage ?? null}
+                fallbackTokens={message.tokens ?? estimatedTokens}
+                estimated={message.timestamp === 'streaming' && !message.tokens}
+                streamSeconds={streamSeconds}
+                timestamp={message.timestamp !== 'streaming' ? message.timestamp : null}
+              />
+            </MessageHeader>
+            <Bubble variant="outline" className="w-full max-w-full">
+              <BubbleContent className="w-full">
+                {message.timestamp === 'streaming' ? (
+                  <div className="border-l-2 border-accent/50 pl-3.5 whitespace-pre-wrap text-foreground">
+                    {message.content}
+                  </div>
+                ) : (
+                  <MarkdownContent content={message.content} mediaSessionId={mediaSessionId} />
+                )}
+              </BubbleContent>
+            </Bubble>
+          </MessageContent>
+        </Message>
       )
     }
     case 'thinking':
@@ -2581,13 +2596,15 @@ const MessageBubble = memo(function MessageBubble({
       )
     case 'compaction':
       return (
-        <div className="flex items-center gap-2 py-1">
-          <div className="h-px flex-1 bg-border" />
-          <span className="font-mono text-[10px] tracking-wider text-muted-foreground/60 uppercase">
-            {message.content}
-          </span>
-          <div className="h-px flex-1 bg-border" />
-        </div>
+        <Marker
+          variant="separator"
+          className="min-h-5 py-1 font-mono text-[10px] tracking-wider text-muted-foreground/60 uppercase"
+        >
+          <MarkerIcon className="size-3">
+            <Layers className="size-3" />
+          </MarkerIcon>
+          <MarkerContent>{message.content}</MarkerContent>
+        </Marker>
       )
     default:
       return null
