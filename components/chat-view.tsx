@@ -37,7 +37,7 @@ import {
   ArrowUp,
   MessageSquarePlus,
 } from 'lucide-react'
-import { Label, Tag, BracketButton, Panel, PanelHeader } from '@/components/pi-ui'
+import { ActionButton, Label, Tag, BracketButton, Panel, PanelHeader } from '@/components/pi-ui'
 import { MarkdownContent } from '@/components/markdown-content'
 import { WorkspaceExplorer } from '@/components/workspace-explorer'
 import { ExtensionUiHost } from '@/components/extension-ui-host'
@@ -1230,11 +1230,7 @@ export function ChatView({
   const visibleTreeNodes = countTreeNodes(visibleTree)
 
   if (!activeAgent || !activeSession) {
-    return (
-      <div className="flex h-full items-center justify-center font-mono text-sm text-muted-foreground">
-        No agent or session is available.
-      </div>
-    )
+    return <EmptyState onOpenAgents={() => router.push('/')} />
   }
 
   const isStartingRun = streamPhase === 'starting' && !runId
@@ -1939,6 +1935,26 @@ export function ChatView({
           </div>
         </aside>
       )}
+    </div>
+  )
+}
+
+function EmptyState({ onOpenAgents }: { onOpenAgents: () => void }) {
+  return (
+    <div className="mx-auto flex h-full max-w-md flex-col items-center justify-center gap-4 px-6 py-24 text-center">
+      <div className="flex size-14 items-center justify-center border border-border-strong bg-card">
+        <Bot className="size-6 text-muted-foreground" />
+      </div>
+      <div>
+        <h2 className="font-serif text-2xl text-foreground italic">No chat available</h2>
+        <p className="mt-2 text-sm text-pretty text-muted-foreground">
+          Create an agent first. Pi Studio will open its first session automatically.
+        </p>
+      </div>
+      <ActionButton variant="accent" onClick={onOpenAgents}>
+        <Bot className="size-3.5" />
+        Go to Agents
+      </ActionButton>
     </div>
   )
 }

@@ -74,10 +74,6 @@ export type PostApiAgentsIdDuplicate200 = {
     /**
      * @type array
     */
-    selectedMcpConfigIds: string[];
-    /**
-     * @type array
-    */
     selectedProviderIds: string[];
     /**
      * @type array

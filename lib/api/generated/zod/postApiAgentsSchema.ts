@@ -20,7 +20,6 @@ export const postApiAgents200Schema = z.object({
 "selectedPackageSources": z.array(z.string()),
 "selectedSkillIds": z.array(z.string()),
 "selectedPromptIds": z.array(z.string()),
-"selectedMcpConfigIds": z.array(z.string()),
 "selectedProviderIds": z.array(z.string()),
 "selectedModelIds": z.array(z.string()),
 "defaultProviderId": z.optional(z.string()),

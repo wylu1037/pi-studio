@@ -24,7 +24,6 @@ export const postApiAgentsIdAssign200Schema = z.object({
 "selectedPackageSources": z.array(z.string()),
 "selectedSkillIds": z.array(z.string()),
 "selectedPromptIds": z.array(z.string()),
-"selectedMcpConfigIds": z.array(z.string()),
 "selectedProviderIds": z.array(z.string()),
 "selectedModelIds": z.array(z.string()),
 "defaultProviderId": z.optional(z.string()),
@@ -49,7 +48,7 @@ export const postApiAgentsIdAssign404Schema = z.object({
 export const postApiAgentsIdAssignMutationRequestSchema = z.object({
     "resourceId": z.string(),
 "enabled": z.optional(z.boolean().default(true)),
-"kind": z.enum(["extension", "package", "skill", "prompt", "mcp", "provider", "model"])
+"kind": z.enum(["extension", "package", "skill", "prompt", "provider", "model"])
     })
 
 export const postApiAgentsIdAssignMutationResponseSchema = z.lazy(() => postApiAgentsIdAssign200Schema)

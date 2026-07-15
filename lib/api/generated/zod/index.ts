@@ -1,6 +1,5 @@
 export { deleteApiAgentsId200Schema, deleteApiAgentsIdMutationResponseSchema, deleteApiAgentsIdPathParamsSchema } from "./deleteApiAgentsIdSchema.ts";
 export { deleteApiExtensionsId200Schema, deleteApiExtensionsId400Schema, deleteApiExtensionsIdMutationResponseSchema, deleteApiExtensionsIdPathParamsSchema, deleteApiExtensionsIdQueryParamsSchema } from "./deleteApiExtensionsIdSchema.ts";
-export { deleteApiMcpId200Schema, deleteApiMcpIdMutationResponseSchema, deleteApiMcpIdPathParamsSchema } from "./deleteApiMcpIdSchema.ts";
 export { deleteApiModelProvidersId200Schema, deleteApiModelProvidersIdMutationResponseSchema, deleteApiModelProvidersIdPathParamsSchema } from "./deleteApiModelProvidersIdSchema.ts";
 export { deleteApiModelsId200Schema, deleteApiModelsId404Schema, deleteApiModelsIdMutationResponseSchema, deleteApiModelsIdPathParamsSchema, deleteApiModelsIdQueryParamsSchema } from "./deleteApiModelsIdSchema.ts";
 export { deleteApiPackagesId200Schema, deleteApiPackagesIdMutationResponseSchema, deleteApiPackagesIdPathParamsSchema } from "./deleteApiPackagesIdSchema.ts";
@@ -18,7 +17,6 @@ export { getApiExtensions200Schema, getApiExtensionsQueryParamsSchema, getApiExt
 export { getApiExtensionsTrust200Schema, getApiExtensionsTrust400Schema, getApiExtensionsTrustQueryParamsSchema, getApiExtensionsTrustQueryResponseSchema } from "./getApiExtensionsTrustSchema.ts";
 export { getApiExtensionsWorkspaces200Schema, getApiExtensionsWorkspacesQueryResponseSchema } from "./getApiExtensionsWorkspacesSchema.ts";
 export { getApiHealth200Schema, getApiHealthQueryResponseSchema } from "./getApiHealthSchema.ts";
-export { getApiMcp200Schema, getApiMcpQueryResponseSchema } from "./getApiMcpSchema.ts";
 export { getApiModelProvidersIdAvailableModels200Schema, getApiModelProvidersIdAvailableModels404Schema, getApiModelProvidersIdAvailableModels502Schema, getApiModelProvidersIdAvailableModelsPathParamsSchema, getApiModelProvidersIdAvailableModelsQueryResponseSchema } from "./getApiModelProvidersIdAvailableModelsSchema.ts";
 export { getApiModelProvidersProvideridModelsModelidCapabilities200Schema, getApiModelProvidersProvideridModelsModelidCapabilities404Schema, getApiModelProvidersProvideridModelsModelidCapabilitiesPathParamsSchema, getApiModelProvidersProvideridModelsModelidCapabilitiesQueryResponseSchema } from "./getApiModelProvidersProvideridModelsModelidCapabilitiesSchema.ts";
 export { getApiModelProviders200Schema, getApiModelProvidersQueryResponseSchema } from "./getApiModelProvidersSchema.ts";
@@ -49,7 +47,6 @@ export { postApiExtensionsIdValidate200Schema, postApiExtensionsIdValidate400Sch
 export { postApiExtensionsReload200Schema, postApiExtensionsReloadMutationRequestSchema, postApiExtensionsReloadMutationResponseSchema } from "./postApiExtensionsReloadSchema.ts";
 export { postApiExtensionsToggle200Schema, postApiExtensionsToggleMutationRequestSchema, postApiExtensionsToggleMutationResponseSchema } from "./postApiExtensionsToggleSchema.ts";
 export { postApiExtensionsTrust200Schema, postApiExtensionsTrust400Schema, postApiExtensionsTrustMutationRequestSchema, postApiExtensionsTrustMutationResponseSchema } from "./postApiExtensionsTrustSchema.ts";
-export { postApiMcp200Schema, postApiMcp400Schema, postApiMcpMutationRequestSchema, postApiMcpMutationResponseSchema } from "./postApiMcpSchema.ts";
 export { postApiModelProvidersIdDefault200Schema, postApiModelProvidersIdDefault404Schema, postApiModelProvidersIdDefaultMutationResponseSchema, postApiModelProvidersIdDefaultPathParamsSchema } from "./postApiModelProvidersIdDefaultSchema.ts";
 export { postApiModelProvidersIdModels200Schema, postApiModelProvidersIdModels404Schema, postApiModelProvidersIdModels409Schema, postApiModelProvidersIdModelsMutationRequestSchema, postApiModelProvidersIdModelsMutationResponseSchema, postApiModelProvidersIdModelsPathParamsSchema } from "./postApiModelProvidersIdModelsSchema.ts";
 export { postApiModelProvidersIdTest200Schema, postApiModelProvidersIdTest404Schema, postApiModelProvidersIdTestMutationResponseSchema, postApiModelProvidersIdTestPathParamsSchema } from "./postApiModelProvidersIdTestSchema.ts";

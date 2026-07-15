@@ -67,10 +67,6 @@ export type PostApiAgents200 = {
     /**
      * @type array
     */
-    selectedMcpConfigIds: string[];
-    /**
-     * @type array
-    */
     selectedProviderIds: string[];
     /**
      * @type array

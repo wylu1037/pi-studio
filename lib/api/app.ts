@@ -16,7 +16,6 @@ import {
   createRun,
   createSession,
   deleteAgent,
-  deleteMcp,
   deleteModel,
   deletePrompt,
   deleteProvider,
@@ -30,7 +29,6 @@ import {
   getSessionTree,
   getPackageCatalogItem,
   listAgents,
-  listMcpConfigs,
   listPrompts,
   listProviders,
   listSessionMessages,
@@ -44,7 +42,6 @@ import {
   updateAgentResources,
   updateSession,
   upsertSkill,
-  upsertMcp,
   upsertModel,
   upsertPrompt,
   upsertProvider,
@@ -76,8 +73,6 @@ import {
   ExtensionUiSnapshotSchema,
   ExtensionValidationSchema,
   ExtensionWorkspaceSchema,
-  McpInputSchema,
-  McpSchema,
   ModelCapabilitiesSchema,
   InstallPackageSchema,
   ModelInputSchema,
@@ -809,45 +804,6 @@ api.openapi(
   }),
   (c) => {
     deletePrompt(c.req.valid('param').id)
-    return c.json({ ok: true })
-  },
-)
-
-api.openapi(
-  createRoute({
-    method: 'get',
-    path: '/mcp',
-    tags: ['MCP'],
-    responses: { 200: json(z.array(McpSchema)) },
-  }),
-  (c) => c.json(listMcpConfigs()),
-)
-
-api.openapi(
-  createRoute({
-    method: 'post',
-    path: '/mcp',
-    tags: ['MCP'],
-    request: { body: json(McpInputSchema) },
-    responses: { 200: json(McpSchema), 400: json(ErrorSchema) },
-  }),
-  (c) => {
-    const mcp = upsertMcp(c.req.valid('json'))
-    if (!mcp) return c.json({ error: 'Unable to save MCP config' }, 400)
-    return c.json(mcp)
-  },
-)
-
-api.openapi(
-  createRoute({
-    method: 'delete',
-    path: '/mcp/{id}',
-    tags: ['MCP'],
-    request: { params: z.object({ id: z.string() }) },
-    responses: { 200: json(z.object({ ok: z.boolean() })) },
-  }),
-  (c) => {
-    deleteMcp(c.req.valid('param').id)
     return c.json({ ok: true })
   },
 )
@@ -1607,7 +1563,6 @@ api.openapi(
           : undefined,
       selectedSkillIds: body.kind === 'skill' ? toggle(agent.selectedSkillIds) : undefined,
       selectedPromptIds: body.kind === 'prompt' ? toggle(agent.selectedPromptIds) : undefined,
-      selectedMcpConfigIds: body.kind === 'mcp' ? toggle(agent.selectedMcpConfigIds) : undefined,
       selectedProviderIds: body.kind === 'provider' ? toggle(agent.selectedProviderIds) : undefined,
       selectedModelIds: body.kind === 'model' ? toggle(agent.selectedModelIds) : undefined,
       defaultProviderId: agent.defaultProviderId,

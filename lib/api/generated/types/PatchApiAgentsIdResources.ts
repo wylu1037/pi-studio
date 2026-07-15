@@ -74,10 +74,6 @@ export type PatchApiAgentsIdResources200 = {
     /**
      * @type array
     */
-    selectedMcpConfigIds: string[];
-    /**
-     * @type array
-    */
     selectedProviderIds: string[];
     /**
      * @type array
@@ -155,10 +151,6 @@ export type PatchApiAgentsIdResourcesMutationRequest = {
      * @type array | undefined
     */
     selectedPromptIds?: string[];
-    /**
-     * @type array | undefined
-    */
-    selectedMcpConfigIds?: string[];
     /**
      * @type array | undefined
     */

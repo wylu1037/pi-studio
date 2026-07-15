@@ -11,7 +11,6 @@ import {
   SlidersHorizontal,
   Sparkles,
   FileText,
-  Plug,
   History,
   Clock,
   Cpu,
@@ -89,7 +88,7 @@ export function AgentsDashboard({ agents }: { agents: AgentProfile[] }) {
     <div className="flex h-full flex-col">
       <PageHeader
         title="Agents"
-        subtitle="Named configuration profiles. Each agent bundles its own skills, prompts, MCP servers, and model range."
+        subtitle="Named configuration profiles. Each agent bundles its own skills, prompts, and model range."
       >
         <ActionButton variant="accent" onClick={createNewAgent} disabled={pendingId === 'new'}>
           <Plus className="size-3.5" />
@@ -169,7 +168,6 @@ function AgentCard({
   const stats = [
     { icon: Sparkles, value: agent.selectedSkillIds.length, label: 'skills' },
     { icon: FileText, value: agent.selectedPromptIds.length, label: 'prompts' },
-    { icon: Plug, value: agent.selectedMcpConfigIds.length, label: 'mcp' },
     { icon: History, value: agent.sessionCount, label: 'sessions' },
   ]
 

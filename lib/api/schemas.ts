@@ -26,7 +26,6 @@ export const AgentSchema = z.object({
   selectedPackageSources: z.array(z.string()),
   selectedSkillIds: z.array(z.string()),
   selectedPromptIds: z.array(z.string()),
-  selectedMcpConfigIds: z.array(z.string()),
   selectedProviderIds: z.array(z.string()),
   selectedModelIds: z.array(z.string()),
   defaultProviderId: z.string().optional(),
@@ -53,7 +52,6 @@ export const AgentResourcesSchema = z.object({
   selectedPackageSources: z.array(z.string()).optional(),
   selectedSkillIds: z.array(z.string()).optional(),
   selectedPromptIds: z.array(z.string()).optional(),
-  selectedMcpConfigIds: z.array(z.string()).optional(),
   selectedProviderIds: z.array(z.string()).optional(),
   selectedModelIds: z.array(z.string()).optional(),
   defaultProviderId: z.string().optional(),
@@ -125,31 +123,6 @@ export const PromptInputSchema = z.object({
   source: z.enum(['studio', 'global', 'project', 'package']).default('studio'),
   scope: z.enum(['global', 'project']).default('global'),
   tags: z.array(z.string()).default([]),
-})
-
-export const McpSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  description: z.string().optional(),
-  command: z.string(),
-  args: z.array(z.string()),
-  env: z.record(z.string(), z.string()),
-  tags: z.array(z.string()),
-  enabledGlobally: z.boolean(),
-  usedByAgents: z.number(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-})
-
-export const McpInputSchema = z.object({
-  id: z.string().optional(),
-  name: z.string().min(1),
-  description: z.string().optional(),
-  command: z.string().min(1),
-  args: z.array(z.string()).default([]),
-  env: z.record(z.string(), z.string()).default({}),
-  tags: z.array(z.string()).default([]),
-  enabledGlobally: z.boolean().default(false),
 })
 
 export const ModelSchema = z.object({
@@ -559,7 +532,7 @@ export const AssignToAgentSchema = z.object({
   agentId: z.string(),
   resourceId: z.string(),
   enabled: z.boolean().default(true),
-  kind: z.enum(['extension', 'package', 'skill', 'prompt', 'mcp', 'provider', 'model']),
+  kind: z.enum(['extension', 'package', 'skill', 'prompt', 'provider', 'model']),
 })
 
 export const ChatMessageSchema = z.object({

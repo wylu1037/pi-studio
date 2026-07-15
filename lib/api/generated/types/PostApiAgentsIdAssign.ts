@@ -74,10 +74,6 @@ export type PostApiAgentsIdAssign200 = {
     /**
      * @type array
     */
-    selectedMcpConfigIds: string[];
-    /**
-     * @type array
-    */
     selectedProviderIds: string[];
     /**
      * @type array
@@ -128,7 +124,6 @@ export const postApiAgentsIdAssignMutationRequestKindEnum = {
     package: "package",
     skill: "skill",
     prompt: "prompt",
-    mcp: "mcp",
     provider: "provider",
     model: "model"
 } as const;

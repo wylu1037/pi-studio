@@ -8,13 +8,11 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import {
   ArrowLeft,
-  MessageSquare,
   Search,
   Check,
   X,
   Sparkles,
   FileText,
-  Plug,
   Cpu,
   History,
   Coins,
@@ -26,7 +24,6 @@ import {
 import type {
   AgentProfile,
   AgentSessionSummary,
-  GlobalMcpConfig,
   GlobalModelProvider,
   GlobalPackage,
   GlobalPromptTemplate,
@@ -37,7 +34,6 @@ import { deleteApiAgentsId } from '@/lib/api/generated/clients/deleteApiAgentsId
 import { patchApiAgentsId } from '@/lib/api/generated/clients/patchApiAgentsId'
 import { patchApiAgentsIdResources } from '@/lib/api/generated/clients/patchApiAgentsIdResources'
 import { postApiAgentsIdAssign } from '@/lib/api/generated/clients/postApiAgentsIdAssign'
-import { postApiAgentsIdDuplicate } from '@/lib/api/generated/clients/postApiAgentsIdDuplicate'
 import { refreshAfterMutation } from '@/lib/api/refresh'
 import { errorMessage, showToast } from '@/lib/toast'
 import {
@@ -58,7 +54,6 @@ const TABS = [
   'Packages',
   'Skills',
   'Prompts',
-  'MCP',
   'Models',
   'Sessions',
   'Settings',
@@ -79,7 +74,6 @@ export function AgentDetail({
   packages,
   skills,
   prompts,
-  mcpConfigs,
   providers,
   sessions,
 }: {
@@ -88,7 +82,6 @@ export function AgentDetail({
   packages: GlobalPackage[]
   skills: GlobalSkill[]
   prompts: GlobalPromptTemplate[]
-  mcpConfigs: GlobalMcpConfig[]
   providers: GlobalModelProvider[]
   sessions: AgentSessionSummary[]
 }) {
@@ -96,16 +89,6 @@ export function AgentDetail({
   const [pending, setPending] = useState<string | null>(null)
   const [deleteRequested, setDeleteRequested] = useState(false)
   const router = useRouter()
-
-  const duplicateAgent = async () => {
-    setPending('duplicate')
-    try {
-      await postApiAgentsIdDuplicate(agent.id)
-      refreshAfterMutation()
-    } finally {
-      setPending(null)
-    }
-  }
 
   const deleteAgent = async () => {
     setPending('delete')
@@ -152,17 +135,6 @@ export function AgentDetail({
                 ))}
               </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <ActionButton onClick={duplicateAgent} disabled={pending === 'duplicate'}>
-              Duplicate
-            </ActionButton>
-            <Link href={`/chat?agent=${agent.id}`}>
-              <ActionButton variant="accent">
-                <MessageSquare className="size-3.5" />
-                Start Chat
-              </ActionButton>
-            </Link>
           </div>
         </div>
       </div>
@@ -251,21 +223,6 @@ export function AgentDetail({
             selectedIds={agent.selectedPromptIds}
           />
         )}
-        {tab === 'MCP' && (
-          <ResourcePicker
-            title="MCP configs"
-            agentId={agent.id}
-            kind="mcp"
-            items={mcpConfigs.map((m) => ({
-              id: m.id,
-              name: m.name,
-              description: m.description ?? '',
-              tags: m.tags,
-              meta: m.command,
-            }))}
-            selectedIds={agent.selectedMcpConfigIds}
-          />
-        )}
         {tab === 'Models' && <ModelsTab agent={agent} providers={providers} />}
         {tab === 'Sessions' && <SessionsTab agent={agent} sessions={sessions} />}
         {tab === 'Settings' && (
@@ -294,7 +251,6 @@ function OverviewTab({ agent }: { agent: AgentProfile }) {
     { icon: Sparkles, value: agent.selectedSkillIds.length, label: 'Skills' },
     { icon: Puzzle, value: agent.selectedExtensionIds.length, label: 'Extensions' },
     { icon: FileText, value: agent.selectedPromptIds.length, label: 'Prompts' },
-    { icon: Plug, value: agent.selectedMcpConfigIds.length, label: 'MCP' },
     { icon: Cpu, value: agent.selectedModelIds.length, label: 'Models' },
     { icon: History, value: agent.sessionCount, label: 'Sessions' },
   ]
@@ -360,7 +316,7 @@ function ResourcePicker({
 }: {
   title: string
   agentId: string
-  kind: 'extension' | 'package' | 'skill' | 'prompt' | 'mcp'
+  kind: 'extension' | 'package' | 'skill' | 'prompt'
   items: PickerItem[]
   selectedIds: string[]
 }) {
