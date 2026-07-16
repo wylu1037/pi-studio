@@ -11,8 +11,8 @@ import {
 } from 'react'
 import type { UseFormReturn } from 'react-hook-form'
 import {
-  Brain,
-  Cpu,
+  ChevronDown,
+  ChevronRight,
   File,
   FileCode2,
   FileImage,
@@ -38,17 +38,22 @@ import {
   AttachmentTitle,
 } from '@/components/ui/attachment'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import type { DraftAttachment } from '@/components/use-chat-attachments'
 import type { GlobalModel, GlobalModelProvider, GlobalPromptTemplate } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 export const thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+const codexThinkingLevels = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 export const COMPOSER_MAX_HEIGHT = 176
 
 export type ComposerValues = {
@@ -315,7 +320,7 @@ export function ChatComposer({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="flex size-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98]"
               aria-label="Attach files"
               title="Attach files"
             >
@@ -323,20 +328,16 @@ export function ChatComposer({
             </button>
             <input type="hidden" {...form.register('providerId')} />
             <input type="hidden" {...form.register('modelId')} />
-            <ModelSelect
-              form={form}
-              options={availableModelOptions}
-              selected={selectedModelOption}
-              disabled={availableModelOptions.length === 0 || isRunningRun}
-            />
             <input type="hidden" {...form.register('thinkingLevel')} />
-            <ThinkingSelect form={form} value={thinking} />
-            <span
-              className="ml-auto hidden max-w-44 truncate font-mono text-[10px] text-muted-foreground/45 lg:block"
-              title={activeSessionCwd}
-            >
-              {activeSessionCwd}
-            </span>
+            <div className="ml-auto min-w-0">
+              <ModelConfigurationMenu
+                form={form}
+                options={availableModelOptions}
+                selected={selectedModelOption}
+                thinking={thinking}
+                disabled={availableModelOptions.length === 0 || isRunningRun}
+              />
+            </div>
             <button
               type={isRunningRun ? 'button' : 'submit'}
               onClick={canAbortRun ? onAbort : undefined}
@@ -379,6 +380,15 @@ export function ChatComposer({
           )}
         </form>
 
+        <div className="mt-1.5 min-w-0 px-1">
+          <span
+            className="block truncate font-mono text-[10px] text-muted-foreground/45"
+            title={activeSessionCwd}
+          >
+            {activeSessionCwd}
+          </span>
+        </div>
+
         {isRunningRun && (
           <div className="mt-2 flex justify-end gap-2">
             <button
@@ -404,107 +414,139 @@ export function ChatComposer({
   )
 }
 
-function ModelSelect({
+function ModelConfigurationMenu({
   form,
   options,
   selected,
+  thinking,
   disabled,
 }: {
   form: UseFormReturn<ComposerValues>
   options: ComposerModelOption[]
   selected?: ComposerModelOption
+  thinking: (typeof thinkingLevels)[number]
   disabled: boolean
 }) {
+  const [open, setOpen] = useState(false)
+  const [showModels, setShowModels] = useState(false)
+  const selectedModelValue = selected ? `${selected.provider.id}::${selected.model.id}` : ''
+  const visibleThinkingLevels = codexThinkingLevels.includes(
+    thinking as (typeof codexThinkingLevels)[number],
+  )
+    ? codexThinkingLevels
+    : ([thinking, ...codexThinkingLevels] as const)
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen)
+    if (nextOpen) setShowModels(false)
+  }
+
   return (
-    <label className="flex min-w-0 items-center gap-1.5">
-      <Cpu className="size-3 shrink-0 text-muted-foreground" />
-      <Select
+    <DropdownMenu open={open} onOpenChange={handleOpenChange} disabled={disabled}>
+      <DropdownMenuTrigger
         disabled={disabled}
-        value={selected ? `${selected.provider.id}::${selected.model.id}` : null}
-        onValueChange={(value) => {
-          if (value === null) return
-          const next = options.find(
-            ({ provider, model }) => `${provider.id}::${model.id}` === value,
-          )
-          if (!next) return
-          form.setValue('providerId', next.provider.id, {
-            shouldDirty: true,
-            shouldValidate: true,
-          })
-          form.setValue('modelId', next.model.id, {
-            shouldDirty: true,
-            shouldValidate: true,
-          })
-        }}
+        className="flex h-8 max-w-72 min-w-0 items-center gap-1.5 rounded-lg px-2 text-left text-[11px] text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-45"
+        aria-label="Configure model and reasoning"
+        title="Configure model and reasoning"
       >
-        <SelectTrigger
-          size="sm"
-          className="h-7 max-w-36 border-0 bg-transparent px-0 py-0 text-[10px] text-muted-foreground hover:text-foreground focus-visible:ring-0 sm:max-w-64"
-        >
-          <SelectValue>
-            {selected
-              ? `${selected.provider.name} / ${selected.model.name ?? selected.model.id}`
-              : 'No models'}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectContent
-          align="start"
-          alignItemWithTrigger={false}
-          className="w-max max-w-[calc(100vw-2rem)] min-w-(--anchor-width) sm:max-w-lg"
-        >
-          {options.map(({ provider, model }) => (
-            <SelectItem key={`${provider.id}:${model.id}`} value={`${provider.id}::${model.id}`}>
-              {provider.name} / {model.name ?? model.id}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </label>
+        <span className="truncate">
+          {selected
+            ? `${selected.provider.name} · ${selected.model.name ?? selected.model.id} · ${reasoningLabel(thinking)}`
+            : 'No models'}
+        </span>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className="w-72 max-w-[calc(100vw-2rem)]" align="start" side="top">
+        <DropdownMenuGroup className="p-0.5">
+          <DropdownMenuLabel>Reasoning</DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={thinking}
+            onValueChange={(nextValue) => {
+              if (!thinkingLevels.includes(nextValue as (typeof thinkingLevels)[number])) return
+              form.setValue('thinkingLevel', nextValue as (typeof thinkingLevels)[number], {
+                shouldDirty: true,
+                shouldValidate: true,
+              })
+              setOpen(false)
+            }}
+            className="flex flex-col gap-0.5"
+          >
+            {visibleThinkingLevels.map((thinkingLevel) => (
+              <DropdownMenuRadioItem key={thinkingLevel} value={thinkingLevel} closeOnClick={false}>
+                {reasoningLabel(thinkingLevel)}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator className="mx-1.5" />
+        <DropdownMenuGroup className="p-0.5">
+          <DropdownMenuItem
+            closeOnClick={false}
+            onClick={() => setShowModels((value) => !value)}
+            className="text-foreground"
+          >
+            <span className="min-w-0 flex-1 truncate">
+              {selected?.model.name ?? selected?.model.id ?? 'Choose model'}
+            </span>
+            {showModels ? (
+              <ChevronDown className="size-4 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="size-4 text-muted-foreground" />
+            )}
+          </DropdownMenuItem>
+          {showModels && (
+            <>
+              <DropdownMenuLabel>Model</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={selectedModelValue}
+                onValueChange={(nextValue) => {
+                  const next = options.find(
+                    ({ provider, model }) => `${provider.id}::${model.id}` === nextValue,
+                  )
+                  if (!next) return
+                  form.setValue('providerId', next.provider.id, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                  form.setValue('modelId', next.model.id, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                  setOpen(false)
+                }}
+                className="scroll-fade-b flex max-h-64 flex-col gap-0.5 overflow-y-auto"
+              >
+                {options.map(({ provider, model }) => (
+                  <DropdownMenuRadioItem
+                    key={`${provider.id}:${model.id}`}
+                    value={`${provider.id}::${model.id}`}
+                    closeOnClick={false}
+                  >
+                    <span className="min-w-0 flex-1 truncate">{model.name ?? model.id}</span>
+                    <span className="mr-3 max-w-20 truncate text-[11px] font-normal text-muted-foreground">
+                      {provider.name}
+                    </span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </>
+          )}
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
-function ThinkingSelect({
-  form,
-  value,
-}: {
-  form: UseFormReturn<ComposerValues>
-  value: (typeof thinkingLevels)[number]
-}) {
-  return (
-    <label className="flex items-center gap-1.5">
-      <Brain className="size-3 shrink-0 text-muted-foreground" />
-      <Select
-        value={value}
-        onValueChange={(nextValue) => {
-          if (
-            nextValue !== null &&
-            thinkingLevels.includes(nextValue as (typeof thinkingLevels)[number])
-          ) {
-            form.setValue('thinkingLevel', nextValue as (typeof thinkingLevels)[number], {
-              shouldDirty: true,
-              shouldValidate: true,
-            })
-          }
-        }}
-      >
-        <SelectTrigger
-          size="sm"
-          className="h-7 max-w-28 border-0 bg-transparent px-0 py-0 text-[10px] text-muted-foreground hover:text-foreground focus-visible:ring-0"
-        >
-          <SelectValue>
-            {(selectedValue) => `thinking: ${String(selectedValue ?? value)}`}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectContent align="start" alignItemWithTrigger={false} className="w-max">
-          {thinkingLevels.map((level) => (
-            <SelectItem key={level} value={level}>
-              thinking: {level}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </label>
-  )
+function reasoningLabel(level: (typeof thinkingLevels)[number]) {
+  const labels: Record<(typeof thinkingLevels)[number], string> = {
+    off: 'Off',
+    minimal: 'Minimal',
+    low: 'Light',
+    medium: 'Medium',
+    high: 'High',
+    xhigh: 'Extra High',
+    max: 'Ultra',
+  }
+  return labels[level]
 }
 
 function SlashCommandMenu({
