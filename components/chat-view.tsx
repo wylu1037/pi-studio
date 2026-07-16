@@ -39,6 +39,11 @@ import {
 } from 'lucide-react'
 import { ActionButton, Label, Tag, BracketButton, Panel, PanelHeader } from '@/components/pi-ui'
 import { MarkdownContent } from '@/components/markdown-content'
+import { StreamingMarkdownContent } from '@/components/streaming-markdown-content'
+import {
+  useStreamingMarkdown,
+  type StreamingContentBatch,
+} from '@/components/use-streaming-markdown'
 import { WorkspaceExplorer } from '@/components/workspace-explorer'
 import { ExtensionUiHost } from '@/components/extension-ui-host'
 import { Bubble, BubbleContent } from '@/components/ui/bubble'
@@ -72,6 +77,7 @@ import type {
   StudioExtension,
   TreeNodeRole,
 } from '@/lib/types'
+import type { StreamingMarkdownSnapshot } from '@/lib/markdown/streaming-markdown'
 import { errorMessage, showToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
@@ -194,6 +200,63 @@ export function ChatView({
   const streamMessageSequenceRef = useRef(0)
   const sourceMessageCountAtRunStartRef = useRef(messages.length)
   const sdkSessionWasRunningRef = useRef(false)
+
+  const applyStreamingContentBatch = useCallback((batch: StreamingContentBatch) => {
+    if (batch.length === 0) return
+    setStreamMessages((current) => {
+      const next = [...current]
+      for (const delta of batch) {
+        const index = next.findIndex((message) => message.id === delta.messageId)
+        if (index >= 0) {
+          const message = next[index]
+          next[index] = { ...message, content: message.content + delta.content }
+        } else {
+          next.push({
+            id: delta.messageId,
+            type: 'assistant',
+            content: delta.content,
+            timestamp: 'streaming',
+          })
+        }
+      }
+      return next
+    })
+  }, [])
+
+  const replaceStreamingContent = useCallback((messageId: string, content: string) => {
+    if (!content) return
+    setStreamMessages((current) => {
+      const existing = current.find((message) => message.id === messageId)
+      if (existing) {
+        return current.map((message) =>
+          message.id === messageId ? { ...message, content } : message,
+        )
+      }
+      return [
+        ...current,
+        {
+          id: messageId,
+          type: 'assistant',
+          content,
+          timestamp: 'streaming',
+        },
+      ]
+    })
+  }, [])
+
+  const {
+    snapshots: streamingMarkdownSnapshots,
+    beginMessage: beginStreamingMarkdownMessage,
+    appendDelta: appendStreamingMarkdownDelta,
+    sealTextSegment: sealStreamingMarkdownSegment,
+    finishMessage: finishStreamingMarkdownMessage,
+    finishAll: finishAllStreamingMarkdown,
+    flush: flushStreamingMarkdown,
+    reset: resetStreamingMarkdown,
+  } = useStreamingMarkdown({
+    onFlushContent: applyStreamingContentBatch,
+    onReplaceContent: replaceStreamingContent,
+  })
 
   const availableModelOptions = useMemo(() => {
     const enabledProviders = new Set(activeAgent?.selectedProviderIds ?? [])
@@ -557,7 +620,8 @@ export function ChatView({
     setBranchMessages(null)
     currentStreamingAssistantIdRef.current = null
     latestStreamingAssistantIdRef.current = null
-  }, [sourceMessages.length, streamDone])
+    resetStreamingMarkdown()
+  }, [resetStreamingMarkdown, sourceMessages.length, streamDone])
 
   const baseMessages = useMemo(() => {
     if (!optimisticMessage) return sourceMessages
@@ -659,6 +723,7 @@ export function ChatView({
 
   const finishActiveStream = (currentRunId: string, source?: EventSource | null) => {
     if (activeRunIdRef.current !== currentRunId) return false
+    finishAllStreamingMarkdown()
     clearReconciliation()
     source?.close()
     if (eventSourceRef.current === source) eventSourceRef.current = null
@@ -673,6 +738,7 @@ export function ChatView({
 
   const failActiveStream = (currentRunId: string, message: string, source?: EventSource | null) => {
     if (activeRunIdRef.current !== currentRunId) return false
+    finishAllStreamingMarkdown()
     clearReconciliation()
     source?.close()
     if (eventSourceRef.current === source) eventSourceRef.current = null
@@ -713,36 +779,44 @@ export function ChatView({
     reconcileTimerRef.current = window.setTimeout(poll, RUN_RECONCILE_INITIAL_DELAY_MS)
   }
 
-  const startStreamingAssistant = useCallback(() => {
-    const id = `stream-assistant-${Date.now()}-${streamMessageSequenceRef.current++}`
-    currentStreamingAssistantIdRef.current = id
-    latestStreamingAssistantIdRef.current = id
-    return id
-  }, [])
+  const startStreamingAssistant = useCallback(
+    (messageId?: string) => {
+      const id = messageId ?? `stream-assistant-${Date.now()}-${streamMessageSequenceRef.current++}`
+      currentStreamingAssistantIdRef.current = id
+      latestStreamingAssistantIdRef.current = id
+      beginStreamingMarkdownMessage(id)
+      return id
+    },
+    [beginStreamingMarkdownMessage],
+  )
 
   const appendStreamingAssistantDelta = useCallback(
-    (content: string) => {
+    (content: string, messageId?: string, contentIndex = 0) => {
       if (!content) return
-      const id = currentStreamingAssistantIdRef.current ?? startStreamingAssistant()
-      setStreamMessages((current) => {
-        const existing = current.find((message) => message.id === id)
-        if (existing) {
-          return current.map((message) =>
-            message.id === id ? { ...message, content: message.content + content } : message,
-          )
-        }
-        return [
-          ...current,
-          {
-            id,
-            type: 'assistant',
-            content,
-            timestamp: 'streaming',
-          },
-        ]
-      })
+      const id = messageId ?? currentStreamingAssistantIdRef.current ?? startStreamingAssistant()
+      if (currentStreamingAssistantIdRef.current !== id) startStreamingAssistant(id)
+      appendStreamingMarkdownDelta(id, contentIndex, content)
     },
-    [startStreamingAssistant],
+    [appendStreamingMarkdownDelta, startStreamingAssistant],
+  )
+
+  const endStreamingAssistant = useCallback(
+    (messageId?: string) => {
+      const id = messageId ?? currentStreamingAssistantIdRef.current
+      if (!id) return
+      finishStreamingMarkdownMessage(id)
+      setStreamMessages((current) =>
+        current.map((message) =>
+          message.id === id && message.timestamp === 'streaming'
+            ? { ...message, timestamp: 'now' }
+            : message,
+        ),
+      )
+      if (currentStreamingAssistantIdRef.current === id) {
+        currentStreamingAssistantIdRef.current = null
+      }
+    },
+    [finishStreamingMarkdownMessage],
   )
 
   const appendStreamProcessMessage = useCallback(
@@ -752,6 +826,7 @@ export function ChatView({
       title?: string,
     ) => {
       if (!content) return
+      flushStreamingMarkdown()
       setStreamMessages((current) => {
         if (type === 'thinking') {
           const last = current.at(-1)
@@ -777,7 +852,7 @@ export function ChatView({
         ]
       })
     },
-    [],
+    [flushStreamingMarkdown],
   )
 
   useEffect(() => {
@@ -789,19 +864,42 @@ export function ChatView({
     setStreamPhase('thinking')
     currentStreamingAssistantIdRef.current = null
     latestStreamingAssistantIdRef.current = null
+    resetStreamingMarkdown()
 
     const source = new EventSource(
       `/api/sessions/${encodeURIComponent(activeSession.id)}/live-events`,
     )
     eventSourceRef.current = source
-    source.addEventListener('assistant_message_start', () => startStreamingAssistant())
-    source.addEventListener('assistant_message_end', () => {
-      currentStreamingAssistantIdRef.current = null
+    source.addEventListener('assistant_message_start', (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as { messageId?: string }
+      startStreamingAssistant(payload.messageId)
+    })
+    source.addEventListener('assistant_message_end', (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as { messageId?: string }
+      endStreamingAssistant(payload.messageId)
+    })
+    source.addEventListener('assistant_text_end', (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as {
+        messageId?: string
+        contentIndex?: number
+        content?: string
+      }
+      const messageId = payload.messageId ?? currentStreamingAssistantIdRef.current
+      if (!messageId) return
+      sealStreamingMarkdownSegment(messageId, payload.contentIndex ?? 0, payload.content)
     })
     source.addEventListener('message_delta', (event) => {
-      const payload = JSON.parse((event as MessageEvent).data) as { content?: string }
+      const payload = JSON.parse((event as MessageEvent).data) as {
+        content?: string
+        messageId?: string
+        contentIndex?: number
+      }
       setStreamPhase('streaming')
-      appendStreamingAssistantDelta(payload.content ?? '')
+      appendStreamingAssistantDelta(
+        payload.content ?? '',
+        payload.messageId,
+        payload.contentIndex ?? 0,
+      )
     })
     source.addEventListener('thinking_delta', (event) => {
       const payload = JSON.parse((event as MessageEvent).data) as { content?: string }
@@ -837,8 +935,11 @@ export function ChatView({
       appendStreamProcessMessage('bash', payload.content ?? '', payload.stream ?? 'stderr')
     })
     source.addEventListener('usage', (event) => {
-      const payload = JSON.parse((event as MessageEvent).data) as { usage?: StreamUsage }
-      const assistantId = latestStreamingAssistantIdRef.current
+      const payload = JSON.parse((event as MessageEvent).data) as {
+        usage?: StreamUsage
+        messageId?: string
+      }
+      const assistantId = payload.messageId ?? latestStreamingAssistantIdRef.current
       if (!assistantId || !payload.usage) return
       const usage = {
         input: payload.usage.input ?? 0,
@@ -859,9 +960,11 @@ export function ChatView({
       const data = (event as MessageEvent).data
       if (typeof data !== 'string' || !data) return
       const payload = JSON.parse(data) as { message?: string }
+      finishAllStreamingMarkdown()
       setStreamError(payload.message ?? 'pi run failed.')
     })
     source.addEventListener('done', () => {
+      finishAllStreamingMarkdown()
       source.close()
       if (eventSourceRef.current === source) eventSourceRef.current = null
       sdkSessionWasRunningRef.current = false
@@ -879,10 +982,14 @@ export function ChatView({
     activeSession,
     appendStreamProcessMessage,
     appendStreamingAssistantDelta,
+    endStreamingAssistant,
+    finishAllStreamingMarkdown,
     router,
     runId,
     sdkSessionRunning,
+    sealStreamingMarkdownSegment,
     startStreamingAssistant,
+    resetStreamingMarkdown,
   ])
 
   const submit = form.handleSubmit(async (values) => {
@@ -955,6 +1062,7 @@ export function ChatView({
     clearReconciliation()
     activeRunIdRef.current = null
     setStreamMessages([])
+    resetStreamingMarkdown()
     setStreamStartedAt(Date.now())
     setStreamDone(false)
     setStreamPhase('starting')
@@ -1003,14 +1111,27 @@ export function ChatView({
         window.clearTimeout(connectionTimeout)
         setStreamPhase('thinking')
       })
-      eventSource.addEventListener('assistant_message_start', () => {
+      eventSource.addEventListener('assistant_message_start', (event) => {
         if (activeRunIdRef.current !== currentRunId) return
         window.clearTimeout(connectionTimeout)
-        startStreamingAssistant()
+        const payload = JSON.parse((event as MessageEvent).data) as { messageId?: string }
+        startStreamingAssistant(payload.messageId)
       })
-      eventSource.addEventListener('assistant_message_end', () => {
+      eventSource.addEventListener('assistant_message_end', (event) => {
         if (activeRunIdRef.current !== currentRunId) return
-        currentStreamingAssistantIdRef.current = null
+        const payload = JSON.parse((event as MessageEvent).data) as { messageId?: string }
+        endStreamingAssistant(payload.messageId)
+      })
+      eventSource.addEventListener('assistant_text_end', (event) => {
+        if (activeRunIdRef.current !== currentRunId) return
+        const payload = JSON.parse((event as MessageEvent).data) as {
+          messageId?: string
+          contentIndex?: number
+          content?: string
+        }
+        const messageId = payload.messageId ?? currentStreamingAssistantIdRef.current
+        if (!messageId) return
+        sealStreamingMarkdownSegment(messageId, payload.contentIndex ?? 0, payload.content)
       })
       eventSource.addEventListener('message_delta', (event) => {
         if (activeRunIdRef.current !== currentRunId) return
@@ -1018,11 +1139,13 @@ export function ChatView({
         const payload = JSON.parse((event as MessageEvent).data) as {
           content?: string
           usage?: StreamUsage
+          messageId?: string
+          contentIndex?: number
         }
         const content = payload.content ?? ''
         if (!content) return
         setStreamPhase('streaming')
-        appendStreamingAssistantDelta(content)
+        appendStreamingAssistantDelta(content, payload.messageId, payload.contentIndex ?? 0)
       })
       eventSource.addEventListener('thinking_delta', (event) => {
         if (activeRunIdRef.current !== currentRunId) return
@@ -1069,8 +1192,9 @@ export function ChatView({
         if (activeRunIdRef.current !== currentRunId) return
         const payload = JSON.parse((event as MessageEvent).data) as {
           usage?: StreamUsage
+          messageId?: string
         }
-        const assistantId = latestStreamingAssistantIdRef.current
+        const assistantId = payload.messageId ?? latestStreamingAssistantIdRef.current
         if (!assistantId || !payload.usage) return
         const usage = {
           input: payload.usage.input ?? 0,
@@ -1143,11 +1267,13 @@ export function ChatView({
       eventSourceRef.current?.close()
       eventSourceRef.current = null
       activeRunIdRef.current = null
+      finishAllStreamingMarkdown()
       setRunId(null)
       setStreamPhase('idle')
       setStreamStartedAt(null)
       router.refresh()
     } catch (error) {
+      finishAllStreamingMarkdown()
       setStreamError(error instanceof Error ? error.message : 'Unable to abort pi run.')
     } finally {
       setAbortingRun(false)
@@ -1466,6 +1592,9 @@ export function ChatView({
                   const isStreaming = item.messages.some(
                     (message) => message.timestamp === 'streaming',
                   )
+                  const primaryAssistant = item.messages.findLast(
+                    (message) => message.type === 'assistant',
+                  )
                   return (
                     <AssistantTurn
                       key={item.id}
@@ -1474,6 +1603,11 @@ export function ChatView({
                       mediaSessionId={activeSession.id}
                       streamStartedAt={isStreaming ? streamStartedAt : null}
                       isStreaming={isStreaming}
+                      streamingMarkdown={
+                        primaryAssistant
+                          ? streamingMarkdownSnapshots[primaryAssistant.id]
+                          : undefined
+                      }
                     />
                   )
                 }
@@ -2371,6 +2505,7 @@ type AssistantTurnProps = {
   streamStartedAt?: number | null
   mediaSessionId?: string
   isStreaming?: boolean
+  streamingMarkdown?: StreamingMarkdownSnapshot
 }
 
 type AssistantTurnContent = {
@@ -2414,6 +2549,7 @@ const AssistantTurn = memo(function AssistantTurn({
   streamStartedAt,
   mediaSessionId,
   isStreaming,
+  streamingMarkdown,
 }: AssistantTurnProps) {
   const {
     assistantMessages,
@@ -2457,7 +2593,12 @@ const AssistantTurn = memo(function AssistantTurn({
                 />
               )}
               <div className="px-3.5 py-3">
-                {primaryAssistant.timestamp === 'streaming' ? (
+                {streamingMarkdown ? (
+                  <StreamingMarkdownContent
+                    snapshot={streamingMarkdown}
+                    mediaSessionId={mediaSessionId}
+                  />
+                ) : primaryAssistant.timestamp === 'streaming' ? (
                   <div className="whitespace-pre-wrap text-foreground">
                     {primaryAssistant.content}
                   </div>
@@ -2511,6 +2652,7 @@ function areAssistantTurnPropsEqual(previous: AssistantTurnProps, next: Assistan
     previous.mediaSessionId === next.mediaSessionId &&
     previous.isStreaming === next.isStreaming &&
     previous.streamStartedAt === next.streamStartedAt &&
+    previous.streamingMarkdown === next.streamingMarkdown &&
     haveSameMessageReferences(previous.messages, next.messages)
   )
 }

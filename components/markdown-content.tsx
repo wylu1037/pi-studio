@@ -3,24 +3,12 @@ import { AudioLines } from 'lucide-react'
 import { CodeBlock } from '@/components/code-block'
 import { MermaidDiagram } from '@/components/mermaid-diagram'
 import { MarkdownImage } from '@/components/markdown-image'
+import { parseMarkdown, type MarkdownBlock } from '@/lib/markdown/streaming-markdown'
 import { cn } from '@/lib/utils'
 
-type MarkdownBlock =
-  | { type: 'code'; language?: string; content: string }
-  | { type: 'heading'; level: number; content: string }
-  | { type: 'paragraph'; content: string }
-  | { type: 'quote'; content: string }
-  | { type: 'list'; ordered: boolean; items: string[] }
-  | {
-      type: 'table'
-      headers: string[]
-      alignments: Array<'left' | 'center' | 'right'>
-      rows: string[][]
-    }
-  | { type: 'hr' }
-
-const blockStartPattern = /^\s*(#{1,6}\s+|`{3,}|~{3,}|>\s?|[-*]\s+|\d+\.\s+|---+\s*$)/
 const inlinePattern = /(!?\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_)/g
+export const markdownContentClassName =
+  'max-w-full min-w-0 space-y-3 overflow-hidden text-sm leading-relaxed wrap-break-word text-foreground'
 
 const headingClasses: Record<number, string> = {
   1: 'text-xl font-semibold leading-tight tracking-tight text-foreground',
@@ -42,152 +30,45 @@ export const MarkdownContent = memo(function MarkdownContent({
   accentBorder = false,
   mediaSessionId,
 }: MarkdownContentProps) {
-  const blocks = useMemo(() => parseMarkdown(content), [content])
+  const blocks = useMemo(() => parseMarkdown(content, { idPrefix: 'markdown' }), [content])
   return (
     <div
-      className={cn(
-        'max-w-full min-w-0 space-y-3 overflow-hidden text-sm leading-relaxed wrap-break-word text-foreground',
-        accentBorder && 'border-l-2 border-accent/50 pl-3.5',
-      )}
+      className={cn(markdownContentClassName, accentBorder && 'border-l-2 border-accent/50 pl-3.5')}
     >
-      {blocks.map((block, index) => renderBlock(block, index, mediaSessionId))}
+      <MarkdownBlocks blocks={blocks} mediaSessionId={mediaSessionId} />
     </div>
   )
 })
 
-function parseMarkdown(content: string) {
-  const lines = content.replace(/\r\n?/g, '\n').split('\n')
-  const blocks: MarkdownBlock[] = []
-  let index = 0
+export const MarkdownBlocks = memo(function MarkdownBlocks({
+  blocks,
+  mediaSessionId,
+}: {
+  blocks: readonly MarkdownBlock[]
+  mediaSessionId?: string
+}) {
+  return blocks.map((block) => (
+    <MarkdownBlockView key={block.id} block={block} mediaSessionId={mediaSessionId} />
+  ))
+})
 
-  while (index < lines.length) {
-    const line = lines[index]
-    if (!line.trim()) {
-      index += 1
-      continue
-    }
-
-    const fence = line.match(/^\s*(`{3,}|~{3,})\s*([^\s`]*)?.*$/)
-    if (fence) {
-      const code: string[] = []
-      const marker = fence[1]
-      const closingFence = new RegExp(
-        `^\\s*${marker[0] === '`' ? '`' : '~'}{${marker.length},}\\s*$`,
-      )
-      index += 1
-      while (index < lines.length && !closingFence.test(lines[index])) {
-        code.push(lines[index])
-        index += 1
-      }
-      if (index < lines.length) index += 1
-      blocks.push({
-        type: 'code',
-        language: fence[2]?.trim(),
-        content: code.join('\n'),
-      })
-      continue
-    }
-
-    if (/^---+\s*$/.test(line.trim())) {
-      blocks.push({ type: 'hr' })
-      index += 1
-      continue
-    }
-
-    if (isTableStart(lines, index)) {
-      const headers = splitTableRow(line)
-      const alignments = parseTableAlignments(lines[index + 1], headers.length)
-      const rows: string[][] = []
-      index += 2
-
-      while (
-        index < lines.length &&
-        lines[index].trim() &&
-        hasTablePipes(lines[index]) &&
-        !isTableDelimiter(lines[index])
-      ) {
-        rows.push(normalizeTableRow(splitTableRow(lines[index]), headers.length))
-        index += 1
-      }
-
-      blocks.push({
-        type: 'table',
-        headers,
-        alignments,
-        rows,
-      })
-      continue
-    }
-
-    const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+)$/)
-    if (heading) {
-      blocks.push({ type: 'heading', level: heading[1].length, content: heading[2] })
-      index += 1
-      continue
-    }
-
-    if (/^\s{0,3}>\s?/.test(line)) {
-      const quote: string[] = []
-      while (index < lines.length && /^\s{0,3}>\s?/.test(lines[index])) {
-        quote.push(lines[index].replace(/^\s{0,3}>\s?/, ''))
-        index += 1
-      }
-      blocks.push({ type: 'quote', content: quote.join('\n') })
-      continue
-    }
-
-    if (/^\s{0,3}[-*]\s+/.test(line)) {
-      const items: string[] = []
-      while (index < lines.length && /^\s{0,3}[-*]\s+/.test(lines[index])) {
-        items.push(lines[index].replace(/^\s{0,3}[-*]\s+/, ''))
-        index += 1
-      }
-      blocks.push({ type: 'list', ordered: false, items })
-      continue
-    }
-
-    if (/^\s{0,3}\d+\.\s+/.test(line)) {
-      const items: string[] = []
-      while (index < lines.length && /^\s{0,3}\d+\.\s+/.test(lines[index])) {
-        items.push(lines[index].replace(/^\s{0,3}\d+\.\s+/, ''))
-        index += 1
-      }
-      blocks.push({ type: 'list', ordered: true, items })
-      continue
-    }
-
-    const paragraph: string[] = []
-    while (
-      index < lines.length &&
-      lines[index].trim() &&
-      !blockStartPattern.test(lines[index]) &&
-      !isTableStart(lines, index)
-    ) {
-      paragraph.push(lines[index])
-      index += 1
-    }
-    if (paragraph.length === 0) {
-      paragraph.push(lines[index])
-      index += 1
-    }
-    blocks.push({ type: 'paragraph', content: paragraph.join('\n') })
-  }
-
-  return blocks
-}
-
-function renderBlock(block: MarkdownBlock, key: number, mediaSessionId?: string) {
+const MarkdownBlockView = memo(function MarkdownBlockView({
+  block,
+  mediaSessionId,
+}: {
+  block: MarkdownBlock
+  mediaSessionId?: string
+}) {
   switch (block.type) {
     case 'code':
       if (block.language?.toLowerCase() === 'mermaid') {
-        return <MermaidDiagram key={key} chart={block.content} />
+        return <MermaidDiagram chart={block.content} />
       }
-      return <CodeBlock key={key} code={block.content} language={block.language} />
+      return <CodeBlock code={block.content} language={block.language} />
     case 'heading': {
       const level = Math.min(6, Math.max(1, block.level))
       return (
         <div
-          key={key}
           role="heading"
           aria-level={level}
           className={`pt-1 font-mono first:pt-0 ${headingClasses[level]}`}
@@ -198,35 +79,29 @@ function renderBlock(block: MarkdownBlock, key: number, mediaSessionId?: string)
     }
     case 'quote':
       return (
-        <blockquote
-          key={key}
-          className="border-l-2 border-border-strong pl-3 font-mono text-[12px] text-muted-foreground italic"
-        >
+        <blockquote className="border-l-2 border-border-strong pl-3 font-mono text-[12px] text-muted-foreground italic">
           {renderInlineWithBreaks(block.content, mediaSessionId)}
         </blockquote>
       )
     case 'list': {
       const Tag = block.ordered ? 'ol' : 'ul'
       return (
-        <Tag
-          key={key}
-          className={block.ordered ? 'list-decimal space-y-1 pl-5' : 'list-disc space-y-1 pl-5'}
-        >
+        <Tag className={block.ordered ? 'list-decimal space-y-1 pl-5' : 'list-disc space-y-1 pl-5'}>
           {block.items.map((item, index) => (
-            <li key={`${key}-${index}`}>{renderInline(item, mediaSessionId)}</li>
+            <li key={`${block.id}-${index}`}>{renderInline(item, mediaSessionId)}</li>
           ))}
         </Tag>
       )
     }
     case 'table':
       return (
-        <div key={key} className="max-w-full overflow-x-auto border border-border bg-panel/40">
+        <div className="max-w-full overflow-x-auto border border-border bg-panel/40">
           <table className="min-w-full border-collapse text-left text-[12px] leading-relaxed">
             <thead className="bg-muted/60">
               <tr>
                 {block.headers.map((header, index) => (
                   <th
-                    key={`${key}-head-${index}`}
+                    key={`${block.id}-head-${index}`}
                     className="border-r border-b border-border px-3 py-2 font-mono text-[11px] font-semibold text-foreground last:border-r-0"
                     style={{ textAlign: block.alignments[index] }}
                   >
@@ -238,12 +113,12 @@ function renderBlock(block: MarkdownBlock, key: number, mediaSessionId?: string)
             <tbody>
               {block.rows.map((row, rowIndex) => (
                 <tr
-                  key={`${key}-row-${rowIndex}`}
+                  key={`${block.id}-row-${rowIndex}`}
                   className="border-b border-border last:border-b-0"
                 >
                   {block.headers.map((_, cellIndex) => (
                     <td
-                      key={`${key}-cell-${rowIndex}-${cellIndex}`}
+                      key={`${block.id}-cell-${rowIndex}-${cellIndex}`}
                       className="max-w-[18rem] border-r border-border px-3 py-2 align-top wrap-break-word text-muted-foreground last:border-r-0"
                       style={{ textAlign: block.alignments[cellIndex] }}
                     >
@@ -257,54 +132,11 @@ function renderBlock(block: MarkdownBlock, key: number, mediaSessionId?: string)
         </div>
       )
     case 'hr':
-      return <div key={key} className="h-px bg-border" />
+      return <div className="h-px bg-border" />
     case 'paragraph':
-      return <p key={key}>{renderInlineWithBreaks(block.content, mediaSessionId)}</p>
+      return <p>{renderInlineWithBreaks(block.content, mediaSessionId)}</p>
   }
-}
-
-function isTableStart(lines: string[], index: number) {
-  const line = lines[index]
-  const delimiter = lines[index + 1]
-  return Boolean(
-    line &&
-    delimiter &&
-    hasTablePipes(line) &&
-    isTableDelimiter(delimiter) &&
-    splitTableRow(line).length >= 2,
-  )
-}
-
-function hasTablePipes(line: string) {
-  return line.includes('|')
-}
-
-function isTableDelimiter(line: string) {
-  const cells = splitTableRow(line)
-  return cells.length >= 2 && cells.every((cell) => /^:?-{3,}:?$/.test(cell))
-}
-
-function splitTableRow(line: string) {
-  return line
-    .trim()
-    .replace(/^\|/, '')
-    .replace(/\|$/, '')
-    .split('|')
-    .map((cell) => cell.trim())
-}
-
-function parseTableAlignments(line: string, count: number) {
-  const cells = normalizeTableRow(splitTableRow(line), count)
-  return cells.map((cell) => {
-    if (cell.startsWith(':') && cell.endsWith(':')) return 'center'
-    if (cell.endsWith(':')) return 'right'
-    return 'left'
-  })
-}
-
-function normalizeTableRow(cells: string[], count: number) {
-  return Array.from({ length: count }, (_, index) => cells[index] ?? '')
-}
+})
 
 function renderInlineWithBreaks(content: string, mediaSessionId?: string) {
   const nodes: ReactNode[] = []

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createModelRuntimeSignature } from './pi-adapter'
-import { parseSdkEvent } from './pi-events'
+import { createPiRunEventParser, parseSdkEvent } from './pi-events'
 
 const usage = {
   input: 120,
@@ -116,12 +116,137 @@ test('emits thinking deltas and final usage without replaying message snapshots'
   assert.ok(events.some((event) => event.type === 'usage' && event.usage.totalTokens === 180))
 })
 
-function messageUpdate(content: string, assistantMessageEvent: Record<string, unknown>) {
+test('adds stable assistant IDs, text boundaries, and usage ownership for one run', () => {
+  const parse = createPiRunEventParser({ runId: 'run-42' })
+  const responseId = 'provider-response-7'
+  const events = [
+    { type: 'message_start', message: { role: 'assistant', responseId, content: [] } },
+    messageUpdate('', { type: 'text_start', contentIndex: 2 }, { responseId }),
+    messageUpdate('Hello', { type: 'text_delta', contentIndex: 2, delta: 'Hello' }, { responseId }),
+    messageUpdate(
+      'Hello world',
+      { type: 'text_delta', contentIndex: 2, delta: ' world' },
+      { responseId },
+    ),
+    messageUpdate(
+      'Hello world',
+      {
+        type: 'text_end',
+        contentIndex: 2,
+        content: 'Hello world',
+      },
+      { responseId },
+    ),
+    {
+      type: 'message_end',
+      message: { role: 'assistant', responseId, stopReason: 'stop', content: [], usage },
+    },
+  ].flatMap(parse)
+
+  const messageId = 'run-42:response:provider-response-7'
+  assert.deepEqual(events[0], {
+    type: 'assistant_message_start',
+    messageId,
+    responseId,
+  })
+  assert.deepEqual(
+    events
+      .filter((event) => event.type === 'message_delta')
+      .map(({ messageId: eventMessageId, contentIndex, content }) => ({
+        messageId: eventMessageId,
+        contentIndex,
+        content,
+      })),
+    [
+      { messageId, contentIndex: 2, content: 'Hello' },
+      { messageId, contentIndex: 2, content: ' world' },
+    ],
+  )
+  assert.deepEqual(
+    events.filter((event) => event.type === 'assistant_text_end'),
+    [
+      {
+        type: 'assistant_text_end',
+        messageId,
+        contentIndex: 2,
+        content: 'Hello world',
+      },
+    ],
+  )
+  assert.deepEqual(
+    events.find((event) => event.type === 'usage'),
+    { type: 'usage', usage, messageId },
+  )
+  assert.deepEqual(events.at(-1), {
+    type: 'assistant_message_end',
+    messageId,
+    responseId,
+    stopReason: 'stop',
+  })
+})
+
+test('creates coherent implicit assistant starts and closes unended text segments', () => {
+  const parse = createPiRunEventParser({ runId: 'run-implicit' })
+  const events = [
+    messageUpdate('first', { type: 'text_delta', contentIndex: 3, delta: 'first' }),
+    messageUpdate('first', { type: 'text_end', contentIndex: 3, content: 'first' }),
+    { type: 'message_end', message: { role: 'assistant', content: [] } },
+    messageUpdate('second', { type: 'text_delta', contentIndex: 0, delta: 'second' }),
+    { type: 'message_end', message: { role: 'assistant', content: [] } },
+  ].flatMap(parse)
+
+  assert.deepEqual(
+    events
+      .filter((event) => event.type === 'assistant_message_start')
+      .map((event) => event.messageId),
+    ['run-implicit:assistant:1', 'run-implicit:assistant:2'],
+  )
+  assert.deepEqual(
+    events
+      .filter((event) => event.type === 'assistant_text_end')
+      .map(({ messageId, contentIndex }) => ({ messageId, contentIndex })),
+    [
+      { messageId: 'run-implicit:assistant:1', contentIndex: 3 },
+      { messageId: 'run-implicit:assistant:2', contentIndex: 0 },
+    ],
+  )
+
+  const implicitTextEnd = events.findIndex(
+    (event) =>
+      event.type === 'assistant_text_end' && event.messageId === 'run-implicit:assistant:2',
+  )
+  const secondMessageEnd = events.findIndex(
+    (event) =>
+      event.type === 'assistant_message_end' && event.messageId === 'run-implicit:assistant:2',
+  )
+  assert.ok(implicitTextEnd >= 0)
+  assert.ok(implicitTextEnd < secondMessageEnd)
+})
+
+test('keeps parseSdkEvent stateless for legacy callers', () => {
+  assert.deepEqual(
+    parseSdkEvent(
+      messageUpdate('legacy', { type: 'text_delta', contentIndex: 4, delta: 'legacy' }),
+    ),
+    [{ type: 'message_delta', content: 'legacy' }],
+  )
+  assert.deepEqual(
+    parseSdkEvent(messageUpdate('legacy', { type: 'text_end', contentIndex: 4 })),
+    [],
+  )
+})
+
+function messageUpdate(
+  content: string,
+  assistantMessageEvent: Record<string, unknown>,
+  messageFields: Record<string, unknown> = {},
+) {
   return {
     type: 'message_update',
     message: {
       role: 'assistant',
       content: content ? [{ type: 'text', text: content }] : [],
+      ...messageFields,
     },
     assistantMessageEvent,
   }

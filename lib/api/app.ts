@@ -4,7 +4,8 @@ import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
 import { streamSSE } from 'hono/streaming'
-import { abortRun as abortRegisteredRun } from '@/lib/chat/run-registry'
+import { abortRun as abortRegisteredRun, prepareRun, unregisterRun } from '@/lib/chat/run-registry'
+import { getRunCoordinator, RUN_TERMINAL_EVENT } from '@/lib/chat/run-coordinator'
 import { defaultPiSessionDir, runPiCli } from '@/lib/chat/pi-adapter'
 import { runNpx } from '@/lib/npx'
 import { loadPiPackageCatalog } from '@/lib/packages/pi-dev-gallery'
@@ -435,20 +436,19 @@ api.openapi(
 
 api.get('/sessions/:id/live-events', async (c) => {
   const { getSdkSession } = await import('@/lib/chat/sdk-session-manager')
-  const { parseSdkEvent } = await import('@/lib/chat/pi-events')
   const session = getSdkSession(c.req.param('id'))
   if (!session) return c.json({ error: 'Agent session is not active.' }, 404)
 
   return streamSSE(c, async (stream) => {
-    const queue: Array<ReturnType<typeof parseSdkEvent>[number]> = []
+    const queue: import('@/lib/chat/pi-events').PiRunEvent[] = []
     let aborted = false
     let wake: (() => void) | null = null
     const notify = () => {
       wake?.()
       wake = null
     }
-    const unsubscribe = session.subscribe((event) => {
-      queue.push(...parseSdkEvent(event))
+    const unsubscribe = session.subscribePiEvents((event) => {
+      queue.push(event)
       notify()
     })
     stream.onAbort(() => {
@@ -1777,6 +1777,8 @@ api.openapi(
       cwd: session.cwd,
     })
     if (!run) return c.json({ error: 'Unable to start run' }, 404)
+    prepareRun(run.id)
+    startRunExecution(run.id)
     return c.json(run)
   },
 )
@@ -1806,6 +1808,7 @@ api.openapi(
   }),
   (c) => {
     const id = c.req.valid('param').id
+    getRunCoordinator().requestAbort(id)
     abortRegisteredRun(id)
     markRun(id, 'aborted')
     return c.json({ ok: true })
@@ -1816,22 +1819,118 @@ api.get('/runs/:id/events', (c) => {
   const runId = c.req.param('id')
   const run = getRun(runId)
   if (!run) return c.json({ error: 'Run not found' }, 404)
-  const config = resolveAgentRunConfig(run.agentId, run.providerId)
-  if (!config) return c.json({ error: 'Agent not found' }, 404)
-  const provider = piProviderName(config.provider?.api)
+  const coordinator = getRunCoordinator()
+  const afterSequence = parseLastEventId(c.req.header('Last-Event-ID'))
+
   return streamSSE(c, async (stream) => {
+    const snapshot = coordinator.getSnapshot(runId)
+    if (!snapshot) {
+      await stream.writeSSE({ event: 'connected', data: JSON.stringify({ runId }) })
+      const unavailable = run.status === 'queued' || run.status === 'running'
+      const status = unavailable ? 'failed' : run.status
+      const message = unavailable
+        ? 'The run stream is no longer available after the server restarted.'
+        : run.error
+      if (unavailable) markRun(runId, 'failed', message)
+      if (status === 'failed') {
+        await stream.writeSSE({
+          event: 'error',
+          data: JSON.stringify({ message: message ?? 'Run failed.' }),
+        })
+      }
+      await stream.writeSSE({
+        event: 'done',
+        data: JSON.stringify({ runId, status }),
+      })
+      return
+    }
+
+    const queue = []
+    let aborted = false
+    let wake = null
+    const notify = () => {
+      wake?.()
+      wake = null
+    }
+    const subscription = coordinator.subscribe(runId, {
+      afterSequence,
+      onEvent: (event) => {
+        queue.push(event)
+        notify()
+      },
+    })
+    stream.onAbort(() => {
+      aborted = true
+      notify()
+    })
     const heartbeat = setInterval(() => {
       void stream.write(`: heartbeat ${Date.now()}\n\n`)
     }, 30000)
-    const send = async (event: string, payload: unknown) => {
-      appendRunEvent(runId, event, payload)
-      await stream.writeSSE({ event, data: JSON.stringify(payload) })
-    }
 
     try {
-      await send('connected', { runId })
+      await subscription.drained()
+      while (!aborted) {
+        while (!aborted && queue.length > 0) {
+          const event = queue.shift()
+          if (!event || event.type === RUN_TERMINAL_EVENT) continue
+          await stream.writeSSE({
+            id: String(event.sequence),
+            event: event.type,
+            data: JSON.stringify(withEventSequence(event.payload, event.sequence)),
+          })
+        }
+        if (subscription.terminal && queue.length === 0) break
+        if (queue.length === 0) {
+          await new Promise((resolve) => {
+            wake = resolve
+            if (aborted || queue.length > 0 || subscription.terminal) {
+              wake = null
+              resolve()
+            }
+          })
+        }
+      }
+    } finally {
+      clearInterval(heartbeat)
+      subscription.unsubscribe()
+    }
+  })
+})
+
+function startRunExecution(runId: string) {
+  const coordinator = getRunCoordinator()
+  const handle = coordinator.start(runId, async (context) => {
+    const run = getRun(runId)
+    const config = run ? resolveAgentRunConfig(run.agentId, run.providerId) : null
+    const publish = (event: string, payload: unknown) => {
+      const envelope = context.publish(event, payload)
+      appendRunEvent(runId, event, withEventSequence(payload, envelope.sequence))
+      return envelope
+    }
+
+    context.onAbort(() => abortRegisteredRun(runId))
+
+    if (!run || !config) {
+      const message = run ? 'Agent not found' : 'Run not found'
+      if (run) markRun(runId, 'failed', message)
+      publish('error', { message })
+      publish('done', { runId, status: 'failed' })
+      context.fail(message)
+      return
+    }
+
+    if (context.isAbortRequested()) {
+      markRun(runId, 'aborted')
+      publish('done', { runId, status: 'aborted' })
+      context.abort()
+      return
+    }
+
+    const provider = piProviderName(config.provider?.api)
+    try {
+      publish('connected', { runId })
       markRun(runId, 'running')
-      await send('started', { runId })
+      publish('started', { runId })
 
       for await (const event of runPiCli({
         agentId: config.agent.id,
@@ -1868,9 +1967,7 @@ api.get('/runs/:id/events', (c) => {
           env: mcp.env,
         })),
       })) {
-        if (event.type === 'error') {
-          throw new Error(event.message)
-        }
+        if (event.type === 'error') throw new Error(event.message)
         if (event.type === 'done') {
           appendRunEvent(runId, 'process_done', event)
           if (event.exitCode && event.exitCode !== 0) {
@@ -1878,22 +1975,47 @@ api.get('/runs/:id/events', (c) => {
           }
           continue
         }
-        await send(event.type, event)
+        publish(event.type, event)
       }
 
-      if (getRun(runId)?.status !== 'aborted') markRun(runId, 'completed')
-      await send('done', { runId })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown pi error'
-      if (getRun(runId)?.status !== 'aborted') {
-        markRun(runId, 'failed', message)
+      if (context.isAbortRequested() || getRun(runId)?.status === 'aborted') {
+        markRun(runId, 'aborted')
+        publish('done', { runId, status: 'aborted' })
+        context.abort()
+        return
       }
-      await send('error', { message })
-    } finally {
-      clearInterval(heartbeat)
+
+      markRun(runId, 'completed')
+      publish('done', { runId, status: 'completed' })
+      context.complete()
+    } catch (error) {
+      if (context.isAbortRequested() || getRun(runId)?.status === 'aborted') {
+        markRun(runId, 'aborted')
+        publish('done', { runId, status: 'aborted' })
+        context.abort()
+        return
+      }
+
+      const message = error instanceof Error ? error.message : 'Unknown pi error'
+      markRun(runId, 'failed', message)
+      publish('error', { message })
+      publish('done', { runId, status: 'failed' })
+      context.fail(error)
     }
   })
-})
+  void handle.completion.finally(() => unregisterRun(runId))
+}
+
+function parseLastEventId(value?: string) {
+  const sequence = Number(value ?? 0)
+  return Number.isInteger(sequence) && sequence > 0 ? sequence : 0
+}
+
+function withEventSequence(payload: unknown, sequence: number) {
+  return payload && typeof payload === 'object'
+    ? { ...payload, sequence }
+    : { value: payload, sequence }
+}
 
 function piProviderName(api?: string | null) {
   if (!api) return undefined

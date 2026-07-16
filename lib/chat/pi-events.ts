@@ -14,25 +14,82 @@ export interface PiUsage {
 }
 
 export type PiRunEvent =
-  | { type: 'assistant_message_start' }
-  | { type: 'assistant_message_end' }
-  | { type: 'message_delta'; content: string; usage?: PiUsage }
+  | { type: 'assistant_message_start'; messageId?: string; responseId?: string }
+  | {
+      type: 'assistant_message_end'
+      messageId?: string
+      responseId?: string
+      stopReason?: string
+    }
+  | {
+      type: 'assistant_text_end'
+      messageId: string
+      contentIndex: number
+      content?: string
+    }
+  | {
+      type: 'message_delta'
+      content: string
+      usage?: PiUsage
+      messageId?: string
+      contentIndex?: number
+    }
   | { type: 'thinking_delta'; content: string }
   | { type: 'tool_call_delta'; content: string; title?: string }
   | { type: 'tool_result_delta'; content: string; title?: string; isError?: boolean }
   | { type: 'bash_output'; stream: 'stdout' | 'stderr'; content: string }
-  | { type: 'usage'; usage: PiUsage }
+  | { type: 'usage'; usage: PiUsage; messageId?: string }
   | { type: 'error'; message: string }
   | { type: 'done'; exitCode: number | null }
 
+export interface PiRunEventParserOptions {
+  /** Prefixes generated and provider-backed assistant IDs for one active run. */
+  runId?: string
+}
+
+interface ActiveAssistantMessage {
+  messageId: string
+  responseId?: string
+  activeTextContentIndex?: number
+  openTextContentIndexes: Set<number>
+}
+
+interface PiRunEventParserState {
+  runId?: string
+  assistantMessageCount: number
+  activeAssistant?: ActiveAssistantMessage
+}
+
+/**
+ * Creates a stateful Pi event parser for one agent run. It is required when a
+ * consumer needs stable assistant message IDs and structured text boundaries.
+ */
+export function createPiRunEventParser(options: PiRunEventParserOptions = {}) {
+  const state: PiRunEventParserState = {
+    runId: nonEmptyString(options.runId),
+    assistantMessageCount: 0,
+  }
+  return (event: unknown): PiRunEvent[] => parseSdkEventWithState(event, state)
+}
+
+/**
+ * Legacy, stateless SDK adapter. It intentionally preserves the original event
+ * shapes for existing callers. Use createPiRunEventParser for phase-two stream
+ * metadata such as message IDs, content indexes, and text-end boundaries.
+ */
 export function parseSdkEvent(event: unknown): PiRunEvent[] {
+  return parseSdkEventWithState(event)
+}
+
+function parseSdkEventWithState(event: unknown, state?: PiRunEventParserState): PiRunEvent[] {
   const payload = asRecord(event)
   if (!payload) return []
   const type = String(payload.type ?? '')
 
   if (type === 'message_start') {
     const message = asRecord(payload.message)
-    return message?.role === 'assistant' ? [{ type: 'assistant_message_start' }] : []
+    if (message?.role !== 'assistant') return []
+    return state ? startAssistantMessage(state, message) : [{ type: 'assistant_message_start' }]
   }
 
   if (type === 'message_update') {
@@ -41,25 +98,74 @@ export function parseSdkEvent(event: unknown): PiRunEvent[] {
     if (!message || message.role !== 'assistant' || !assistantEvent) return []
 
     const assistantEventType = String(assistantEvent.type ?? '')
+    const lifecycle = state ? ensureAssistantMessage(state, message) : []
     if (assistantEventType === 'text_delta') {
       const delta = assistantEvent.delta
-      return typeof delta === 'string' && delta ? [{ type: 'message_delta', content: delta }] : []
+      if (typeof delta !== 'string' || !delta) return lifecycle
+      if (!state) return [{ type: 'message_delta', content: delta }]
+
+      const assistant = state.activeAssistant
+      if (!assistant) return lifecycle
+      const contentIndex = resolveTextContentIndex(assistant, assistantEvent.contentIndex)
+      assistant.activeTextContentIndex = contentIndex
+      assistant.openTextContentIndexes.add(contentIndex)
+      return [
+        ...lifecycle,
+        {
+          type: 'message_delta',
+          content: delta,
+          messageId: assistant.messageId,
+          contentIndex,
+        },
+      ]
+    }
+    if (assistantEventType === 'text_start') {
+      if (!state) return []
+      const assistant = state.activeAssistant
+      if (!assistant) return lifecycle
+      const contentIndex = resolveTextContentIndex(assistant, assistantEvent.contentIndex, true)
+      assistant.activeTextContentIndex = contentIndex
+      assistant.openTextContentIndexes.add(contentIndex)
+      return lifecycle
+    }
+    if (assistantEventType === 'text_end') {
+      if (!state) return []
+      const assistant = state.activeAssistant
+      if (!assistant) return lifecycle
+      const contentIndex = resolveTextContentIndex(assistant, assistantEvent.contentIndex)
+      assistant.openTextContentIndexes.delete(contentIndex)
+      if (assistant.activeTextContentIndex === contentIndex) {
+        assistant.activeTextContentIndex = undefined
+      }
+      const content =
+        typeof assistantEvent.content === 'string' ? assistantEvent.content : undefined
+      return [
+        ...lifecycle,
+        {
+          type: 'assistant_text_end',
+          messageId: assistant.messageId,
+          contentIndex,
+          ...(content !== undefined ? { content } : {}),
+        },
+      ]
     }
     if (assistantEventType === 'thinking_delta') {
       const delta = assistantEvent.delta
-      return typeof delta === 'string' && delta ? [{ type: 'thinking_delta', content: delta }] : []
+      return typeof delta === 'string' && delta
+        ? [...lifecycle, { type: 'thinking_delta', content: delta }]
+        : lifecycle
     }
     if (assistantEventType === 'toolcall_end') {
       const toolCall = extractToolCalls(assistantEvent.toolCall)[0]
-      return toolCall ? [{ type: 'tool_call_delta', ...toolCall }] : []
+      return toolCall ? [...lifecycle, { type: 'tool_call_delta', ...toolCall }] : lifecycle
     }
-    if (assistantEventType === 'done') return []
+    if (assistantEventType === 'done') return lifecycle
     if (assistantEventType === 'error') {
       const error = asRecord(assistantEvent.error)
       const errorMessage = stringValue(error?.errorMessage) ?? stringValue(message.errorMessage)
-      return [{ type: 'error', message: errorMessage ?? 'The model run failed.' }]
+      return [...lifecycle, { type: 'error', message: errorMessage ?? 'The model run failed.' }]
     }
-    return []
+    return lifecycle
   }
 
   if (type === 'message_end') {
@@ -70,6 +176,34 @@ export function parseSdkEvent(event: unknown): PiRunEvent[] {
       return toolResult ? [{ type: 'tool_result_delta', ...toolResult }] : []
     }
     if (message.role !== 'assistant') return []
+
+    if (state) {
+      const lifecycle = ensureAssistantMessage(state, message)
+      const assistant = state.activeAssistant
+      if (!assistant) return lifecycle
+      const textEnds = endOpenTextSegments(assistant)
+      const errorMessage = stringValue(message.errorMessage)
+      const usage = extractUsage(message)
+      const endEvent = createAssistantMessageEndEvent(assistant, message)
+      state.activeAssistant = undefined
+
+      if (errorMessage || message.stopReason === 'error') {
+        return [
+          ...lifecycle,
+          ...textEnds,
+          endEvent,
+          { type: 'error', message: errorMessage ?? 'The model run failed.' },
+        ]
+      }
+
+      return [
+        ...lifecycle,
+        ...textEnds,
+        ...(usage ? ([{ type: 'usage', usage, messageId: assistant.messageId }] as const) : []),
+        endEvent,
+      ]
+    }
+
     const errorMessage = stringValue(message.errorMessage)
     if (errorMessage || message.stopReason === 'error') {
       return [{ type: 'error', message: errorMessage ?? 'The model run failed.' }]
@@ -81,6 +215,97 @@ export function parseSdkEvent(event: unknown): PiRunEvent[] {
     ]
   }
   return []
+}
+
+function startAssistantMessage(state: PiRunEventParserState, message: Record<string, unknown>) {
+  const responseId = extractAssistantResponseId(message)
+  const active = state.activeAssistant
+  if (active?.responseId && responseId === active.responseId) return []
+
+  const priorEvents = active ? endAssistantMessageWithoutUsage(state, active) : []
+  const assistant: ActiveAssistantMessage = {
+    messageId: createAssistantMessageId(state, responseId),
+    responseId,
+    openTextContentIndexes: new Set(),
+  }
+  state.activeAssistant = assistant
+  return [...priorEvents, createAssistantMessageStartEvent(assistant)]
+}
+
+function ensureAssistantMessage(state: PiRunEventParserState, message: Record<string, unknown>) {
+  const active = state.activeAssistant
+  if (!active) return startAssistantMessage(state, message)
+
+  const responseId = extractAssistantResponseId(message)
+  if (responseId && active.responseId && responseId !== active.responseId) {
+    return startAssistantMessage(state, message)
+  }
+  if (responseId && !active.responseId) active.responseId = responseId
+  return []
+}
+
+function createAssistantMessageId(state: PiRunEventParserState, responseId?: string) {
+  const scope = state.runId ? `${state.runId}:` : ''
+  if (responseId) return `${scope}response:${responseId}`
+  state.assistantMessageCount += 1
+  return `${scope}assistant:${state.assistantMessageCount}`
+}
+
+function createAssistantMessageStartEvent(assistant: ActiveAssistantMessage): PiRunEvent {
+  return {
+    type: 'assistant_message_start',
+    messageId: assistant.messageId,
+    ...(assistant.responseId ? { responseId: assistant.responseId } : {}),
+  }
+}
+
+function createAssistantMessageEndEvent(
+  assistant: ActiveAssistantMessage,
+  message: Record<string, unknown>,
+): PiRunEvent {
+  return {
+    type: 'assistant_message_end',
+    messageId: assistant.messageId,
+    ...(assistant.responseId ? { responseId: assistant.responseId } : {}),
+    ...(nonEmptyString(message.stopReason) ? { stopReason: String(message.stopReason) } : {}),
+  }
+}
+
+function endAssistantMessageWithoutUsage(
+  state: PiRunEventParserState,
+  assistant: ActiveAssistantMessage,
+) {
+  const events = [...endOpenTextSegments(assistant), createAssistantMessageEndEvent(assistant, {})]
+  state.activeAssistant = undefined
+  return events
+}
+
+function endOpenTextSegments(assistant: ActiveAssistantMessage): PiRunEvent[] {
+  const openIndexes = [...assistant.openTextContentIndexes].sort((left, right) => left - right)
+  assistant.openTextContentIndexes.clear()
+  assistant.activeTextContentIndex = undefined
+  return openIndexes.map((contentIndex) => ({
+    type: 'assistant_text_end' as const,
+    messageId: assistant.messageId,
+    contentIndex,
+  }))
+}
+
+function resolveTextContentIndex(
+  assistant: ActiveAssistantMessage,
+  value: unknown,
+  startNewSegment = false,
+) {
+  const contentIndex = numberOrUndefined(value)
+  if (contentIndex !== undefined) return contentIndex
+  if (startNewSegment && assistant.activeTextContentIndex !== undefined) {
+    return assistant.activeTextContentIndex + 1
+  }
+  return assistant.activeTextContentIndex ?? 0
+}
+
+function extractAssistantResponseId(message: Record<string, unknown>) {
+  return nonEmptyString(message.responseId) ?? nonEmptyString(message.id)
 }
 
 function extractContent(value: unknown): string {
@@ -181,15 +406,17 @@ function extractUsage(value: unknown): PiUsage | undefined {
     cacheRead,
     cacheWrite,
     totalTokens,
-    cost: cost
+    ...(cost
       ? {
-          input: numberValue(cost.input),
-          output: numberValue(cost.output),
-          cacheRead: numberValue(cost.cacheRead),
-          cacheWrite: numberValue(cost.cacheWrite),
-          total: numberValue(cost.total),
+          cost: {
+            input: numberValue(cost.input),
+            output: numberValue(cost.output),
+            cacheRead: numberValue(cost.cacheRead),
+            cacheWrite: numberValue(cost.cacheWrite),
+            total: numberValue(cost.total),
+          },
         }
-      : undefined,
+      : {}),
   }
 }
 
@@ -200,7 +427,15 @@ function formatToolPayload(title: string | undefined, input: unknown) {
 }
 
 function stringValue(value: unknown) {
+  return nonEmptyString(value)
+}
+
+function nonEmptyString(value: unknown) {
   return typeof value === 'string' && value.trim() ? value : undefined
+}
+
+function numberOrUndefined(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
 function numberValue(value: unknown) {

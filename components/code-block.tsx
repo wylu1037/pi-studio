@@ -98,8 +98,16 @@ type HighlightState = {
   status: 'fallback' | 'loading' | 'ready'
 }
 
-export function CodeBlock({ code, language }: { code: string; language?: string }) {
-  const normalizedLanguage = normalizeCodeLanguage(language)
+export function CodeBlock({
+  code,
+  language,
+  highlight = true,
+}: {
+  code: string
+  language?: string
+  highlight?: boolean
+}) {
+  const normalizedLanguage = highlight ? normalizeCodeLanguage(language) : 'text'
   const label = codeLanguageLabel(language)
   const cacheKey = `${normalizedLanguage}\u0000${code}`
   const [highlightState, setHighlightState] = useState<HighlightState>({

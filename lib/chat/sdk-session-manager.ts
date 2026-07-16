@@ -11,6 +11,7 @@ import {
 } from '@earendil-works/pi-coding-agent'
 import { registerPiStudioApiProviders } from '@/lib/models/pi-ai'
 import { isProjectTrusted } from '@/lib/extensions/project-trust'
+import { createPiRunEventParser, type PiRunEvent } from './pi-events'
 import {
   disposeExtensionUiBroker,
   getExtensionUiBroker,
@@ -18,6 +19,7 @@ import {
 } from './extension-ui-broker'
 
 type Listener = (event: AgentSessionEvent) => void
+type PiEventListener = (event: PiRunEvent) => void
 
 export interface SdkExtensionDiagnostic {
   id: string
@@ -32,6 +34,8 @@ export interface SdkExtensionDiagnostic {
 
 class StudioAgentSession {
   private listeners = new Set<Listener>()
+  private piEventListeners = new Set<PiEventListener>()
+  private readonly parsePiEvent: ReturnType<typeof createPiRunEventParser>
   private unsubscribe: (() => void) | null = null
   private idleTimer: ReturnType<typeof setTimeout> | null = null
   private alive = true
@@ -50,9 +54,13 @@ class StudioAgentSession {
   ) {
     this.resourceSignature = resourceSignature
     this.diagnostics = diagnostics.slice(-200)
+    this.parsePiEvent = createPiRunEventParser({ runId: `session:${key}` })
     this.unsubscribe = inner.subscribe((event) => {
       this.touch()
       for (const listener of this.listeners) listener(event)
+      for (const piEvent of this.parsePiEvent(event)) {
+        for (const listener of this.piEventListeners) listener(piEvent)
+      }
     })
     this.touch()
   }
@@ -63,6 +71,12 @@ class StudioAgentSession {
     this.listeners.add(listener)
     this.touch()
     return () => this.listeners.delete(listener)
+  }
+
+  subscribePiEvents(listener: PiEventListener) {
+    this.piEventListeners.add(listener)
+    this.touch()
+    return () => this.piEventListeners.delete(listener)
   }
 
   isAlive() {
@@ -96,6 +110,7 @@ class StudioAgentSession {
     this.inner.dispose()
     disposeExtensionUiBroker(this.key)
     this.listeners.clear()
+    this.piEventListeners.clear()
     sessions().delete(this.key)
   }
 }

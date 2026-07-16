@@ -6,8 +6,8 @@ import { updateSessionFilePath } from '@/lib/db/repository'
 import { resolvePiProviderConnection } from '@/lib/models/provider-connection'
 import { piStudioDataDir } from '@/lib/runtime/paths'
 import type { GlobalModelProvider } from '@/lib/types'
-import { parseSdkEvent, type PiRunEvent } from './pi-events'
-import { registerRun, unregisterRun } from './run-registry'
+import type { PiRunEvent } from './pi-events'
+import { isRunAbortRequested, registerRun, unregisterRun } from './run-registry'
 
 export type { PiUsage } from './pi-events'
 
@@ -110,13 +110,15 @@ export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
     notify()
   }
 
-  const unsubscribe = session.subscribe((sdkEvent) => {
-    const events = parseSdkEvent(sdkEvent)
-    for (const event of events) {
-      push(event)
-    }
-  })
+  const unsubscribe = session.subscribePiEvents(push)
   registerRun(input.runId, () => session.inner.abort())
+
+  if (isRunAbortRequested(input.runId)) {
+    unregisterRun(input.runId)
+    unsubscribe()
+    yield { type: 'done', exitCode: null }
+    return
+  }
 
   void session.inner
     .prompt(input.prompt, { source: 'rpc' })
