@@ -45,7 +45,13 @@ const initialDirectoryState: DirectoryState = {
   error: null,
 }
 
-export function WorkspaceExplorer({ sessionId }: { sessionId: string }) {
+export function WorkspaceExplorer({
+  sessionId,
+  className,
+}: {
+  sessionId: string
+  className?: string
+}) {
   const [revision, setRevision] = useState(0)
   const [collapsed, setCollapsed] = useState(false)
   const root = useDirectory(sessionId, '', revision)
@@ -55,9 +61,10 @@ export function WorkspaceExplorer({ sessionId }: { sessionId: string }) {
       className={cn(
         'flex flex-col border-t border-border bg-panel/40',
         collapsed ? 'shrink-0' : 'min-h-0 flex-1',
+        className,
       )}
     >
-      <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-border pr-3 pl-2">
+      <div className="flex h-10 shrink-0 items-center justify-between gap-2 pr-3 pl-2">
         <button
           type="button"
           onClick={() => setCollapsed((value) => !value)}

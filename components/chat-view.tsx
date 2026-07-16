@@ -25,6 +25,7 @@ import {
   Bot,
   AlertTriangle,
   Layers,
+  ChevronDown,
   ChevronRight,
   Coins,
   Circle,
@@ -34,6 +35,7 @@ import {
   PanelRightOpen,
   ArrowDown,
   ArrowUp,
+  Package,
 } from 'lucide-react'
 import { ActionButton, Label, Tag, BracketButton, Panel, PanelHeader } from '@/components/pi-ui'
 import {
@@ -158,6 +160,7 @@ export function ChatView({
   const [queueingMessage, setQueueingMessage] = useState<'steer' | 'follow-up' | null>(null)
   const [showSessionTree, setShowSessionTree] = useState(false)
   const [showActiveContext, setShowActiveContext] = useState(false)
+  const [activeContextCollapsed, setActiveContextCollapsed] = useState(false)
   const messageViewportRef = useRef<HTMLDivElement>(null)
   const composerContainerRef = useRef<HTMLDivElement>(null)
   const shouldFollowMessagesRef = useRef(true)
@@ -1403,7 +1406,7 @@ export function ChatView({
       {/* LEFT: session tree */}
       {showSessionTree && (
         <aside className="flex w-72 shrink-0 flex-col border-r border-border bg-panel">
-          <div className="flex h-18 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
+          <div className="flex h-18 shrink-0 items-center gap-3 border-b border-border px-4">
             <div>
               <Label>Session tree</Label>
               <p className="mt-1 font-mono text-[11px] text-muted-foreground">
@@ -1413,15 +1416,6 @@ export function ChatView({
                 · {sessions.length} sessions
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowSessionTree(false)}
-              className="flex size-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              title="Hide session tree"
-              aria-label="Hide session tree"
-            >
-              <PanelLeftClose className="size-4" />
-            </button>
           </div>
           <ScrollArea className="min-h-0 flex-1" viewportClassName="py-2 pl-2 pr-5">
             {visibleTree ? (
@@ -1472,17 +1466,19 @@ export function ChatView({
         {/* header */}
         <div className="flex h-18 shrink-0 items-center justify-between gap-3 border-b border-border px-5">
           <div className="flex min-w-0 items-center gap-2.5">
-            {!showSessionTree && (
-              <button
-                type="button"
-                onClick={() => setShowSessionTree(true)}
-                className="flex size-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                title="Show session tree"
-                aria-label="Show session tree"
-              >
+            <button
+              type="button"
+              onClick={() => setShowSessionTree((value) => !value)}
+              className="flex size-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title={showSessionTree ? 'Hide session tree' : 'Show session tree'}
+              aria-label={showSessionTree ? 'Hide session tree' : 'Show session tree'}
+            >
+              {showSessionTree ? (
+                <PanelLeftClose className="size-4" />
+              ) : (
                 <PanelLeftOpen className="size-4" />
-              </button>
-            )}
+              )}
+            </button>
             <div className="flex min-w-0 items-center gap-1.5">
               <Select
                 value={activeAgent.id}
@@ -1563,17 +1559,19 @@ export function ChatView({
               {isRunningRun ? 'running' : 'ready'}
             </Tag>
             <Tag tone="outline">{activeSession.messageCount} msgs</Tag>
-            {!showActiveContext && (
-              <button
-                type="button"
-                onClick={() => setShowActiveContext(true)}
-                className="flex size-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                title="Show active context"
-                aria-label="Show active context"
-              >
+            <button
+              type="button"
+              onClick={() => setShowActiveContext((value) => !value)}
+              className="flex size-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title={showActiveContext ? 'Hide active context' : 'Show active context'}
+              aria-label={showActiveContext ? 'Hide active context' : 'Show active context'}
+            >
+              {showActiveContext ? (
+                <PanelRightClose className="size-4" />
+              ) : (
                 <PanelRightOpen className="size-4" />
-              </button>
-            )}
+              )}
+            </button>
           </div>
         </div>
 
@@ -1726,87 +1724,118 @@ export function ChatView({
       {/* RIGHT: context inspector */}
       {showActiveContext && (
         <aside className="hidden w-80 shrink-0 flex-col border-l border-border bg-panel xl:flex">
-          <div className="flex h-18 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
-            <Label>Active context</Label>
-            <button
-              type="button"
-              onClick={() => setShowActiveContext(false)}
-              className="flex size-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              title="Hide active context"
-              aria-label="Hide active context"
-            >
-              <PanelRightClose className="size-4" />
-            </button>
-          </div>
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
-              <Panel>
-                <PanelHeader>
-                  <Label>Model</Label>
-                </PanelHeader>
-                <div className="space-y-2 p-3">
-                  <Row icon={<Cpu className="size-3" />} label={activeModelName} />
-                  <Row icon={<Brain className="size-3" />} label={`thinking · ${thinking}`} />
-                  <Row
-                    icon={<Coins className="size-3" />}
-                    label={`${activeSession.totalTokens ?? 0} tokens`}
-                  />
-                </div>
-              </Panel>
-              <Panel>
-                <PanelHeader>
-                  <Label>Skills</Label>
-                  <Tag>{skillNames.length}</Tag>
-                </PanelHeader>
-                <ul className="divide-y divide-border">
-                  {skillNames.map((s) => (
-                    <li
-                      key={s}
-                      className="flex items-center gap-2 px-3 py-2 font-mono text-[11px] text-muted-foreground"
-                    >
-                      <Layers className="size-3 shrink-0 text-accent" />
-                      {s}
-                    </li>
-                  ))}
-                </ul>
-              </Panel>
-              <Panel>
-                <PanelHeader>
-                  <Label>Prompts</Label>
-                  <Tag>{selectedPrompts.length}</Tag>
-                </PanelHeader>
-                <ul className="divide-y divide-border">
-                  {selectedPrompts.map((prompt) => (
-                    <li
-                      key={prompt.id}
-                      className="flex items-center gap-2 px-3 py-2 font-mono text-[11px] text-muted-foreground"
-                    >
-                      <Terminal className="size-3 shrink-0 text-accent" />
-                      {prompt.name}
-                    </li>
-                  ))}
-                </ul>
-              </Panel>
-              <Panel>
-                <PanelHeader>
-                  <Label>Extensions</Label>
-                  <Tag>{extensionNames.length}</Tag>
-                </PanelHeader>
-                <ul className="divide-y divide-border">
-                  {extensionNames.map((name) => (
-                    <li
-                      key={name}
-                      className="flex items-center gap-2 px-3 py-2 font-mono text-[11px] text-muted-foreground"
-                    >
-                      <Wrench className="size-3 shrink-0 text-accent" />
-                      {name}
-                    </li>
-                  ))}
-                </ul>
-              </Panel>
+          <section
+            className={cn(
+              'flex flex-col bg-panel/40',
+              activeContextCollapsed ? 'shrink-0' : 'min-h-0 flex-1',
+            )}
+          >
+            <div className="flex h-10 shrink-0 items-center gap-2 pr-2 pl-2">
+              <button
+                type="button"
+                onClick={() => setActiveContextCollapsed((value) => !value)}
+                className="flex h-full min-w-0 flex-1 items-center gap-2 text-left transition-colors hover:text-foreground active:scale-[0.995]"
+                aria-expanded={!activeContextCollapsed}
+                title={activeContextCollapsed ? 'Expand active context' : 'Collapse active context'}
+              >
+                {activeContextCollapsed ? (
+                  <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                )}
+                <Label className="text-foreground">Active context</Label>
+              </button>
             </div>
-            <WorkspaceExplorer sessionId={activeSession.id} />
-          </div>
+            {!activeContextCollapsed && (
+              <ScrollArea className="min-h-0 flex-1" viewportClassName="p-3">
+                <div className="flex flex-col gap-3">
+                  <Panel>
+                    <PanelHeader>
+                      <Label>Model</Label>
+                    </PanelHeader>
+                    <div className="flex flex-col gap-2 p-3">
+                      <Row icon={<Cpu className="size-3" />} label={activeModelName} />
+                      <Row icon={<Brain className="size-3" />} label={`thinking · ${thinking}`} />
+                      <Row
+                        icon={<Coins className="size-3" />}
+                        label={`${activeSession.totalTokens ?? 0} tokens`}
+                      />
+                    </div>
+                  </Panel>
+                  <Panel>
+                    <PanelHeader>
+                      <Label>Packages</Label>
+                      <Tag>{activeAgent.selectedPackageSources.length}</Tag>
+                    </PanelHeader>
+                    <ul className="divide-y divide-border">
+                      {activeAgent.selectedPackageSources.map((source) => (
+                        <li
+                          key={source}
+                          title={source}
+                          className="flex min-w-0 items-center gap-2 px-3 py-2 font-mono text-[11px] text-muted-foreground"
+                        >
+                          <Package className="size-3 shrink-0 text-accent" />
+                          <span className="truncate">{source}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </Panel>
+                  <Panel>
+                    <PanelHeader>
+                      <Label>Skills</Label>
+                      <Tag>{skillNames.length}</Tag>
+                    </PanelHeader>
+                    <ul className="divide-y divide-border">
+                      {skillNames.map((skillName) => (
+                        <li
+                          key={skillName}
+                          className="flex items-center gap-2 px-3 py-2 font-mono text-[11px] text-muted-foreground"
+                        >
+                          <Layers className="size-3 shrink-0 text-accent" />
+                          {skillName}
+                        </li>
+                      ))}
+                    </ul>
+                  </Panel>
+                  <Panel>
+                    <PanelHeader>
+                      <Label>Prompts</Label>
+                      <Tag>{selectedPrompts.length}</Tag>
+                    </PanelHeader>
+                    <ul className="divide-y divide-border">
+                      {selectedPrompts.map((prompt) => (
+                        <li
+                          key={prompt.id}
+                          className="flex items-center gap-2 px-3 py-2 font-mono text-[11px] text-muted-foreground"
+                        >
+                          <Terminal className="size-3 shrink-0 text-accent" />
+                          {prompt.name}
+                        </li>
+                      ))}
+                    </ul>
+                  </Panel>
+                  <Panel>
+                    <PanelHeader>
+                      <Label>Extensions</Label>
+                      <Tag>{extensionNames.length}</Tag>
+                    </PanelHeader>
+                    <ul className="divide-y divide-border">
+                      {extensionNames.map((name) => (
+                        <li
+                          key={name}
+                          className="flex items-center gap-2 px-3 py-2 font-mono text-[11px] text-muted-foreground"
+                        >
+                          <Wrench className="size-3 shrink-0 text-accent" />
+                          {name}
+                        </li>
+                      ))}
+                    </ul>
+                  </Panel>
+                </div>
+              </ScrollArea>
+            )}
+          </section>
+          <WorkspaceExplorer sessionId={activeSession.id} />
         </aside>
       )}
     </div>
