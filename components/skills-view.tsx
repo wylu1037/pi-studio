@@ -44,6 +44,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
 
 const sourceTone: Record<SkillSource, 'accent' | 'default' | 'outline'> = {
   'skills.sh': 'accent',
@@ -675,7 +683,7 @@ function SkillField({ label, value, wide }: { label: string; value: string; wide
   return (
     <Panel className={wide ? 'p-3 sm:col-span-2' : 'p-3'}>
       <Label>{label}</Label>
-      <p className="mt-1 font-mono text-xs break-words text-foreground">{value}</p>
+      <p className="mt-1 font-mono text-xs wrap-break-word text-foreground">{value}</p>
     </Panel>
   )
 }
@@ -795,38 +803,36 @@ function RegistrySkeleton() {
 function RegistryEmptyState({ query }: { query: string }) {
   const hasQuery = query.trim().length > 0
   return (
-    <Panel className="flex flex-col items-center gap-3 p-8 text-center">
-      <div className="flex size-11 items-center justify-center border border-border-strong bg-panel">
-        <Search className="size-5 text-muted-foreground" />
-      </div>
-      <div>
-        <h3 className="font-mono text-[13px] text-foreground">
-          {hasQuery ? 'No matching skills' : 'Search skills.sh'}
-        </h3>
-        <p className="mt-1 text-[13px] leading-snug text-muted-foreground">
+    <Empty className="border py-8">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Search />
+        </EmptyMedia>
+        <EmptyTitle>{hasQuery ? 'No matching skills' : 'Search skills.sh'}</EmptyTitle>
+        <EmptyDescription>
           {hasQuery
             ? 'Try a broader name, tag, or capability.'
             : 'Type at least 2 characters to browse the external registry.'}
-        </p>
-      </div>
-    </Panel>
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   )
 }
 
 function SkillsEmptyState({ onBrowse, onImport }: { onBrowse: () => void; onImport: () => void }) {
   return (
-    <div className="mx-auto flex max-w-md flex-col items-center justify-center gap-4 py-24 text-center">
-      <div className="flex size-14 items-center justify-center border border-border-strong bg-card">
-        <Sparkles className="size-6 text-muted-foreground" />
-      </div>
-      <div>
-        <h2 className="font-serif text-2xl text-foreground italic">No skills yet</h2>
-        <p className="mt-2 text-sm text-pretty text-muted-foreground">
+    <Empty className="py-24">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Sparkles />
+        </EmptyMedia>
+        <EmptyTitle>No skills yet</EmptyTitle>
+        <EmptyDescription>
           Import a local skill or browse skills.sh to build a reusable global skill pool for your
           agents.
-        </p>
-      </div>
-      <div className="flex items-center gap-2">
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent className="flex-row justify-center">
         <ActionButton onClick={onBrowse}>
           <Search className="size-3.5" />
           Browse skills.sh
@@ -835,7 +841,7 @@ function SkillsEmptyState({ onBrowse, onImport }: { onBrowse: () => void; onImpo
           <Download className="size-3.5" />
           Import
         </ActionButton>
-      </div>
-    </div>
+      </EmptyContent>
+    </Empty>
   )
 }

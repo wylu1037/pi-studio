@@ -45,6 +45,15 @@ import {
   TextInput,
 } from '@/components/pi-ui'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
+import { Skeleton } from '@/components/ui/skeleton'
 
 const statusTone: Record<PackageStatus, 'success' | 'warning' | 'accent' | 'danger'> = {
   installed: 'success',
@@ -137,12 +146,17 @@ export function PackagesView({
               onInstall={() => setShowInstall(true)}
             />
           ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 py-24 text-center">
-              <PackageIcon className="size-6 text-muted-foreground/50" />
-              <p className="font-mono text-sm text-muted-foreground">
-                No packages match your filters.
-              </p>
-            </div>
+            <Empty className="py-24">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Search />
+                </EmptyMedia>
+                <EmptyTitle>No matching packages</EmptyTitle>
+                <EmptyDescription>
+                  No installed packages match the current filter. Try a broader search.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
               {filtered.map((p) => (
@@ -248,17 +262,17 @@ function PackagesEmptyState({
   disabled?: boolean
 }) {
   return (
-    <div className="mx-auto flex max-w-md flex-col items-center justify-center gap-4 py-24 text-center">
-      <div className="flex size-14 items-center justify-center border border-border-strong bg-card">
-        <PackageIcon className="size-6 text-muted-foreground" />
-      </div>
-      <div>
-        <h2 className="font-serif text-2xl text-foreground italic">No packages installed</h2>
-        <p className="mt-2 text-sm text-pretty text-muted-foreground">
+    <Empty className="py-24">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <PackageIcon />
+        </EmptyMedia>
+        <EmptyTitle>No packages installed</EmptyTitle>
+        <EmptyDescription>
           Install packages into the Studio library, then assign them to the agents that need them.
-        </p>
-      </div>
-      <div className="flex items-center gap-2">
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent className="flex-row justify-center">
         <ActionButton onClick={onBrowse}>
           <Search className="size-3.5" />
           Browse pi.dev
@@ -267,8 +281,8 @@ function PackagesEmptyState({
           <Download className="size-3.5" />
           Install
         </ActionButton>
-      </div>
-    </div>
+      </EmptyContent>
+    </Empty>
   )
 }
 
@@ -622,12 +636,17 @@ function SearchCatalogView({ initialCatalog }: { initialCatalog: PiPackageCatalo
           {loading ? (
             <CatalogSkeleton />
           ) : catalog.packages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 py-20 text-center">
-              <PackageIcon className="size-6 text-muted-foreground/50" />
-              <p className="font-mono text-sm text-muted-foreground">
-                No Pi packages match this search.
-              </p>
-            </div>
+            <Empty className="py-20">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Search />
+                </EmptyMedia>
+                <EmptyTitle>No catalog results</EmptyTitle>
+                <EmptyDescription>
+                  No Pi packages match this search. Try changing the name, type, or sorting.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           ) : (
             <div className="mt-4 grid gap-4 lg:grid-cols-2">
               {catalog.packages.map((pkg) => (
@@ -682,12 +701,12 @@ function CatalogSkeleton() {
     <div className="mt-4 grid gap-4 lg:grid-cols-2">
       {Array.from({ length: 6 }, (_, index) => (
         <div key={index} className="grid min-h-52 grid-cols-[152px_1fr] border border-border">
-          <div className="animate-pulse border-r border-border bg-muted" />
-          <div className="space-y-3 p-4">
-            <div className="h-4 w-2/3 animate-pulse bg-muted" />
-            <div className="h-3 w-full animate-pulse bg-muted" />
-            <div className="h-3 w-4/5 animate-pulse bg-muted" />
-            <div className="mt-8 h-9 animate-pulse bg-muted" />
+          <Skeleton className="rounded-none border-r border-border" />
+          <div className="flex flex-col gap-3 p-4">
+            <Skeleton className="h-4 w-2/3 rounded-none" />
+            <Skeleton className="h-3 w-full rounded-none" />
+            <Skeleton className="h-3 w-4/5 rounded-none" />
+            <Skeleton className="mt-8 h-9 rounded-none" />
           </div>
         </div>
       ))}

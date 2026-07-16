@@ -39,6 +39,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { AgentProfile, GlobalExtension } from '@/lib/types'
 import { errorMessage, showToast } from '@/lib/toast'
@@ -1563,16 +1571,13 @@ function EmptyState({
   compact?: boolean
 }) {
   return (
-    <div
-      className={cn(
-        'flex h-full min-h-48 flex-col items-center justify-center px-6 text-center',
-        compact ? 'py-10' : 'py-20',
-      )}
-    >
-      <span className="text-muted-foreground/55">{icon}</span>
-      <h2 className="mt-3 font-mono text-sm text-foreground">{title}</h2>
-      <p className="mt-1.5 max-w-md text-xs leading-relaxed text-muted-foreground">{description}</p>
-      {action && <div className="mt-4">{action}</div>}
-    </div>
+    <Empty className={cn('h-full min-h-48 px-6', compact ? 'py-10' : 'py-20')}>
+      <EmptyHeader>
+        <EmptyMedia>{icon}</EmptyMedia>
+        <EmptyTitle>{title}</EmptyTitle>
+        <EmptyDescription>{description}</EmptyDescription>
+      </EmptyHeader>
+      {action && <EmptyContent>{action}</EmptyContent>}
+    </Empty>
   )
 }

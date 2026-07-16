@@ -40,6 +40,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
 
 function agentName(agents: AgentProfile[], agentId: string) {
   return agents.find((a) => a.id === agentId)?.name ?? agentId
@@ -735,21 +743,23 @@ function Field({ label, value }: { label: string; value: string }) {
 
 function SessionsEmptyState({ onCreate, disabled }: { onCreate: () => void; disabled?: boolean }) {
   return (
-    <div className="mx-auto flex max-w-md flex-col items-center justify-center gap-4 py-24 text-center">
-      <div className="flex size-14 items-center justify-center border border-border-strong bg-card">
-        <MessageSquare className="size-6 text-muted-foreground" />
-      </div>
-      <div>
-        <h2 className="font-serif text-2xl text-foreground italic">No sessions yet</h2>
-        <p className="mt-2 text-sm text-pretty text-muted-foreground">
+    <Empty className="py-24">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <MessageSquare />
+        </EmptyMedia>
+        <EmptyTitle>No sessions yet</EmptyTitle>
+        <EmptyDescription>
           Start a conversation from an agent to create the first session, then come back here to
           inspect history, tokens, branches, and files.
-        </p>
-      </div>
-      <ActionButton variant="accent" onClick={onCreate} disabled={disabled}>
-        <MessageSquare className="size-3.5" />
-        New session
-      </ActionButton>
-    </div>
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <ActionButton variant="accent" onClick={onCreate} disabled={disabled}>
+          <MessageSquare className="size-3.5" />
+          New session
+        </ActionButton>
+      </EmptyContent>
+    </Empty>
   )
 }

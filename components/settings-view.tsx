@@ -12,6 +12,7 @@ import {
 import { AvatarPresetPicker } from '@/components/avatar-preset-picker'
 import { ChatAvatar, userAvatarPresets } from '@/components/chat-avatar'
 import { PageHeader, Panel } from '@/components/pi-ui'
+import { Progress } from '@/components/ui/progress'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useProfileSettings } from '@/components/use-profile-settings'
@@ -158,12 +159,7 @@ function StorageDashboard({ stats }: { stats: StorageStats }) {
         </div>
         <div className="divide-y divide-border">
           {stats.entries.map((entry) => (
-            <StorageResource
-              key={entry.id}
-              entry={entry}
-              totalSize={totalSize}
-              toneClass={storageToneClass(entry.id)}
-            />
+            <StorageResource key={entry.id} entry={entry} totalSize={totalSize} />
           ))}
         </div>
       </Panel>
@@ -193,15 +189,7 @@ function StorageMetric({
   )
 }
 
-function StorageResource({
-  entry,
-  totalSize,
-  toneClass,
-}: {
-  entry: StorageEntry
-  totalSize: number
-  toneClass: string
-}) {
+function StorageResource({ entry, totalSize }: { entry: StorageEntry; totalSize: number }) {
   const percentage = storagePercentage(entry.size, totalSize)
 
   return (
@@ -255,9 +243,13 @@ function StorageResource({
             {formatPercentage(entry.size, totalSize)} of total
           </p>
         </div>
-        <div className="mt-3 h-1.5 w-28 overflow-hidden bg-muted md:ml-auto">
-          <div className={`h-full ${toneClass}`} style={{ width: `${Math.max(percentage, 1)}%` }} />
-        </div>
+        <Progress
+          value={Math.max(percentage, 1)}
+          className="mt-3 w-28 md:ml-auto"
+          trackClassName="h-1.5 rounded-none bg-muted/80"
+          indicatorClassName={storageToneClass(entry.id)}
+          aria-label={`${entry.label} storage share`}
+        />
       </div>
     </section>
   )

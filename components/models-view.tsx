@@ -40,6 +40,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { NumberField } from '@/components/ui/number-field'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
 import { cn } from '@/lib/utils'
 
 const DEFAULT_CONTEXT_WINDOW = 128_000
@@ -246,22 +254,24 @@ function StatusDot({ status }: { status: GlobalModelProvider['status'] }) {
 
 function ModelsEmptyState({ onAdd, disabled }: { onAdd: () => void; disabled?: boolean }) {
   return (
-    <div className="mx-auto flex max-w-md flex-1 flex-col items-center justify-center gap-4 py-24 text-center">
-      <div className="flex size-14 items-center justify-center border border-border-strong bg-card">
-        <Cpu className="size-6 text-muted-foreground" />
-      </div>
-      <div>
-        <h2 className="font-serif text-2xl text-foreground italic">No model providers yet</h2>
-        <p className="mt-2 text-sm text-pretty text-muted-foreground">
+    <Empty className="py-24">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Cpu />
+        </EmptyMedia>
+        <EmptyTitle>No model providers yet</EmptyTitle>
+        <EmptyDescription>
           Add a provider with its base URL, API key, and model ids before agents can use local Pi
           chat runs.
-        </p>
-      </div>
-      <ActionButton variant="accent" onClick={onAdd} disabled={disabled}>
-        <Plus className="size-3.5" />
-        Add Provider
-      </ActionButton>
-    </div>
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <ActionButton variant="accent" onClick={onAdd} disabled={disabled}>
+          <Plus className="size-3.5" />
+          Add Provider
+        </ActionButton>
+      </EmptyContent>
+    </Empty>
   )
 }
 

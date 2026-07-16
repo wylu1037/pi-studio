@@ -30,6 +30,14 @@ import {
   Tag,
   TextInput,
 } from '@/components/pi-ui'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
 
 export function AgentsDashboard({ agents }: { agents: AgentProfile[] }) {
   const [query, setQuery] = useState('')
@@ -295,21 +303,23 @@ function AgentCard({
 
 function EmptyState({ onCreate, disabled }: { onCreate: () => void; disabled?: boolean }) {
   return (
-    <div className="mx-auto flex max-w-md flex-col items-center justify-center gap-4 py-24 text-center">
-      <div className="flex size-14 items-center justify-center border border-border-strong bg-card">
-        <Plus className="size-6 text-muted-foreground" />
-      </div>
-      <div>
-        <h2 className="font-serif text-2xl text-foreground italic">No agents yet</h2>
-        <p className="mt-2 text-sm text-pretty text-muted-foreground">
+    <Empty className="py-24">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Plus />
+        </EmptyMedia>
+        <EmptyTitle>No agents yet</EmptyTitle>
+        <EmptyDescription>
           Create your first agent by combining global skills, prompts, MCP servers, and a model.
           Agents keep your workflows organized.
-        </p>
-      </div>
-      <ActionButton variant="accent" onClick={onCreate} disabled={disabled}>
-        <Plus className="size-3.5" />
-        New Agent
-      </ActionButton>
-    </div>
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <ActionButton variant="accent" onClick={onCreate} disabled={disabled}>
+          <Plus className="size-3.5" />
+          New Agent
+        </ActionButton>
+      </EmptyContent>
+    </Empty>
   )
 }

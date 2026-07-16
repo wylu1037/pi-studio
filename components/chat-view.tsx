@@ -67,6 +67,14 @@ import {
 } from '@/components/ui/attachment'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -1846,21 +1854,23 @@ export function ChatView({
 
 function EmptyState({ onOpenAgents }: { onOpenAgents: () => void }) {
   return (
-    <div className="mx-auto flex h-full max-w-md flex-col items-center justify-center gap-4 px-6 py-24 text-center">
-      <div className="flex size-14 items-center justify-center border border-border-strong bg-card">
-        <Bot className="size-6 text-muted-foreground" />
-      </div>
-      <div>
-        <h2 className="font-serif text-2xl text-foreground italic">No chat available</h2>
-        <p className="mt-2 text-sm text-pretty text-muted-foreground">
+    <Empty className="h-full px-6 py-24">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Bot />
+        </EmptyMedia>
+        <EmptyTitle>No chat available</EmptyTitle>
+        <EmptyDescription>
           Create an agent first. Pi Studio will open its first session automatically.
-        </p>
-      </div>
-      <ActionButton variant="accent" onClick={onOpenAgents}>
-        <Bot className="size-3.5" />
-        Go to Agents
-      </ActionButton>
-    </div>
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <ActionButton variant="accent" onClick={onOpenAgents}>
+          <Bot className="size-3.5" />
+          Go to Agents
+        </ActionButton>
+      </EmptyContent>
+    </Empty>
   )
 }
 
@@ -2223,7 +2233,7 @@ function WaitingBubble({ agentAvatar }: { agentAvatar?: string }) {
         <Marker
           role="status"
           aria-live="polite"
-          className="min-h-5 w-fit gap-1.5 font-mono text-xs"
+          className="ml-3.5 min-h-5 w-fit gap-1.5 font-mono text-xs"
         >
           <MarkerIcon className="flex size-3 items-center justify-center text-accent">
             <LoaderCircle className="size-3 animate-spin" />

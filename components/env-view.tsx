@@ -11,6 +11,14 @@ import {
   Tag,
   TextInput,
 } from '@/components/pi-ui'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
 
 const MANAGED_FILES_KEY = 'pi-studio:environment:managed-files'
 
@@ -622,21 +630,23 @@ function AddEnvFileDialog({
 
 function EnvFilesEmptyState({ onAdd }: { onAdd: () => void }) {
   return (
-    <div className="flex min-h-72 flex-col items-center justify-center gap-4 px-6 text-center">
-      <div className="flex size-12 items-center justify-center border border-border-strong bg-card">
-        <FileKey2 className="size-5 text-muted-foreground" />
-      </div>
-      <div>
-        <p className="font-mono text-[13px] text-foreground">No environment files managed</p>
-        <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+    <Empty className="min-h-72 px-6">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <FileKey2 />
+        </EmptyMedia>
+        <EmptyTitle>No environment files managed</EmptyTitle>
+        <EmptyDescription>
           Add a .env path to keep project environment files in one place.
-        </p>
-      </div>
-      <ActionButton variant="accent" onClick={onAdd}>
-        <Plus className="size-3.5" />
-        Add file
-      </ActionButton>
-    </div>
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <ActionButton variant="accent" onClick={onAdd}>
+          <Plus className="size-3.5" />
+          Add file
+        </ActionButton>
+      </EmptyContent>
+    </Empty>
   )
 }
 
