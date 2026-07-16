@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, type SyntheticEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -559,23 +559,34 @@ export function ChatView({
     latestStreamingAssistantIdRef.current = null
   }, [sourceMessages.length, streamDone])
 
-  const baseMessages =
-    optimisticMessage &&
-    !sourceMessages.some(
+  const baseMessages = useMemo(() => {
+    if (!optimisticMessage) return sourceMessages
+
+    const hasPersistedOptimisticMessage = sourceMessages.some(
       (message) => message.type === 'user' && message.content === optimisticMessage.content,
     )
-      ? [...sourceMessages, optimisticMessage]
-      : sourceMessages
+
+    return hasPersistedOptimisticMessage ? sourceMessages : [...sourceMessages, optimisticMessage]
+  }, [optimisticMessage, sourceMessages])
 
   const hasPersistedRun =
     streamDone && sourceMessages.length > sourceMessageCountAtRunStartRef.current
-  const displayMessages = hasPersistedRun
-    ? baseMessages
-    : [...baseMessages, ...streamMessages.filter((message) => message.content)]
+  const displayMessages = useMemo(
+    () =>
+      hasPersistedRun
+        ? baseMessages
+        : [...baseMessages, ...streamMessages.filter((message) => message.content)],
+    [baseMessages, hasPersistedRun, streamMessages],
+  )
   const hiddenMessageCount = Math.max(0, displayMessages.length - visibleMessageLimit)
-  const visibleDisplayMessages =
-    hiddenMessageCount > 0 ? displayMessages.slice(-visibleMessageLimit) : displayMessages
-  const displayItems = buildDisplayItems(visibleDisplayMessages)
+  const visibleDisplayMessages = useMemo(
+    () => (hiddenMessageCount > 0 ? displayMessages.slice(-visibleMessageLimit) : displayMessages),
+    [displayMessages, hiddenMessageCount, visibleMessageLimit],
+  )
+  const displayItems = useMemo(
+    () => buildDisplayItems(visibleDisplayMessages),
+    [visibleDisplayMessages],
+  )
 
   const loadOlderMessages = () => {
     const viewport = messageViewportRef.current
@@ -1450,28 +1461,25 @@ export function ChatView({
                   Load {Math.min(MESSAGE_LIMIT_INCREMENT, hiddenMessageCount)} older messages
                 </button>
               )}
-              {displayItems.map((item) =>
-                item.type === 'assistant-turn' ? (
-                  <AssistantTurn
-                    key={item.id}
-                    messages={item.messages}
-                    agentName={activeAgent.name}
-                    mediaSessionId={activeSession.id}
-                    streamStartedAt={streamStartedAt}
-                    isStreaming={item.messages.some((message) => message.timestamp === 'streaming')}
-                  />
-                ) : (
-                  <MessageBubble
-                    key={item.message.id}
-                    message={item.message}
-                    agentName={activeAgent.name}
-                    mediaSessionId={activeSession.id}
-                    streamStartedAt={
-                      item.message.timestamp === 'streaming' ? streamStartedAt : null
-                    }
-                  />
-                ),
-              )}
+              {displayItems.map((item) => {
+                if (item.type === 'assistant-turn') {
+                  const isStreaming = item.messages.some(
+                    (message) => message.timestamp === 'streaming',
+                  )
+                  return (
+                    <AssistantTurn
+                      key={item.id}
+                      messages={item.messages}
+                      agentName={activeAgent.name}
+                      mediaSessionId={activeSession.id}
+                      streamStartedAt={isStreaming ? streamStartedAt : null}
+                      isStreaming={isStreaming}
+                    />
+                  )
+                }
+
+                return <StandaloneMessage key={item.message.id} message={item.message} />
+              })}
               {isWaiting && <WaitingBubble agentName={activeAgent.name} />}
               {displayMessages.length === 0 && !isWaiting && !streamError && (
                 <EmptyConversationState
@@ -1485,8 +1493,7 @@ export function ChatView({
                 />
               )}
               {streamError && (
-                <MessageBubble
-                  agentName={activeAgent.name}
+                <StandaloneMessage
                   message={{
                     id: 'stream-error',
                     type: 'error',
@@ -2327,11 +2334,7 @@ function WaitingBubble({ agentName }: { agentName: string }) {
         <Bot className="size-3 text-accent" />
         <Label>{agentName}</Label>
       </div>
-      <Marker
-        role="status"
-        aria-live="polite"
-        className="min-h-5 w-fit gap-1.5 border-l-2 border-accent/50 pl-3.5 font-mono text-xs"
-      >
+      <Marker role="status" aria-live="polite" className="min-h-5 w-fit gap-1.5 font-mono text-xs">
         <MarkerIcon className="flex size-3 items-center justify-center text-accent">
           <LoaderCircle className="size-3 animate-spin" />
         </MarkerIcon>
@@ -2362,33 +2365,65 @@ function aggregateAssistantUsage(messages: ChatMessage[]): StreamUsage | null {
   )
 }
 
-function AssistantTurn({
-  messages,
-  agentName,
-  streamStartedAt,
-  mediaSessionId,
-  isStreaming,
-}: {
+type AssistantTurnProps = {
   messages: ChatMessage[]
   agentName: string
   streamStartedAt?: number | null
   mediaSessionId?: string
   isStreaming?: boolean
-}) {
+}
+
+type AssistantTurnContent = {
+  assistantMessages: ChatMessage[]
+  primaryAssistant: ChatMessage | undefined
+  errorMessages: ChatMessage[]
+  detailMessages: ChatMessage[]
+  usage: StreamUsage | null
+  fallbackTokens: number
+  latestTimestamp: string | null
+}
+
+function deriveAssistantTurnContent(messages: ChatMessage[]): AssistantTurnContent {
   const assistantMessages = messages.filter((message) => message.type === 'assistant')
   const primaryAssistant = assistantMessages.at(-1)
   const errorMessages = messages.filter((message) => message.type === 'error')
   const detailMessages = messages.filter(
     (message) => message !== primaryAssistant && message.type !== 'error',
   )
-  const usage = aggregateAssistantUsage(assistantMessages)
   const fallbackTokens = assistantMessages.reduce(
     (total, message) => total + (message.tokens ?? estimateTokens(message.content)),
     0,
   )
-  const latestTimestamp = [...messages]
-    .reverse()
-    .find((message) => message.timestamp !== 'streaming')?.timestamp
+  const latestTimestamp =
+    [...messages].reverse().find((message) => message.timestamp !== 'streaming')?.timestamp ?? null
+
+  return {
+    assistantMessages,
+    primaryAssistant,
+    errorMessages,
+    detailMessages,
+    usage: aggregateAssistantUsage(assistantMessages),
+    fallbackTokens,
+    latestTimestamp,
+  }
+}
+
+const AssistantTurn = memo(function AssistantTurn({
+  messages,
+  agentName,
+  streamStartedAt,
+  mediaSessionId,
+  isStreaming,
+}: AssistantTurnProps) {
+  const {
+    assistantMessages,
+    primaryAssistant,
+    errorMessages,
+    detailMessages,
+    usage,
+    fallbackTokens,
+    latestTimestamp,
+  } = useMemo(() => deriveAssistantTurnContent(messages), [messages])
   const streamSeconds =
     isStreaming && streamStartedAt
       ? Math.max(1, Math.round((Date.now() - streamStartedAt) / 1000))
@@ -2406,7 +2441,7 @@ function AssistantTurn({
               fallbackTokens={fallbackTokens}
               estimated={Boolean(isStreaming && !usage)}
               streamSeconds={streamSeconds}
-              timestamp={latestTimestamp ?? null}
+              timestamp={latestTimestamp}
             />
           )}
         </MessageHeader>
@@ -2423,7 +2458,7 @@ function AssistantTurn({
               )}
               <div className="px-3.5 py-3">
                 {primaryAssistant.timestamp === 'streaming' ? (
-                  <div className="border-l-2 border-accent/50 pl-3.5 whitespace-pre-wrap text-foreground">
+                  <div className="whitespace-pre-wrap text-foreground">
                     {primaryAssistant.content}
                   </div>
                 ) : (
@@ -2468,6 +2503,20 @@ function AssistantTurn({
       </MessageContent>
     </Message>
   )
+}, areAssistantTurnPropsEqual)
+
+function areAssistantTurnPropsEqual(previous: AssistantTurnProps, next: AssistantTurnProps) {
+  return (
+    previous.agentName === next.agentName &&
+    previous.mediaSessionId === next.mediaSessionId &&
+    previous.isStreaming === next.isStreaming &&
+    previous.streamStartedAt === next.streamStartedAt &&
+    haveSameMessageReferences(previous.messages, next.messages)
+  )
+}
+
+function haveSameMessageReferences(left: ChatMessage[], right: ChatMessage[]) {
+  return left.length === right.length && left.every((message, index) => message === right[index])
 }
 
 function ProcessDetailsGroup({
@@ -2480,25 +2529,13 @@ function ProcessDetailsGroup({
   mediaSessionId?: string
 }) {
   const [open, setOpen] = useState(Boolean(isStreaming))
-  const activities = buildRunActivities(messages)
-  const updates = activities.filter(
-    (activity) => activity.kind === 'message' && activity.message.type === 'assistant',
-  ).length
-  const thoughts = activities.filter(
-    (activity) => activity.kind === 'message' && activity.message.type === 'thinking',
-  ).length
-  const tools = activities.filter((activity) => activity.kind === 'tool').length
-  const bashOutputs = activities.filter(
-    (activity) => activity.kind === 'message' && activity.message.type === 'bash',
-  ).length
-  const summary = [
-    updates ? `${updates} ${updates === 1 ? 'update' : 'updates'}` : null,
-    thoughts ? `${thoughts} ${thoughts === 1 ? 'thought' : 'thoughts'}` : null,
-    tools ? `${tools} ${tools === 1 ? 'tool' : 'tools'}` : null,
-    bashOutputs ? `${bashOutputs} ${bashOutputs === 1 ? 'output' : 'outputs'}` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ')
+  const { activities, summary, toolCount, bashOutputCount } = useMemo(() => {
+    const activities = buildRunActivities(messages)
+    return {
+      activities,
+      ...summarizeRunActivities(activities),
+    }
+  }, [messages])
 
   return (
     <details
@@ -2508,9 +2545,9 @@ function ProcessDetailsGroup({
     >
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3.5 py-2 transition-colors hover:bg-muted/45 active:bg-muted/70">
         <span className="flex size-4 items-center justify-center text-muted-foreground">
-          {tools > 0 ? (
+          {toolCount > 0 ? (
             <Wrench className="size-3.5" />
-          ) : bashOutputs > 0 ? (
+          ) : bashOutputCount > 0 ? (
             <Terminal className="size-3.5" />
           ) : (
             <Brain className="size-3.5" />
@@ -2559,6 +2596,49 @@ type RunActivity =
       result?: ChatMessage
     }
 
+type RunActivitySummary = {
+  toolCount: number
+  bashOutputCount: number
+  summary: string
+}
+
+function summarizeRunActivities(activities: RunActivity[]): RunActivitySummary {
+  let updateCount = 0
+  let thoughtCount = 0
+  let toolCount = 0
+  let bashOutputCount = 0
+
+  for (const activity of activities) {
+    if (activity.kind === 'tool') {
+      toolCount += 1
+      continue
+    }
+
+    switch (activity.message.type) {
+      case 'assistant':
+        updateCount += 1
+        break
+      case 'thinking':
+        thoughtCount += 1
+        break
+      case 'bash':
+        bashOutputCount += 1
+        break
+    }
+  }
+
+  const summary = [
+    updateCount ? `${updateCount} ${updateCount === 1 ? 'update' : 'updates'}` : null,
+    thoughtCount ? `${thoughtCount} ${thoughtCount === 1 ? 'thought' : 'thoughts'}` : null,
+    toolCount ? `${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}` : null,
+    bashOutputCount ? `${bashOutputCount} ${bashOutputCount === 1 ? 'output' : 'outputs'}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  return { toolCount, bashOutputCount, summary }
+}
+
 function buildRunActivities(messages: ChatMessage[]): RunActivity[] {
   const activities: RunActivity[] = []
   const pendingToolIndexes: number[] = []
@@ -2602,25 +2682,46 @@ function activityPreview(content: string) {
   return content.replace(/\s+/g, ' ').trim()
 }
 
-function RunActivityRow({
-  activity,
-  mediaSessionId,
-}: {
+function useDeferredDetailsContent() {
+  const [hasOpened, setHasOpened] = useState(false)
+  const handleToggle = useCallback((event: SyntheticEvent<HTMLDetailsElement>) => {
+    if (event.currentTarget.open) setHasOpened(true)
+  }, [])
+
+  return { hasOpened, handleToggle }
+}
+
+type RunActivityRowProps = {
   activity: RunActivity
   mediaSessionId?: string
-}) {
+}
+
+const RunActivityRow = memo(function RunActivityRow({
+  activity,
+  mediaSessionId,
+}: RunActivityRowProps) {
   if (activity.kind === 'tool') return <ToolActivityRow activity={activity} />
 
-  const { message } = activity
+  return <MessageActivityRow message={activity.message} mediaSessionId={mediaSessionId} />
+}, areRunActivityRowPropsEqual)
+
+function MessageActivityRow({
+  message,
+  mediaSessionId,
+}: {
+  message: ChatMessage
+  mediaSessionId?: string
+}) {
   const meta = processMessageMeta(message)
   const streaming = message.timestamp === 'streaming'
+  const { hasOpened, handleToggle } = useDeferredDetailsContent()
   const title =
     message.type === 'bash' && message.title
       ? `${meta.label} · ${message.title}`
       : (message.title ?? meta.label)
 
   return (
-    <details className="group/activity relative min-w-0 py-1.5">
+    <details className="group/activity relative min-w-0 py-1.5" onToggle={handleToggle}>
       <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm py-1 pr-1 transition-colors hover:bg-muted/45 active:bg-muted/70">
         <span
           className={cn(
@@ -2654,22 +2755,40 @@ function RunActivityRow({
         )}
         <ChevronRight className="size-3 shrink-0 text-muted-foreground transition-transform group-open/activity:rotate-90" />
       </summary>
-      <div className="pt-1.5 pb-1 pl-0.5">
-        {message.type === 'assistant' ? (
-          <div className="text-sm text-foreground/85">
-            <MarkdownContent content={message.content} mediaSessionId={mediaSessionId} />
-          </div>
-        ) : message.type === 'bash' ? (
-          <pre className="max-h-72 overflow-auto border border-border bg-panel px-3 py-2 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-foreground/85">
-            {message.content}
-          </pre>
-        ) : (
-          <p className="border-l border-border pl-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground italic">
-            {message.content}
-          </p>
-        )}
-      </div>
+      {hasOpened && (
+        <div className="pt-1.5 pb-1 pl-0.5">
+          {message.type === 'assistant' ? (
+            <div className="text-sm text-foreground/85">
+              <MarkdownContent content={message.content} mediaSessionId={mediaSessionId} />
+            </div>
+          ) : message.type === 'bash' ? (
+            <pre className="max-h-72 overflow-auto border border-border bg-panel px-3 py-2 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-foreground/85">
+              {message.content}
+            </pre>
+          ) : (
+            <p className="border-l border-border pl-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground italic">
+              {message.content}
+            </p>
+          )}
+        </div>
+      )}
     </details>
+  )
+}
+
+function areRunActivityRowPropsEqual(previous: RunActivityRowProps, next: RunActivityRowProps) {
+  if (previous.mediaSessionId !== next.mediaSessionId) return false
+  if (previous.activity.kind !== next.activity.kind) return false
+
+  if (previous.activity.kind === 'message' && next.activity.kind === 'message') {
+    return previous.activity.message === next.activity.message
+  }
+
+  return (
+    previous.activity.kind === 'tool' &&
+    next.activity.kind === 'tool' &&
+    previous.activity.call === next.activity.call &&
+    previous.activity.result === next.activity.result
   )
 }
 
@@ -2680,9 +2799,10 @@ function ToolActivityRow({ activity }: { activity: Extract<RunActivity, { kind: 
   const title = call?.title ?? result?.title ?? 'Tool'
   const preview = activityPreview(call?.content ?? result?.content ?? '')
   const status = result ? 'done' : streaming ? 'running' : 'called'
+  const { hasOpened, handleToggle } = useDeferredDetailsContent()
 
   return (
-    <details className="group/activity relative min-w-0 py-1.5">
+    <details className="group/activity relative min-w-0 py-1.5" onToggle={handleToggle}>
       <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm py-1 pr-1 transition-colors hover:bg-muted/45 active:bg-muted/70">
         <span
           className={cn(
@@ -2713,28 +2833,30 @@ function ToolActivityRow({ activity }: { activity: Extract<RunActivity, { kind: 
         )}
         <ChevronRight className="size-3 shrink-0 text-muted-foreground transition-transform group-open/activity:rotate-90" />
       </summary>
-      <div className="flex flex-col gap-2 pt-1.5 pb-1 pl-0.5">
-        {call && (
-          <div className="min-w-0">
-            <div className="mb-1 font-mono text-[9px] tracking-wide text-muted-foreground/55 uppercase">
-              Input
+      {hasOpened && (
+        <div className="flex flex-col gap-2 pt-1.5 pb-1 pl-0.5">
+          {call && (
+            <div className="min-w-0">
+              <div className="mb-1 font-mono text-[9px] tracking-wide text-muted-foreground/55 uppercase">
+                Input
+              </div>
+              <pre className="max-h-56 overflow-auto border border-border bg-panel px-3 py-2 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-foreground/85">
+                {call.content}
+              </pre>
             </div>
-            <pre className="max-h-56 overflow-auto border border-border bg-panel px-3 py-2 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-foreground/85">
-              {call.content}
-            </pre>
-          </div>
-        )}
-        {result && (
-          <div className="min-w-0">
-            <div className="mb-1 font-mono text-[9px] tracking-wide text-muted-foreground/55 uppercase">
-              Result
+          )}
+          {result && (
+            <div className="min-w-0">
+              <div className="mb-1 font-mono text-[9px] tracking-wide text-muted-foreground/55 uppercase">
+                Result
+              </div>
+              <pre className="max-h-72 overflow-auto border border-border bg-panel px-3 py-2 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-muted-foreground">
+                {result.content}
+              </pre>
             </div>
-            <pre className="max-h-72 overflow-auto border border-border bg-panel px-3 py-2 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-muted-foreground">
-              {result.content}
-            </pre>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </details>
   )
 }
@@ -2774,17 +2896,7 @@ function processMessageMeta(message: ChatMessage) {
   }
 }
 
-const MessageBubble = memo(function MessageBubble({
-  message,
-  agentName,
-  streamStartedAt,
-  mediaSessionId,
-}: {
-  message: ChatMessage
-  agentName: string
-  streamStartedAt?: number | null
-  mediaSessionId?: string
-}) {
+const StandaloneMessage = memo(function StandaloneMessage({ message }: { message: ChatMessage }) {
   switch (message.type) {
     case 'user':
       return (
@@ -2803,99 +2915,6 @@ const MessageBubble = memo(function MessageBubble({
             </Bubble>
           </MessageContent>
         </Message>
-      )
-    case 'assistant': {
-      const estimatedTokens = message.tokens ?? estimateTokens(message.content)
-      const streamSeconds =
-        streamStartedAt && message.timestamp === 'streaming'
-          ? Math.max(1, Math.round((Date.now() - streamStartedAt) / 1000))
-          : null
-      return (
-        <Message className="gap-0">
-          <MessageContent className="gap-1">
-            <MessageHeader className="flex-wrap gap-x-1.5 gap-y-1 px-0">
-              <Bot className="size-3 text-accent" />
-              <Label>{agentName}</Label>
-              <AssistantMessageMetrics
-                usage={message.usage ?? null}
-                fallbackTokens={message.tokens ?? estimatedTokens}
-                estimated={message.timestamp === 'streaming' && !message.tokens}
-                streamSeconds={streamSeconds}
-                timestamp={message.timestamp !== 'streaming' ? message.timestamp : null}
-              />
-            </MessageHeader>
-            <Bubble variant="outline" className="w-full max-w-full">
-              <BubbleContent className="w-full">
-                {message.timestamp === 'streaming' ? (
-                  <div className="border-l-2 border-accent/50 pl-3.5 whitespace-pre-wrap text-foreground">
-                    {message.content}
-                  </div>
-                ) : (
-                  <MarkdownContent content={message.content} mediaSessionId={mediaSessionId} />
-                )}
-              </BubbleContent>
-            </Bubble>
-          </MessageContent>
-        </Message>
-      )
-    }
-    case 'thinking':
-      return (
-        <details className="group border border-dashed border-border bg-panel/40">
-          <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-1.5">
-            <Brain className="size-3 text-muted-foreground" />
-            <span className="font-mono text-[11px] text-muted-foreground">
-              {message.title ?? 'Thinking'}
-            </span>
-            <ChevronRight className="ml-auto size-3 text-muted-foreground transition-transform group-open:rotate-90" />
-          </summary>
-          <p className="border-t border-dashed border-border px-3 py-2 font-mono text-[11px] leading-relaxed text-muted-foreground italic">
-            {message.content}
-          </p>
-        </details>
-      )
-    case 'tool_call':
-      return (
-        <div className="flex items-center gap-2 border border-border bg-panel px-3 py-1.5">
-          <Wrench className="size-3 shrink-0 text-accent" />
-          <code className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
-            {message.content}
-          </code>
-          <Tag tone="accent" className="ml-auto">
-            call
-          </Tag>
-        </div>
-      )
-    case 'tool_result':
-      return (
-        <Panel>
-          <PanelHeader className="py-1.5">
-            <div className="flex items-center gap-1.5">
-              <Wrench className="size-3 text-muted-foreground" />
-              <Label>{message.title ?? 'tool result'}</Label>
-            </div>
-            <span className="font-mono text-[10px] text-muted-foreground/50">
-              {message.timestamp}
-            </span>
-          </PanelHeader>
-          <pre className="bg-code max-w-full overflow-hidden p-3 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-muted-foreground">
-            {message.content}
-          </pre>
-        </Panel>
-      )
-    case 'bash':
-      return (
-        <div className="bg-code border border-border">
-          <div className="flex items-center gap-1.5 border-b border-border px-3 py-1.5">
-            <Terminal className="size-3 text-success" />
-            <span className="font-mono text-[11px] text-muted-foreground">
-              {message.title ?? 'bash'}
-            </span>
-          </div>
-          <pre className="max-w-full overflow-hidden p-3 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-foreground/90">
-            {message.content}
-          </pre>
-        </div>
       )
     case 'error':
       return (

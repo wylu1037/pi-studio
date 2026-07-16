@@ -1,8 +1,9 @@
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, memo, type ReactNode, useMemo } from 'react'
 import { AudioLines } from 'lucide-react'
 import { CodeBlock } from '@/components/code-block'
 import { MermaidDiagram } from '@/components/mermaid-diagram'
 import { MarkdownImage } from '@/components/markdown-image'
+import { cn } from '@/lib/utils'
 
 type MarkdownBlock =
   | { type: 'code'; language?: string; content: string }
@@ -30,24 +31,29 @@ const headingClasses: Record<number, string> = {
   6: 'text-[11px] font-medium leading-snug uppercase tracking-wider text-muted-foreground',
 }
 
-export function MarkdownContent({
-  content,
-  accentBorder = false,
-  mediaSessionId,
-}: {
+type MarkdownContentProps = {
   content: string
   accentBorder?: boolean
   mediaSessionId?: string
-}) {
-  const blocks = parseMarkdown(content)
+}
+
+export const MarkdownContent = memo(function MarkdownContent({
+  content,
+  accentBorder = false,
+  mediaSessionId,
+}: MarkdownContentProps) {
+  const blocks = useMemo(() => parseMarkdown(content), [content])
   return (
     <div
-      className={`max-w-full min-w-0 space-y-3 overflow-hidden text-sm leading-relaxed wrap-break-word text-foreground ${accentBorder ? 'border-l-2 border-accent/50 pl-3.5' : ''}`}
+      className={cn(
+        'max-w-full min-w-0 space-y-3 overflow-hidden text-sm leading-relaxed wrap-break-word text-foreground',
+        accentBorder && 'border-l-2 border-accent/50 pl-3.5',
+      )}
     >
       {blocks.map((block, index) => renderBlock(block, index, mediaSessionId))}
     </div>
   )
-}
+})
 
 function parseMarkdown(content: string) {
   const lines = content.replace(/\r\n?/g, '\n').split('\n')
