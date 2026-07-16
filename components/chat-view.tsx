@@ -1451,13 +1451,14 @@ export function ChatView({
                 </button>
               )}
               {displayItems.map((item) =>
-                item.type === 'process' ? (
-                  <ProcessDetailsGroup
+                item.type === 'assistant-turn' ? (
+                  <AssistantTurn
                     key={item.id}
                     messages={item.messages}
-                    isStreaming={Boolean(
-                      runId && item.messages.some((message) => message.timestamp === 'streaming'),
-                    )}
+                    agentName={activeAgent.name}
+                    mediaSessionId={activeSession.id}
+                    streamStartedAt={streamStartedAt}
+                    isStreaming={item.messages.some((message) => message.timestamp === 'streaming')}
                   />
                 ) : (
                   <MessageBubble
@@ -2271,7 +2272,7 @@ function TreeNode({
 
 type DisplayItem =
   | { type: 'message'; message: ChatMessage }
-  | { type: 'process'; id: string; messages: ChatMessage[] }
+  | { type: 'assistant-turn'; id: string; messages: ChatMessage[] }
 
 const processMessageTypes = new Set<ChatMessageType>([
   'thinking',
@@ -2284,39 +2285,38 @@ function isProcessMessage(message: ChatMessage) {
   return processMessageTypes.has(message.type)
 }
 
+function isAssistantTurnMessage(message: ChatMessage) {
+  return message.type === 'assistant' || message.type === 'error' || isProcessMessage(message)
+}
+
 function estimateTokens(content: string) {
   return Math.max(1, Math.ceil(content.length / 4))
 }
 
 function buildDisplayItems(messages: ChatMessage[]): DisplayItem[] {
   const items: DisplayItem[] = []
-  let pendingProcess: ChatMessage[] = []
+  let pendingAssistantTurn: ChatMessage[] = []
 
-  const flushProcess = () => {
-    if (pendingProcess.length === 0) return
+  const flushAssistantTurn = () => {
+    if (pendingAssistantTurn.length === 0) return
     items.push({
-      type: 'process',
-      id: `process-${pendingProcess.map((message) => message.id).join('-')}`,
-      messages: pendingProcess,
+      type: 'assistant-turn',
+      id: `assistant-turn-${pendingAssistantTurn[0].id}`,
+      messages: pendingAssistantTurn,
     })
-    pendingProcess = []
+    pendingAssistantTurn = []
   }
 
   for (const message of messages) {
-    if (isProcessMessage(message)) {
-      pendingProcess.push(message)
+    if (isAssistantTurnMessage(message)) {
+      pendingAssistantTurn.push(message)
       continue
     }
-    if (message.type === 'assistant') {
-      flushProcess()
-      items.push({ type: 'message', message })
-      continue
-    }
-    flushProcess()
+    flushAssistantTurn()
     items.push({ type: 'message', message })
   }
 
-  flushProcess()
+  flushAssistantTurn()
   return items
 }
 
@@ -2341,23 +2341,161 @@ function WaitingBubble({ agentName }: { agentName: string }) {
   )
 }
 
-function ProcessDetailsGroup({
+function aggregateAssistantUsage(messages: ChatMessage[]): StreamUsage | null {
+  const usageMessages = messages.filter(
+    (message): message is ChatMessage & { usage: NonNullable<ChatMessage['usage']> } =>
+      message.type === 'assistant' && Boolean(message.usage),
+  )
+  if (usageMessages.length === 0) return null
+
+  return usageMessages.reduce<StreamUsage>(
+    (total, message) => ({
+      input: (total.input ?? 0) + message.usage.input,
+      output: (total.output ?? 0) + message.usage.output,
+      cacheRead: (total.cacheRead ?? 0) + message.usage.cacheRead,
+      cacheWrite: (total.cacheWrite ?? 0) + message.usage.cacheWrite,
+      cost: {
+        total: (total.cost?.total ?? 0) + (message.usage.cost?.total ?? 0),
+      },
+    }),
+    {},
+  )
+}
+
+function AssistantTurn({
   messages,
+  agentName,
+  streamStartedAt,
+  mediaSessionId,
   isStreaming,
 }: {
   messages: ChatMessage[]
+  agentName: string
+  streamStartedAt?: number | null
+  mediaSessionId?: string
   isStreaming?: boolean
 }) {
-  const [open, setOpen] = useState(false)
-  const toolCalls = messages.filter((message) => message.type === 'tool_call').length
-  const toolResults = messages.filter((message) => message.type === 'tool_result').length
-  const bashOutputs = messages.filter((message) => message.type === 'bash').length
-  const thinking = messages.some((message) => message.type === 'thinking')
+  const assistantMessages = messages.filter((message) => message.type === 'assistant')
+  const primaryAssistant = assistantMessages.at(-1)
+  const errorMessages = messages.filter((message) => message.type === 'error')
+  const detailMessages = messages.filter(
+    (message) => message !== primaryAssistant && message.type !== 'error',
+  )
+  const usage = aggregateAssistantUsage(assistantMessages)
+  const fallbackTokens = assistantMessages.reduce(
+    (total, message) => total + (message.tokens ?? estimateTokens(message.content)),
+    0,
+  )
+  const latestTimestamp = [...messages]
+    .reverse()
+    .find((message) => message.timestamp !== 'streaming')?.timestamp
+  const streamSeconds =
+    isStreaming && streamStartedAt
+      ? Math.max(1, Math.round((Date.now() - streamStartedAt) / 1000))
+      : null
+
+  return (
+    <Message className="gap-0">
+      <MessageContent className="gap-1">
+        <MessageHeader className="flex-wrap gap-x-1.5 gap-y-1 px-0">
+          <Bot className="size-3 text-accent" />
+          <Label>{agentName}</Label>
+          {assistantMessages.length > 0 && (
+            <AssistantMessageMetrics
+              usage={usage}
+              fallbackTokens={fallbackTokens}
+              estimated={Boolean(isStreaming && !usage)}
+              streamSeconds={streamSeconds}
+              timestamp={latestTimestamp ?? null}
+            />
+          )}
+        </MessageHeader>
+
+        {primaryAssistant ? (
+          <Bubble variant="ghost" className="w-full max-w-full">
+            <BubbleContent className="w-full p-0">
+              {detailMessages.length > 0 && (
+                <ProcessDetailsGroup
+                  messages={detailMessages}
+                  isStreaming={isStreaming}
+                  mediaSessionId={mediaSessionId}
+                />
+              )}
+              <div className="px-3.5 py-3">
+                {primaryAssistant.timestamp === 'streaming' ? (
+                  <div className="border-l-2 border-accent/50 pl-3.5 whitespace-pre-wrap text-foreground">
+                    {primaryAssistant.content}
+                  </div>
+                ) : (
+                  <MarkdownContent
+                    content={primaryAssistant.content}
+                    mediaSessionId={mediaSessionId}
+                  />
+                )}
+              </div>
+              {errorMessages.map((message) => (
+                <div
+                  key={message.id}
+                  className="flex items-start gap-2 border-t border-destructive/30 bg-destructive/8 px-3.5 py-2.5"
+                >
+                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+                  <p className="font-mono text-[11px] leading-relaxed text-destructive">
+                    {message.content}
+                  </p>
+                </div>
+              ))}
+            </BubbleContent>
+          </Bubble>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {errorMessages.map((message) => (
+              <Bubble key={message.id} variant="destructive" className="w-full max-w-full">
+                <BubbleContent className="flex w-full items-start gap-2">
+                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                  <p className="font-mono text-[11px] leading-relaxed">{message.content}</p>
+                </BubbleContent>
+              </Bubble>
+            ))}
+            {detailMessages.length > 0 && (
+              <ProcessDetailsGroup
+                messages={detailMessages}
+                isStreaming={isStreaming}
+                mediaSessionId={mediaSessionId}
+              />
+            )}
+          </div>
+        )}
+      </MessageContent>
+    </Message>
+  )
+}
+
+function ProcessDetailsGroup({
+  messages,
+  isStreaming,
+  mediaSessionId,
+}: {
+  messages: ChatMessage[]
+  isStreaming?: boolean
+  mediaSessionId?: string
+}) {
+  const [open, setOpen] = useState(Boolean(isStreaming))
+  const activities = buildRunActivities(messages)
+  const updates = activities.filter(
+    (activity) => activity.kind === 'message' && activity.message.type === 'assistant',
+  ).length
+  const thoughts = activities.filter(
+    (activity) => activity.kind === 'message' && activity.message.type === 'thinking',
+  ).length
+  const tools = activities.filter((activity) => activity.kind === 'tool').length
+  const bashOutputs = activities.filter(
+    (activity) => activity.kind === 'message' && activity.message.type === 'bash',
+  ).length
   const summary = [
-    `${messages.length} messages`,
-    toolCalls ? `${toolCalls} tool calls` : null,
-    toolResults ? `${toolResults} results` : null,
-    bashOutputs ? `${bashOutputs} outputs` : null,
+    updates ? `${updates} ${updates === 1 ? 'update' : 'updates'}` : null,
+    thoughts ? `${thoughts} ${thoughts === 1 ? 'thought' : 'thoughts'}` : null,
+    tools ? `${tools} ${tools === 1 ? 'tool' : 'tools'}` : null,
+    bashOutputs ? `${bashOutputs} ${bashOutputs === 1 ? 'output' : 'outputs'}` : null,
   ]
     .filter(Boolean)
     .join(' · ')
@@ -2366,75 +2504,249 @@ function ProcessDetailsGroup({
     <details
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
-      className="group border border-border bg-panel/35"
+      className="group/run"
     >
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2">
-        <span className="flex size-5 items-center justify-center border border-border bg-card text-muted-foreground">
-          {toolCalls > 0 ? (
-            <Wrench className="size-3" />
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-3.5 py-2 transition-colors hover:bg-muted/45 active:bg-muted/70">
+        <span className="flex size-4 items-center justify-center text-muted-foreground">
+          {tools > 0 ? (
+            <Wrench className="size-3.5" />
           ) : bashOutputs > 0 ? (
-            <Terminal className="size-3" />
+            <Terminal className="size-3.5" />
           ) : (
-            <Brain className="size-3" />
+            <Brain className="size-3.5" />
           )}
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-[11px] text-muted-foreground uppercase">
-              {isStreaming ? 'Working' : 'Process details'}
-            </span>
-            {isStreaming && (
-              <span className="flex items-center gap-1">
-                <span className="size-1.5 animate-pulse bg-accent/70" />
-                <span className="size-1.5 animate-pulse bg-accent/70 [animation-delay:120ms]" />
-                <span className="size-1.5 animate-pulse bg-accent/70 [animation-delay:240ms]" />
-              </span>
-            )}
-          </div>
-          <div className="truncate font-mono text-[10px] text-muted-foreground/60">
-            {thinking ? 'Thinking' : 'Activity'} · {summary}
-          </div>
-        </div>
-        <ChevronRight className="size-3 text-muted-foreground transition-transform group-open:rotate-90" />
+        <span
+          className={cn(
+            'shrink-0 text-xs font-medium text-foreground/85',
+            isStreaming && 'shimmer',
+          )}
+        >
+          {isStreaming ? 'Working' : 'Activity'}
+        </span>
+        <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground/60">
+          {summary || `${activities.length} steps`}
+        </span>
+        <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-open/run:rotate-90" />
       </summary>
       {open && (
-        <div className="space-y-2 border-t border-border px-3 py-3">
-          {messages.map((message) => (
-            <ProcessMessageRow key={message.id} message={message} />
-          ))}
+        <div className="px-3.5 py-1.5">
+          <div className="ml-2 border-l border-border pl-5">
+            {activities.map((activity) => (
+              <RunActivityRow
+                key={activity.id}
+                activity={activity}
+                mediaSessionId={mediaSessionId}
+              />
+            ))}
+          </div>
         </div>
       )}
     </details>
   )
 }
 
-function ProcessMessageRow({ message }: { message: ChatMessage }) {
+type RunActivity =
+  | {
+      kind: 'message'
+      id: string
+      message: ChatMessage
+    }
+  | {
+      kind: 'tool'
+      id: string
+      call?: ChatMessage
+      result?: ChatMessage
+    }
+
+function buildRunActivities(messages: ChatMessage[]): RunActivity[] {
+  const activities: RunActivity[] = []
+  const pendingToolIndexes: number[] = []
+
+  for (const message of messages) {
+    if (message.type === 'tool_call') {
+      activities.push({ kind: 'tool', id: `tool-${message.id}`, call: message })
+      pendingToolIndexes.push(activities.length - 1)
+      continue
+    }
+
+    if (message.type === 'tool_result') {
+      const titleMatchPosition = pendingToolIndexes.findIndex((index) => {
+        const activity = activities[index]
+        return (
+          activity?.kind === 'tool' &&
+          Boolean(message.title) &&
+          activity.call?.title === message.title
+        )
+      })
+      const pendingPosition = titleMatchPosition >= 0 ? titleMatchPosition : 0
+      const activityIndex = pendingToolIndexes[pendingPosition]
+
+      if (activityIndex !== undefined) {
+        const activity = activities[activityIndex]
+        if (activity?.kind === 'tool') activity.result = message
+        pendingToolIndexes.splice(pendingPosition, 1)
+      } else {
+        activities.push({ kind: 'tool', id: `tool-result-${message.id}`, result: message })
+      }
+      continue
+    }
+
+    activities.push({ kind: 'message', id: message.id, message })
+  }
+
+  return activities
+}
+
+function activityPreview(content: string) {
+  return content.replace(/\s+/g, ' ').trim()
+}
+
+function RunActivityRow({
+  activity,
+  mediaSessionId,
+}: {
+  activity: RunActivity
+  mediaSessionId?: string
+}) {
+  if (activity.kind === 'tool') return <ToolActivityRow activity={activity} />
+
+  const { message } = activity
   const meta = processMessageMeta(message)
+  const streaming = message.timestamp === 'streaming'
+  const title =
+    message.type === 'bash' && message.title
+      ? `${meta.label} · ${message.title}`
+      : (message.title ?? meta.label)
+
   return (
-    <div className="overflow-hidden border border-border bg-card/70">
-      <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
-        <span className={cn('shrink-0', meta.color)}>{meta.icon}</span>
-        <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
-          {message.title ?? meta.label}
+    <details className="group/activity relative min-w-0 py-1.5">
+      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm py-1 pr-1 transition-colors hover:bg-muted/45 active:bg-muted/70">
+        <span
+          className={cn(
+            'absolute -left-7.25 flex size-4 items-center justify-center bg-background',
+            meta.color,
+          )}
+        >
+          {meta.icon}
         </span>
-        <span className="ml-auto font-mono text-[10px] text-muted-foreground/50">
-          {message.timestamp}
+        <span
+          className={cn(
+            'max-w-[36%] shrink-0 truncate text-xs font-medium text-foreground/85',
+            streaming && 'shimmer',
+          )}
+        >
+          {title}
         </span>
-      </div>
-      <pre
-        className={cn(
-          'max-h-72 max-w-full overflow-x-hidden overflow-y-auto p-3 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap',
-          message.type === 'thinking' ? 'text-muted-foreground italic' : 'text-foreground/85',
+        <span
+          className={cn(
+            'min-w-0 flex-1 truncate text-xs text-muted-foreground',
+            message.type === 'thinking' && 'italic',
+            message.type === 'bash' && 'font-mono text-[10px]',
+          )}
+        >
+          {activityPreview(message.content)}
+        </span>
+        {!streaming && (
+          <span className="hidden shrink-0 font-mono text-[9px] text-muted-foreground/45 sm:inline">
+            {message.timestamp}
+          </span>
         )}
-      >
-        {message.content}
-      </pre>
-    </div>
+        <ChevronRight className="size-3 shrink-0 text-muted-foreground transition-transform group-open/activity:rotate-90" />
+      </summary>
+      <div className="pt-1.5 pb-1 pl-0.5">
+        {message.type === 'assistant' ? (
+          <div className="text-sm text-foreground/85">
+            <MarkdownContent content={message.content} mediaSessionId={mediaSessionId} />
+          </div>
+        ) : message.type === 'bash' ? (
+          <pre className="max-h-72 overflow-auto border border-border bg-panel px-3 py-2 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-foreground/85">
+            {message.content}
+          </pre>
+        ) : (
+          <p className="border-l border-border pl-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground italic">
+            {message.content}
+          </p>
+        )}
+      </div>
+    </details>
+  )
+}
+
+function ToolActivityRow({ activity }: { activity: Extract<RunActivity, { kind: 'tool' }> }) {
+  const { call, result } = activity
+  const streaming = call?.timestamp === 'streaming' || result?.timestamp === 'streaming'
+  const timestamp = result?.timestamp ?? call?.timestamp
+  const title = call?.title ?? result?.title ?? 'Tool'
+  const preview = activityPreview(call?.content ?? result?.content ?? '')
+  const status = result ? 'done' : streaming ? 'running' : 'called'
+
+  return (
+    <details className="group/activity relative min-w-0 py-1.5">
+      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm py-1 pr-1 transition-colors hover:bg-muted/45 active:bg-muted/70">
+        <span
+          className={cn(
+            'absolute -left-7.25 flex size-4 items-center justify-center bg-background',
+            result ? 'text-success' : 'text-accent',
+          )}
+        >
+          <Wrench className="size-3" />
+        </span>
+        <span className="max-w-[36%] shrink-0 truncate text-xs font-medium text-foreground/85">
+          {title}
+        </span>
+        <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">
+          {preview}
+        </span>
+        <span
+          className={cn(
+            'shrink-0 font-mono text-[9px] uppercase',
+            result ? 'text-success' : 'shimmer text-accent',
+          )}
+        >
+          {status}
+        </span>
+        {!streaming && timestamp && (
+          <span className="hidden shrink-0 font-mono text-[9px] text-muted-foreground/45 sm:inline">
+            {timestamp}
+          </span>
+        )}
+        <ChevronRight className="size-3 shrink-0 text-muted-foreground transition-transform group-open/activity:rotate-90" />
+      </summary>
+      <div className="flex flex-col gap-2 pt-1.5 pb-1 pl-0.5">
+        {call && (
+          <div className="min-w-0">
+            <div className="mb-1 font-mono text-[9px] tracking-wide text-muted-foreground/55 uppercase">
+              Input
+            </div>
+            <pre className="max-h-56 overflow-auto border border-border bg-panel px-3 py-2 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-foreground/85">
+              {call.content}
+            </pre>
+          </div>
+        )}
+        {result && (
+          <div className="min-w-0">
+            <div className="mb-1 font-mono text-[9px] tracking-wide text-muted-foreground/55 uppercase">
+              Result
+            </div>
+            <pre className="max-h-72 overflow-auto border border-border bg-panel px-3 py-2 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-muted-foreground">
+              {result.content}
+            </pre>
+          </div>
+        )}
+      </div>
+    </details>
   )
 }
 
 function processMessageMeta(message: ChatMessage) {
   switch (message.type) {
+    case 'assistant':
+      return {
+        label: 'Progress update',
+        icon: <Bot className="size-3" />,
+        color: 'text-accent',
+      }
     case 'tool_call':
       return {
         label: 'Tool call',
