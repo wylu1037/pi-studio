@@ -11,6 +11,7 @@ import {
   duplicateAgent,
   getAgent,
   resolveAgentRunConfig,
+  updateAgent,
   updateAgentResources,
 } from './repository'
 
@@ -51,6 +52,22 @@ test('persists package sources assigned to an agent and its copy', () => {
 
     const copy = duplicateAgent(agent!.id)
     assert.deepEqual(copy?.selectedPackageSources, [source])
+    if (copy) deleteAgent(copy.id)
+  } finally {
+    if (agent) deleteAgent(agent.id)
+  }
+})
+
+test('persists assistant avatar presets and copies them with the agent', () => {
+  const agent = createAgent({ name: `Avatar test ${Date.now()}`, icon: 'robot' })
+
+  try {
+    assert.equal(agent?.icon, 'robot')
+    if (!agent) return
+    updateAgent(agent.id, { icon: 'pi' })
+    assert.equal(getAgent(agent.id)?.icon, 'pi')
+    const copy = duplicateAgent(agent.id)
+    assert.equal(copy?.icon, 'pi')
     if (copy) deleteAgent(copy.id)
   } finally {
     if (agent) deleteAgent(agent.id)

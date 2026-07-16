@@ -22,7 +22,7 @@ function Message({
       data-slot="message"
       data-align={align}
       className={cn(
-        'group/message relative flex w-full min-w-0 gap-2 text-sm data-[align=end]:flex-row-reverse',
+        'group/message relative flex w-full min-w-0 text-sm data-[align=end]:flex-row-reverse',
         className,
       )}
       {...props}
@@ -35,7 +35,7 @@ function MessageAvatar({ className, ...props }: React.ComponentProps<'div'>) {
     <div
       data-slot="message-avatar"
       className={cn(
-        'flex w-fit min-w-8 shrink-0 items-center justify-center self-end overflow-hidden rounded-full bg-muted group-has-data-[slot=message-footer]/message:-translate-y-8',
+        'absolute top-0 -left-8 flex size-8 items-center justify-center overflow-hidden rounded-full bg-muted group-data-[align=end]/message:right-[-2rem] group-data-[align=end]/message:left-auto',
         className,
       )}
       {...props}

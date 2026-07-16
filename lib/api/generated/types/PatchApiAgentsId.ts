@@ -145,6 +145,10 @@ export type PatchApiAgentsIdMutationRequest = {
     */
     description?: string;
     /**
+     * @type string | undefined
+    */
+    icon?: string;
+    /**
      * @type array | undefined
     */
     tags?: string[];

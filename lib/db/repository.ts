@@ -130,6 +130,7 @@ export function getAgent(id: string) {
 export function createAgent(input: {
   name: string
   description?: string
+  icon?: string
   tags?: string[]
   defaultCwd?: string
   defaultProviderId?: string
@@ -143,6 +144,7 @@ export function createAgent(input: {
       id,
       name: input.name,
       description: input.description,
+      icon: input.icon ?? 'pi',
       color: '#7c8cf8',
       defaultCwd: input.defaultCwd,
       defaultProviderId: input.defaultProviderId,
@@ -164,6 +166,7 @@ export function updateAgent(id: string, input: Partial<AgentProfile>) {
     .set({
       name: input.name,
       description: input.description,
+      icon: input.icon,
       defaultCwd: input.defaultCwd,
       defaultProviderId: input.defaultProviderId,
       defaultModelId: input.defaultModelId,
@@ -276,6 +279,7 @@ export function duplicateAgent(id: string) {
   const copy = createAgent({
     name: `${agent.name} Copy`,
     description: agent.description,
+    icon: agent.icon,
     tags: agent.tags,
     defaultCwd: agent.defaultCwd,
     defaultProviderId: agent.defaultProviderId,

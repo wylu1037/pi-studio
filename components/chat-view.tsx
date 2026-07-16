@@ -50,9 +50,11 @@ import {
 } from '@/components/use-streaming-markdown'
 import { WorkspaceExplorer } from '@/components/workspace-explorer'
 import { ExtensionUiHost } from '@/components/extension-ui-host'
+import { ChatAvatar } from '@/components/chat-avatar'
+import { useProfileSettings } from '@/components/use-profile-settings'
 import { Bubble, BubbleContent } from '@/components/ui/bubble'
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker'
-import { Message, MessageContent, MessageHeader } from '@/components/ui/message'
+import { Message, MessageAvatar, MessageContent, MessageFooter } from '@/components/ui/message'
 import {
   Attachment,
   AttachmentContent,
@@ -142,6 +144,7 @@ export function ChatView({
   prompts: GlobalPromptTemplate[]
 }) {
   const router = useRouter()
+  const { userAvatar } = useProfileSettings()
   const [streamMessages, setStreamMessages] = useState<ChatMessage[]>([])
   const [streamStartedAt, setStreamStartedAt] = useState<number | null>(null)
   const [composerOverlayHeight, setComposerOverlayHeight] = useState(112)
@@ -1480,9 +1483,6 @@ export function ChatView({
                 <PanelLeftOpen className="size-4" />
               </button>
             )}
-            <span className="flex size-7 items-center justify-center border border-border-strong bg-card">
-              <Bot className="size-3.5 text-accent" />
-            </span>
             <div className="flex min-w-0 items-center gap-1.5">
               <Select
                 value={activeAgent.id}
@@ -1499,7 +1499,8 @@ export function ChatView({
                 <SelectTrigger
                   aria-label="Switch agent"
                   size="sm"
-                  className="h-7 max-w-[30vw] border-border bg-panel px-2 text-xs text-foreground"
+                  variant="ghost"
+                  className="h-7 max-w-[30vw] px-2 text-xs text-foreground"
                 >
                   <SelectValue>{activeAgent.name}</SelectValue>
                 </SelectTrigger>
@@ -1530,7 +1531,8 @@ export function ChatView({
                 <SelectTrigger
                   aria-label="Switch session"
                   size="sm"
-                  className="h-7 max-w-[40vw] border-border bg-panel px-2 text-[11px] text-muted-foreground hover:text-foreground sm:max-w-80"
+                  variant="ghost"
+                  className="h-7 max-w-[40vw] px-2 text-[11px] text-muted-foreground hover:text-foreground sm:max-w-80"
                 >
                   <SelectValue>
                     {activeSession.name ?? activeSession.firstUserMessage ?? 'New conversation'}
@@ -1541,7 +1543,7 @@ export function ChatView({
                   alignItemWithTrigger={false}
                   className="w-max max-w-[calc(100vw-2rem)] min-w-(--anchor-width) sm:max-w-lg"
                 >
-                  {sessions.map((session) => (
+                  {sessions.toReversed().map((session) => (
                     <SelectItem key={session.id} value={session.id}>
                       {session.name ?? session.firstUserMessage ?? 'New conversation'}
                     </SelectItem>
@@ -1582,7 +1584,7 @@ export function ChatView({
             viewportClassName="px-5 py-6"
             viewportRef={messageViewportRef}
           >
-            <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-4 overflow-x-hidden">
+            <div className="mx-auto flex w-full max-w-208 min-w-0 flex-col gap-4 overflow-x-hidden px-8">
               {hiddenMessageCount > 0 && (
                 <button
                   type="button"
@@ -1604,7 +1606,7 @@ export function ChatView({
                     <AssistantTurn
                       key={item.id}
                       messages={item.messages}
-                      agentName={activeAgent.name}
+                      agentAvatar={activeAgent.icon}
                       mediaSessionId={activeSession.id}
                       streamStartedAt={isStreaming ? streamStartedAt : null}
                       isStreaming={isStreaming}
@@ -1617,7 +1619,13 @@ export function ChatView({
                   )
                 }
 
-                return <StandaloneMessage key={item.message.id} message={item.message} />
+                return (
+                  <StandaloneMessage
+                    key={item.message.id}
+                    message={item.message}
+                    userAvatar={userAvatar}
+                  />
+                )
               })}
               {isWaiting && <WaitingBubble agentName={activeAgent.name} />}
               {displayMessages.length === 0 && !isWaiting && !streamError && (
@@ -2214,7 +2222,7 @@ function aggregateAssistantUsage(messages: ChatMessage[]): StreamUsage | null {
 
 type AssistantTurnProps = {
   messages: ChatMessage[]
-  agentName: string
+  agentAvatar?: string
   streamStartedAt?: number | null
   mediaSessionId?: string
   isStreaming?: boolean
@@ -2258,7 +2266,7 @@ function deriveAssistantTurnContent(messages: ChatMessage[]): AssistantTurnConte
 
 const AssistantTurn = memo(function AssistantTurn({
   messages,
-  agentName,
+  agentAvatar,
   streamStartedAt,
   mediaSessionId,
   isStreaming,
@@ -2279,22 +2287,11 @@ const AssistantTurn = memo(function AssistantTurn({
       : null
 
   return (
-    <Message className="gap-0">
-      <MessageContent className="gap-1">
-        <MessageHeader className="flex-wrap gap-x-1.5 gap-y-1 px-0">
-          <Bot className="size-3 text-accent" />
-          <Label>{agentName}</Label>
-          {assistantMessages.length > 0 && (
-            <AssistantMessageMetrics
-              usage={usage}
-              fallbackTokens={fallbackTokens}
-              estimated={Boolean(isStreaming && !usage)}
-              streamSeconds={streamSeconds}
-              timestamp={latestTimestamp}
-            />
-          )}
-        </MessageHeader>
-
+    <Message>
+      <MessageAvatar className="bg-transparent">
+        <ChatAvatar preset={agentAvatar} role="assistant" />
+      </MessageAvatar>
+      <MessageContent className="gap-0.5">
         {primaryAssistant ? (
           <Bubble variant="ghost" className="w-full max-w-full">
             <BubbleContent className="w-full p-0">
@@ -2305,7 +2302,7 @@ const AssistantTurn = memo(function AssistantTurn({
                   mediaSessionId={mediaSessionId}
                 />
               )}
-              <div className="px-3.5 py-3">
+              <div className="px-3.5 pt-3 pb-2">
                 {streamingMarkdown ? (
                   <StreamingMarkdownContent
                     snapshot={streamingMarkdown}
@@ -2354,6 +2351,18 @@ const AssistantTurn = memo(function AssistantTurn({
             )}
           </div>
         )}
+        {assistantMessages.length > 0 && (
+          <MessageFooter className="justify-end px-0">
+            <AssistantMessageMetrics
+              usage={usage}
+              fallbackTokens={fallbackTokens}
+              estimated={Boolean(isStreaming && !usage)}
+              streamSeconds={streamSeconds}
+              timestamp={latestTimestamp}
+              className="mr-3.5"
+            />
+          </MessageFooter>
+        )}
       </MessageContent>
     </Message>
   )
@@ -2361,7 +2370,7 @@ const AssistantTurn = memo(function AssistantTurn({
 
 function areAssistantTurnPropsEqual(previous: AssistantTurnProps, next: AssistantTurnProps) {
   return (
-    previous.agentName === next.agentName &&
+    previous.agentAvatar === next.agentAvatar &&
     previous.mediaSessionId === next.mediaSessionId &&
     previous.isStreaming === next.isStreaming &&
     previous.streamStartedAt === next.streamStartedAt &&
@@ -2398,7 +2407,7 @@ function ProcessDetailsGroup({
       onToggle={(event) => setOpen(event.currentTarget.open)}
       className="group/run"
     >
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-3.5 py-2 transition-colors hover:bg-muted/45 active:bg-muted/70">
+      <summary className="mx-3.5 flex cursor-pointer list-none items-center gap-2 py-2 transition-colors hover:bg-muted/45 active:bg-muted/70">
         <span className="flex size-4 items-center justify-center text-muted-foreground">
           {toolCount > 0 ? (
             <Wrench className="size-3.5" />
@@ -2757,18 +2766,21 @@ function sameAttachments(left: ChatMessage['attachments'], right: ChatMessage['a
   return left.every((attachment, index) => attachment.path === right[index]?.path)
 }
 
-const StandaloneMessage = memo(function StandaloneMessage({ message }: { message: ChatMessage }) {
+const StandaloneMessage = memo(function StandaloneMessage({
+  message,
+  userAvatar,
+}: {
+  message: ChatMessage
+  userAvatar?: string
+}) {
   switch (message.type) {
     case 'user':
       return (
-        <Message align="end" className="gap-0">
-          <MessageContent className="items-end gap-1">
-            <MessageHeader className="justify-end gap-1.5 px-0">
-              <Label>You</Label>
-              <span className="font-mono text-[10px] text-muted-foreground/50">
-                {message.timestamp}
-              </span>
-            </MessageHeader>
+        <Message align="end">
+          <MessageAvatar className="bg-transparent">
+            <ChatAvatar preset={userAvatar} role="user" />
+          </MessageAvatar>
+          <MessageContent className="items-end gap-1 pr-2">
             {message.attachments && message.attachments.length > 0 && (
               <AttachmentGroup className="max-w-[85%] justify-end">
                 {message.attachments.map((attachment) => (
@@ -2793,6 +2805,11 @@ const StandaloneMessage = memo(function StandaloneMessage({ message }: { message
                 </BubbleContent>
               </Bubble>
             )}
+            <MessageFooter className="justify-end px-0">
+              <span className="font-mono text-[10px] text-muted-foreground/50">
+                {message.timestamp}
+              </span>
+            </MessageFooter>
           </MessageContent>
         </Message>
       )
@@ -2828,12 +2845,14 @@ function AssistantMessageMetrics({
   estimated,
   streamSeconds,
   timestamp,
+  className,
 }: {
   usage: StreamUsage | null
   fallbackTokens: number
   estimated: boolean
   streamSeconds: number | null
   timestamp: string | null
+  className?: string
 }) {
   const metrics = usage
     ? [
@@ -2870,7 +2889,12 @@ function AssistantMessageMetrics({
       ]
 
   return (
-    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] text-muted-foreground/60">
+    <span
+      className={cn(
+        'flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] text-muted-foreground/60',
+        className,
+      )}
+    >
       {metrics.map((metric, index) => {
         if (!metric) return null
         const Icon = metric.icon

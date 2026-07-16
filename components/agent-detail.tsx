@@ -52,6 +52,9 @@ import {
 } from '@/components/pi-ui'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
+import { AvatarPresetPicker } from '@/components/avatar-preset-picker'
+import { agentAvatarPresets } from '@/components/chat-avatar'
+import { agentAvatarPresetIds, normalizeAgentAvatarPreset } from '@/lib/profile-settings'
 import { cn } from '@/lib/utils'
 
 const TABS = [
@@ -68,6 +71,7 @@ const thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max
 const settingsSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
+  icon: z.enum(agentAvatarPresetIds),
   defaultCwd: z.string().optional(),
   tags: z.string().optional(),
 })
@@ -684,17 +688,20 @@ function SettingsTab({
     defaultValues: {
       name: agent.name,
       description: agent.description ?? '',
+      icon: normalizeAgentAvatarPreset(agent.icon),
       defaultCwd: agent.defaultCwd ?? '',
       tags: agent.tags.join(', '),
     },
   })
   const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false)
   const defaultCwd = watch('defaultCwd')
+  const icon = watch('icon')
 
   const save = async (values: SettingsForm) => {
     await patchApiAgentsId(agent.id, {
       name: values.name,
       description: values.description,
+      icon: values.icon,
       defaultCwd: values.defaultCwd,
       tags: (values.tags ?? '')
         .split(',')
@@ -718,6 +725,14 @@ function SettingsTab({
             {...register('description')}
             rows={3}
             className="w-full resize-none border border-input bg-panel px-3 py-2 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+          />
+        </Field>
+        <Field label="Assistant avatar">
+          <AvatarPresetPicker
+            presets={agentAvatarPresets}
+            selected={icon}
+            role="assistant"
+            onSelect={(preset) => setValue('icon', preset, { shouldDirty: true })}
           />
         </Field>
         <Field label="Default working directory">

@@ -48,6 +48,7 @@ export const patchApiAgentsId404Schema = z.object({
 export const patchApiAgentsIdMutationRequestSchema = z.object({
     "name": z.optional(z.string().min(1)),
 "description": z.optional(z.string()),
+"icon": z.optional(z.string()),
 "tags": z.optional(z.array(z.string())),
 "defaultCwd": z.optional(z.string()),
 "defaultProviderId": z.optional(z.string()),

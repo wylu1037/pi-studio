@@ -40,6 +40,7 @@ export const AgentSchema = z.object({
 export const AgentInputSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
+  icon: z.string().optional(),
   tags: z.array(z.string()).default([]),
   defaultCwd: z.string().optional(),
   defaultProviderId: z.string().optional(),
