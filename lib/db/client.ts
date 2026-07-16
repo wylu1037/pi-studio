@@ -1,15 +1,17 @@
 import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import * as schema from './schema'
 import { piStudioDataDir } from '@/lib/runtime/paths'
 
-const dbPath = process.env.DATABASE_URL ?? join(piStudioDataDir(), 'pi-studio.sqlite')
-mkdirSync(dirname(dbPath), { recursive: true })
+export const databasePath = resolve(
+  process.env.DATABASE_URL ?? join(piStudioDataDir(), 'pi-studio.sqlite'),
+)
+mkdirSync(dirname(databasePath), { recursive: true })
 
-const sqlite = new Database(dbPath)
+const sqlite = new Database(databasePath)
 sqlite.pragma('journal_mode = WAL')
 sqlite.pragma('foreign_keys = ON')
 
