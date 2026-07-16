@@ -17,6 +17,7 @@ import type {
 import { piStudioDataDir } from '@/lib/runtime/paths'
 import { ensureStoredPrompt, removeStoredPrompt, writeStoredPrompt } from '@/lib/prompts/store'
 import { installedPackagePaths } from '@/lib/packages/studio-package-store'
+import { buildPromptWithAttachments, parsePromptWithAttachments } from '@/lib/chat/attachments'
 import { db, sqlite } from './client'
 import {
   agentMcpConfigs,
@@ -902,15 +903,22 @@ export function listSessionMessages(sessionId: string): ChatMessage[] {
     .from(chatMessages)
     .where(eq(chatMessages.sessionId, sessionId))
     .all()
-    .map((message) => ({
-      id: message.id,
-      type: message.type as ChatMessage['type'],
-      title: message.title ?? undefined,
-      content: message.content,
-      timestamp: message.createdAt,
-      tokens: message.tokens ?? undefined,
-      usage: messageUsage(message),
-    }))
+    .map((message) => {
+      const parsed =
+        message.type === 'user'
+          ? parsePromptWithAttachments(message.content)
+          : { message: message.content, attachments: [] }
+      return {
+        id: message.id,
+        type: message.type as ChatMessage['type'],
+        title: message.title ?? undefined,
+        content: parsed.message,
+        attachments: parsed.attachments.length > 0 ? parsed.attachments : undefined,
+        timestamp: message.createdAt,
+        tokens: message.tokens ?? undefined,
+        usage: messageUsage(message),
+      }
+    })
 }
 
 export function getSessionTree(sessionId: string): SessionTreeNode | null {
@@ -1160,7 +1168,10 @@ export function duplicateSession(id: string) {
       sessionId: copy.id,
       type: message.type,
       title: message.title,
-      content: message.content,
+      content:
+        message.type === 'user'
+          ? buildPromptWithAttachments(message.content, message.attachments ?? [])
+          : message.content,
       tokens: message.tokens,
     })
   }

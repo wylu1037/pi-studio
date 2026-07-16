@@ -6,6 +6,7 @@ import {
   type SessionTreeNode as PiSessionTreeNode,
 } from '@earendil-works/pi-coding-agent'
 import type { AgentSessionSummary, ChatMessage, SessionTreeNode } from '@/lib/types'
+import { parsePromptWithAttachments } from '@/lib/chat/attachments'
 
 export function formatUtcTimestamp(value: string | number) {
   const timestamp = typeof value === 'number' ? value : Number(value)
@@ -29,6 +30,12 @@ function entryPreview(entry: SessionEntry) {
       'content' in entry.message
         ? textContent(entry.message.content)
         : JSON.stringify(entry.message)
+    if (entry.message.role === 'user') {
+      const parsed = parsePromptWithAttachments(content)
+      return (
+        parsed.message || parsed.attachments.map((attachment) => attachment.name).join(', ')
+      ).slice(0, 120)
+    }
     return content.slice(0, 120) || entry.message.role
   }
   if (entry.type === 'model_change') return `${entry.provider} / ${entry.modelId}`
@@ -67,11 +74,13 @@ function mapMessage(
   index: number,
 ): ChatMessage[] {
   if (message.role === 'user') {
+    const parsed = parsePromptWithAttachments(textContent(message.content))
     return [
       {
         id: `sdk-user-${index}`,
         type: 'user',
-        content: textContent(message.content),
+        content: parsed.message,
+        attachments: parsed.attachments.length > 0 ? parsed.attachments : undefined,
         timestamp: formatUtcTimestamp(message.timestamp),
       },
     ]

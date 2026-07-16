@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
+import { z } from 'zod'
 import {
   ArrowLineDownIcon as InputMetricIcon,
   ArrowLineUpIcon as OutputMetricIcon,
@@ -13,20 +14,18 @@ import {
   DatabaseIcon as CacheMetricIcon,
 } from '@phosphor-icons/react'
 import {
-  Send,
-  Square,
   LoaderCircle,
-  Paperclip,
   GitBranch,
   Terminal,
   Brain,
+  Cpu,
+  File as FileIcon,
   Wrench,
   User,
   Bot,
   AlertTriangle,
   Layers,
   ChevronRight,
-  Cpu,
   Coins,
   Circle,
   PanelLeftClose,
@@ -35,9 +34,14 @@ import {
   PanelRightOpen,
   ArrowDown,
   ArrowUp,
-  MessageSquarePlus,
 } from 'lucide-react'
 import { ActionButton, Label, Tag, BracketButton, Panel, PanelHeader } from '@/components/pi-ui'
+import {
+  ChatComposer,
+  formatFileSize,
+  type ComposerValues,
+  type SlashCommandOption,
+} from '@/components/chat-composer'
 import { MarkdownContent } from '@/components/markdown-content'
 import { StreamingMarkdownContent } from '@/components/streaming-markdown-content'
 import {
@@ -49,6 +53,14 @@ import { ExtensionUiHost } from '@/components/extension-ui-host'
 import { Bubble, BubbleContent } from '@/components/ui/bubble'
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker'
 import { Message, MessageContent, MessageHeader } from '@/components/ui/message'
+import {
+  Attachment,
+  AttachmentContent,
+  AttachmentDescription,
+  AttachmentGroup,
+  AttachmentMedia,
+  AttachmentTitle,
+} from '@/components/ui/attachment'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Select,
@@ -80,8 +92,9 @@ import type {
 import type { StreamingMarkdownSnapshot } from '@/lib/markdown/streaming-markdown'
 import { errorMessage, showToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
+import { useChatAttachments } from '@/components/use-chat-attachments'
+import { buildPromptWithAttachments } from '@/lib/chat/attachments'
 
-const thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 const EVENT_STREAM_CONNECT_TIMEOUT_MS = 5000
 const RUN_RECONCILE_INITIAL_DELAY_MS = 1000
 const RUN_RECONCILE_POLL_MS = 1200
@@ -89,7 +102,6 @@ const RUN_RECONCILE_MAX_MS = 20000
 const SESSION_TREE_RECENT_NODE_LIMIT = 80
 const INITIAL_VISIBLE_MESSAGE_LIMIT = 120
 const MESSAGE_LIMIT_INCREMENT = 100
-const COMPOSER_MAX_HEIGHT = 160
 
 type StreamPhase = 'idle' | 'starting' | 'connecting' | 'thinking' | 'streaming'
 
@@ -104,34 +116,7 @@ type StreamUsage = {
   }
 }
 
-type ComposerValues = {
-  message: string
-  thinkingLevel?: (typeof thinkingLevels)[number]
-  modelId?: string
-  providerId?: string
-}
-
-type SlashCommandOption =
-  | {
-      kind: 'builtin'
-      id: 'new-session'
-      command: 'new-session'
-      description: string
-    }
-  | {
-      kind: 'prompt'
-      id: string
-      command: string
-      description: string
-      argumentHint?: string
-      prompt: GlobalPromptTemplate
-    }
-  | {
-      kind: 'extension'
-      id: string
-      command: string
-      description: string
-    }
+const ComposerSchema = postApiSessionsIdRunsMutationRequestSchema.extend({ message: z.string() })
 
 export function ChatView({
   agents,
@@ -159,8 +144,6 @@ export function ChatView({
   const router = useRouter()
   const [streamMessages, setStreamMessages] = useState<ChatMessage[]>([])
   const [streamStartedAt, setStreamStartedAt] = useState<number | null>(null)
-  const [composerInputHeight, setComposerInputHeight] = useState(44)
-  const [composerIsScrollable, setComposerIsScrollable] = useState(false)
   const [composerOverlayHeight, setComposerOverlayHeight] = useState(112)
   const [streamDone, setStreamDone] = useState(false)
   const [streamPhase, setStreamPhase] = useState<StreamPhase>('idle')
@@ -173,8 +156,6 @@ export function ChatView({
   const [showSessionTree, setShowSessionTree] = useState(false)
   const [showActiveContext, setShowActiveContext] = useState(false)
   const messageViewportRef = useRef<HTMLDivElement>(null)
-  const composerTextareaRef = useRef<HTMLTextAreaElement>(null)
-  const composerInputViewportRef = useRef<HTMLDivElement>(null)
   const composerContainerRef = useRef<HTMLDivElement>(null)
   const shouldFollowMessagesRef = useRef(true)
   const prependScrollRef = useRef<{ height: number; top: number } | null>(null)
@@ -258,6 +239,22 @@ export function ChatView({
     onReplaceContent: replaceStreamingContent,
   })
 
+  const handleAttachmentError = useCallback((message: string) => {
+    showToast({ tone: 'error', title: 'Attachment unavailable', message })
+  }, [])
+  const {
+    attachments,
+    addFiles: addAttachmentFiles,
+    clear: clearAttachments,
+    removeAttachment,
+    retryAttachment,
+    uploadAll: uploadAllAttachments,
+    isUploading: isUploadingAttachments,
+  } = useChatAttachments({
+    sessionId: activeSession?.id ?? '',
+    onError: handleAttachmentError,
+  })
+
   const availableModelOptions = useMemo(() => {
     const enabledProviders = new Set(activeAgent?.selectedProviderIds ?? [])
     const enabledModels = new Set(activeAgent?.selectedModelIds ?? [])
@@ -279,7 +276,7 @@ export function ChatView({
     ) ?? availableModelOptions[0]
 
   const form = useForm<ComposerValues>({
-    resolver: zodResolver(postApiSessionsIdRunsMutationRequestSchema as never),
+    resolver: zodResolver(ComposerSchema as never),
     defaultValues: {
       message: '',
       providerId: defaultModelOption?.provider.id,
@@ -301,7 +298,6 @@ export function ChatView({
   const thinking = form.watch('thinkingLevel') ?? 'medium'
   const model = form.watch('modelId') ?? activeAgent?.defaultModelId ?? 'model'
   const message = form.watch('message') ?? ''
-  const messageRegistration = form.register('message')
   const composerValues = {
     message: message.trim(),
     providerId: form.watch('providerId'),
@@ -314,12 +310,7 @@ export function ChatView({
   )
 
   useEffect(() => {
-    const contentHeight = resizeTextarea(composerTextareaRef.current)
-    setComposerInputHeight(Math.min(contentHeight, COMPOSER_MAX_HEIGHT))
-    setComposerIsScrollable(contentHeight > COMPOSER_MAX_HEIGHT)
     const frame = window.requestAnimationFrame(() => {
-      const inputViewport = composerInputViewportRef.current
-      if (inputViewport) inputViewport.scrollTop = inputViewport.scrollHeight
       if (!shouldFollowMessagesRef.current) return
       const messageViewport = messageViewportRef.current
       if (messageViewport) messageViewport.scrollTop = messageViewport.scrollHeight
@@ -345,7 +336,8 @@ export function ChatView({
     isNewSessionCommand ||
     selectedExtensionCommand ||
     (selectedModelOption &&
-      postApiSessionsIdRunsMutationRequestSchema.safeParse(composerValues).success),
+      (composerValues.message.length > 0 || attachments.length > 0) &&
+      !isUploadingAttachments),
   )
   const activeModelName = selectedModelOption?.model.name ?? selectedModelOption?.model.id ?? model
 
@@ -434,6 +426,7 @@ export function ChatView({
         cwd: activeAgent.defaultCwd ?? activeSession?.cwd,
       })
       form.setValue('message', '')
+      clearAttachments()
       showToast({
         tone: 'success',
         title: 'New session ready',
@@ -627,7 +620,10 @@ export function ChatView({
     if (!optimisticMessage) return sourceMessages
 
     const hasPersistedOptimisticMessage = sourceMessages.some(
-      (message) => message.type === 'user' && message.content === optimisticMessage.content,
+      (message) =>
+        message.type === 'user' &&
+        message.content === optimisticMessage.content &&
+        sameAttachments(message.attachments, optimisticMessage.attachments),
     )
 
     return hasPersistedOptimisticMessage ? sourceMessages : [...sourceMessages, optimisticMessage]
@@ -1020,6 +1016,7 @@ export function ChatView({
           )
         }
         form.setValue('message', '')
+        clearAttachments()
         showToast({
           tone: 'success',
           title: `/${extensionCommand.name}`,
@@ -1034,13 +1031,8 @@ export function ChatView({
       }
       return
     }
-    const payload = {
-      ...values,
-      message: values.message.trim(),
-    }
-    if (!postApiSessionsIdRunsMutationRequestSchema.safeParse(payload).success) {
-      return
-    }
+    const trimmedMessage = values.message.trim()
+    if (!trimmedMessage && attachments.length === 0) return
     try {
       const state = await getApiSessionsIdAgentState(activeSession.id, {
         headers: { 'cache-control': 'no-cache' },
@@ -1058,6 +1050,13 @@ export function ChatView({
     } catch {
       // Starting the run remains the source of truth if the preflight check is unavailable.
     }
+    const uploadedAttachments = attachments.length > 0 ? await uploadAllAttachments() : []
+    if (!uploadedAttachments) return
+    const payload = {
+      ...values,
+      message: buildPromptWithAttachments(trimmedMessage, uploadedAttachments),
+    }
+    if (!postApiSessionsIdRunsMutationRequestSchema.safeParse(payload).success) return
     eventSourceRef.current?.close()
     clearReconciliation()
     activeRunIdRef.current = null
@@ -1075,7 +1074,8 @@ export function ChatView({
     setOptimisticMessage({
       id: `optimistic-user-${Date.now()}`,
       type: 'user',
-      content: payload.message,
+      content: trimmedMessage,
+      attachments: uploadedAttachments,
       timestamp: 'sending',
     })
     try {
@@ -1083,6 +1083,7 @@ export function ChatView({
       activeRunIdRef.current = run.id
       setRunId(run.id)
       setStreamPhase('connecting')
+      clearAttachments()
       form.reset({
         message: '',
         providerId: values.providerId,
@@ -1282,16 +1283,20 @@ export function ChatView({
 
   const queueMessage = async (behavior: 'steer' | 'follow-up') => {
     const content = form.getValues('message').trim()
-    if (!activeSession || !content || queueingMessage) return
+    if (!activeSession || (!content && attachments.length === 0) || queueingMessage) return
     setQueueingMessage(behavior)
     setStreamError(null)
     try {
+      const uploadedAttachments = attachments.length > 0 ? await uploadAllAttachments() : []
+      if (!uploadedAttachments) return
+      const prompt = buildPromptWithAttachments(content, uploadedAttachments)
       if (behavior === 'steer') {
-        await postApiSessionsIdSteer(activeSession.id, { message: content })
+        await postApiSessionsIdSteer(activeSession.id, { message: prompt })
       } else {
-        await postApiSessionsIdFollowUp(activeSession.id, { message: content })
+        await postApiSessionsIdFollowUp(activeSession.id, { message: prompt })
       }
       form.setValue('message', '')
+      clearAttachments()
     } catch (error) {
       setStreamError(
         error instanceof Error ? error.message : `Unable to queue ${behavior} message.`,
@@ -1644,324 +1649,40 @@ export function ChatView({
             </div>
           </ScrollArea>
           {/* composer */}
-          <div
-            ref={composerContainerRef}
-            className="pointer-events-none absolute inset-x-0 bottom-0 px-5 pb-4"
-          >
-            <div className="pointer-events-auto relative mx-auto max-w-3xl bg-background/95 px-2 pt-2 shadow-[0_-16px_32px_-28px_rgba(24,28,36,0.45)]">
+          <ChatComposer
+            form={form}
+            containerRef={composerContainerRef}
+            extensionUi={
               <ExtensionUiHost
                 sessionId={activeSession.id}
                 onEditorText={applyExtensionEditorText}
               />
-              {slashCommandOptions.length > 0 && (
-                <div className="absolute inset-x-0 bottom-full mb-2 overflow-hidden border border-border-strong bg-card shadow-xl">
-                  <div className="flex items-center justify-between border-b border-border bg-panel px-4 py-2.5">
-                    <Label>Slash commands</Label>
-                    <span className="font-mono text-[10px] text-muted-foreground">
-                      {slashCommandOptions.length} available
-                    </span>
-                  </div>
-                  <ul className="scrollbar-thin max-h-64 overflow-auto py-1">
-                    {slashCommandOptions.map((option, index) => (
-                      <li key={`${option.kind}:${option.id}`}>
-                        <button
-                          type="button"
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => executeSlashCommand(option)}
-                          disabled={option.kind === 'builtin' && (isRunningRun || creatingSession)}
-                          className={cn(
-                            'flex w-full flex-col gap-1 border-l-2 border-transparent px-4 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45',
-                            index === slashSelection
-                              ? 'border-l-accent bg-accent/10'
-                              : 'hover:bg-muted/70',
-                          )}
-                        >
-                          <span className="flex min-w-0 items-center gap-2.5">
-                            {option.kind === 'builtin' ? (
-                              <MessageSquarePlus className="size-3.5 shrink-0 text-accent" />
-                            ) : (
-                              <Terminal className="size-3.5 shrink-0 text-muted-foreground" />
-                            )}
-                            <span className="shrink-0 font-mono text-[13px] leading-5 font-medium text-accent">
-                              /{option.command}
-                            </span>
-                            {option.kind === 'prompt' && option.argumentHint && (
-                              <span className="truncate font-mono text-[10px] leading-5 text-warning">
-                                {option.argumentHint}
-                              </span>
-                            )}
-                            {option.kind === 'builtin' && (
-                              <Tag tone="outline" className="ml-auto shrink-0">
-                                built-in
-                              </Tag>
-                            )}
-                            {option.kind === 'extension' && (
-                              <Tag tone="accent" className="ml-auto shrink-0">
-                                extension
-                              </Tag>
-                            )}
-                          </span>
-                          <span className="line-clamp-2 pl-6 text-[12px] leading-4 text-muted-foreground">
-                            {option.description}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <form
-                onSubmit={submit}
-                className={cn(
-                  'border border-border-strong bg-card p-2.5 focus-within:border-ring',
-                  composerIsScrollable
-                    ? 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-end gap-2.5'
-                    : 'flex items-end gap-2.5',
-                )}
-              >
-                <button
-                  type="button"
-                  className={cn(
-                    'flex size-9 items-center justify-center text-muted-foreground hover:text-foreground',
-                    composerIsScrollable && 'col-start-1 row-start-2',
-                  )}
-                  aria-label="Attach file"
-                >
-                  <Paperclip className="size-4" />
-                </button>
-                <ScrollArea
-                  className={cn(
-                    'min-h-11 min-w-0',
-                    composerIsScrollable ? 'col-span-3 row-start-1 w-full' : 'flex-1',
-                  )}
-                  viewportClassName={cn('pr-3', composerIsScrollable && 'pl-[46px]')}
-                  viewportRef={composerInputViewportRef}
-                  style={{ height: composerInputHeight }}
-                >
-                  <textarea
-                    {...messageRegistration}
-                    ref={(element) => {
-                      messageRegistration.ref(element)
-                      composerTextareaRef.current = element
-                    }}
-                    onInput={(event) => {
-                      const contentHeight = resizeTextarea(event.currentTarget)
-                      setComposerInputHeight(Math.min(contentHeight, COMPOSER_MAX_HEIGHT))
-                      setComposerIsScrollable(contentHeight > COMPOSER_MAX_HEIGHT)
-                      window.requestAnimationFrame(() => {
-                        const viewport = composerInputViewportRef.current
-                        if (viewport) viewport.scrollTop = viewport.scrollHeight
-                      })
-                    }}
-                    onKeyDown={(e) => {
-                      if (slashCommandOptions.length > 0) {
-                        if (e.key === 'ArrowDown') {
-                          e.preventDefault()
-                          setSlashSelection((value) => (value + 1) % slashCommandOptions.length)
-                          return
-                        }
-                        if (e.key === 'ArrowUp') {
-                          e.preventDefault()
-                          setSlashSelection(
-                            (value) =>
-                              (value - 1 + slashCommandOptions.length) % slashCommandOptions.length,
-                          )
-                          return
-                        }
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault()
-                          executeSlashCommand(
-                            slashCommandOptions[slashSelection] ?? slashCommandOptions[0],
-                          )
-                          return
-                        }
-                        if (e.key === 'Escape') {
-                          e.preventDefault()
-                          form.setValue('message', '')
-                          return
-                        }
-                      }
-                      if (
-                        e.key === 'Enter' &&
-                        !e.shiftKey &&
-                        !e.nativeEvent.isComposing &&
-                        e.keyCode !== 229
-                      ) {
-                        e.preventDefault()
-                        if (
-                          canSend &&
-                          !isStartingRun &&
-                          !isRunningRun &&
-                          !abortingRun &&
-                          !creatingSession
-                        ) {
-                          void submit()
-                        }
-                      }
-                    }}
-                    rows={1}
-                    placeholder={
-                      isRunningRun
-                        ? 'Add guidance to the active run...'
-                        : 'Reply to the agent...  (Enter to send, Shift+Enter for newline)'
-                    }
-                    className="block min-h-11 w-full resize-none overflow-hidden bg-transparent py-2 font-mono text-[13px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/60"
-                  />
-                </ScrollArea>
-                <button
-                  type={isRunningRun ? 'button' : 'submit'}
-                  onClick={canAbortRun ? abort : undefined}
-                  disabled={
-                    isRunningRun
-                      ? !canAbortRun || abortingRun
-                      : isStartingRun || creatingSession || !canSend
-                  }
-                  className={cn(
-                    'flex h-9 items-center justify-center gap-1.5 border font-mono text-[11px] uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-70',
-                    composerIsScrollable && 'col-start-3 row-start-2',
-                    canAbortRun
-                      ? 'border-destructive/70 bg-destructive/10 px-3 text-destructive hover:bg-destructive hover:text-destructive-foreground'
-                      : isRunningRun
-                        ? 'border-border bg-muted px-3 text-muted-foreground'
-                        : 'border-accent bg-accent px-2.5 text-accent-foreground hover:opacity-90',
-                  )}
-                  aria-label={
-                    canAbortRun ? 'Abort run' : isRunningRun ? 'Agent processing' : 'Send message'
-                  }
-                >
-                  {abortingRun || isStartingRun || creatingSession ? (
-                    <LoaderCircle className="size-3.5 animate-spin" />
-                  ) : canAbortRun ? (
-                    <Square className="size-3 fill-current" />
-                  ) : isRunningRun ? (
-                    <LoaderCircle className="size-3.5 animate-spin" />
-                  ) : isNewSessionCommand ? (
-                    <MessageSquarePlus className="size-3.5" />
-                  ) : (
-                    <Send className="size-3.5" />
-                  )}
-                  <span>{sendButtonLabel}</span>
-                </button>
-              </form>
-              {isRunningRun && (
-                <div className="mt-2 flex justify-end gap-2">
-                  <button
-                    type="button"
-                    disabled={!message.trim() || queueingMessage !== null}
-                    onClick={() => void queueMessage('steer')}
-                    className="border border-border-strong px-2.5 py-1 font-mono text-[10px] text-muted-foreground uppercase hover:border-accent hover:text-foreground disabled:opacity-50"
-                  >
-                    {queueingMessage === 'steer' ? 'Queueing…' : 'Steer now'}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!message.trim() || queueingMessage !== null}
-                    onClick={() => void queueMessage('follow-up')}
-                    className="border border-border-strong px-2.5 py-1 font-mono text-[10px] text-muted-foreground uppercase hover:border-accent hover:text-foreground disabled:opacity-50"
-                  >
-                    {queueingMessage === 'follow-up' ? 'Queueing…' : 'Follow up'}
-                  </button>
-                </div>
-              )}
-              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-                <label className="flex items-center gap-1.5">
-                  <Cpu className="size-3 text-muted-foreground" />
-                  <input type="hidden" {...form.register('providerId')} />
-                  <input type="hidden" {...form.register('modelId')} />
-                  <Select
-                    disabled={availableModelOptions.length === 0 || isRunningRun}
-                    value={
-                      selectedModelOption
-                        ? `${selectedModelOption.provider.id}::${selectedModelOption.model.id}`
-                        : null
-                    }
-                    onValueChange={(value) => {
-                      if (value === null) return
-                      const next = availableModelOptions.find(
-                        ({ provider, model: candidate }) =>
-                          `${provider.id}::${candidate.id}` === value,
-                      )
-                      if (!next) return
-                      form.setValue('providerId', next.provider.id, {
-                        shouldDirty: true,
-                        shouldValidate: true,
-                      })
-                      form.setValue('modelId', next.model.id, {
-                        shouldDirty: true,
-                        shouldValidate: true,
-                      })
-                    }}
-                  >
-                    <SelectTrigger
-                      size="sm"
-                      className="h-6 max-w-[45vw] border-0 bg-transparent px-0 py-0 text-[11px] text-muted-foreground hover:text-foreground focus-visible:ring-0 sm:max-w-72"
-                    >
-                      <SelectValue>
-                        {selectedModelOption
-                          ? `${selectedModelOption.provider.name} / ${selectedModelOption.model.name ?? selectedModelOption.model.id}`
-                          : 'No enabled models'}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent
-                      align="start"
-                      alignItemWithTrigger={false}
-                      className="w-max max-w-[calc(100vw-2rem)] min-w-(--anchor-width) sm:max-w-lg"
-                    >
-                      {availableModelOptions.map(({ provider, model: candidate }) => (
-                        <SelectItem
-                          key={`${provider.id}:${candidate.id}`}
-                          value={`${provider.id}::${candidate.id}`}
-                        >
-                          {provider.name} / {candidate.name ?? candidate.id}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </label>
-                <label className="flex items-center gap-1.5">
-                  <Brain className="size-3 text-muted-foreground" />
-                  <input type="hidden" {...form.register('thinkingLevel')} />
-                  <Select
-                    value={thinking}
-                    onValueChange={(value) => {
-                      if (
-                        value !== null &&
-                        thinkingLevels.includes(value as (typeof thinkingLevels)[number])
-                      ) {
-                        form.setValue('thinkingLevel', value as (typeof thinkingLevels)[number], {
-                          shouldDirty: true,
-                          shouldValidate: true,
-                        })
-                      }
-                    }}
-                  >
-                    <SelectTrigger
-                      size="sm"
-                      className="h-6 max-w-[40vw] border-0 bg-transparent px-0 py-0 text-[11px] text-muted-foreground hover:text-foreground focus-visible:ring-0 sm:max-w-56"
-                    >
-                      <SelectValue>
-                        {(value) => `thinking: ${String(value ?? thinking)}`}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent
-                      align="start"
-                      alignItemWithTrigger={false}
-                      className="w-max max-w-[calc(100vw-2rem)] min-w-(--anchor-width) sm:max-w-sm"
-                    >
-                      {thinkingLevels.map((t) => (
-                        <SelectItem key={t} value={t}>
-                          thinking: {t}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </label>
-                <span className="ml-auto font-mono text-[11px] text-muted-foreground/60">
-                  {activeSession.cwd}
-                </span>
-              </div>
-            </div>
-          </div>
+            }
+            message={message}
+            thinking={thinking}
+            selectedModelOption={selectedModelOption}
+            availableModelOptions={availableModelOptions}
+            activeSessionCwd={activeSession.cwd}
+            attachments={attachments}
+            slashCommandOptions={slashCommandOptions}
+            slashSelection={slashSelection}
+            onSlashSelectionChange={setSlashSelection}
+            onExecuteSlashCommand={executeSlashCommand}
+            onFilesSelected={addAttachmentFiles}
+            onRemoveAttachment={removeAttachment}
+            onRetryAttachment={(attachmentId) => void retryAttachment(attachmentId)}
+            onSubmit={() => void submit()}
+            onAbort={() => void abort()}
+            onQueueMessage={(behavior) => void queueMessage(behavior)}
+            isRunningRun={isRunningRun}
+            canAbortRun={canAbortRun}
+            isStartingRun={isStartingRun}
+            abortingRun={abortingRun}
+            creatingSession={creatingSession}
+            queueingMessage={queueingMessage}
+            canSend={canSend}
+            sendButtonLabel={sendButtonLabel}
+          />
           {(canScrollUp || canScrollDown) && (
             <div
               className="pointer-events-none absolute right-5 flex flex-col border border-border bg-card shadow-lg"
@@ -2111,14 +1832,6 @@ function Row({ icon, label }: { icon: React.ReactNode; label: string }) {
       {label}
     </div>
   )
-}
-
-function resizeTextarea(textarea: HTMLTextAreaElement | null) {
-  if (!textarea) return 44
-  textarea.style.height = '0px'
-  const contentHeight = Math.max(44, textarea.scrollHeight)
-  textarea.style.height = `${contentHeight}px`
-  return contentHeight
 }
 
 function EmptyConversationState({
@@ -3038,6 +2751,12 @@ function processMessageMeta(message: ChatMessage) {
   }
 }
 
+function sameAttachments(left: ChatMessage['attachments'], right: ChatMessage['attachments']) {
+  if (!left?.length && !right?.length) return true
+  if (!left || !right || left.length !== right.length) return false
+  return left.every((attachment, index) => attachment.path === right[index]?.path)
+}
+
 const StandaloneMessage = memo(function StandaloneMessage({ message }: { message: ChatMessage }) {
   switch (message.type) {
     case 'user':
@@ -3050,11 +2769,30 @@ const StandaloneMessage = memo(function StandaloneMessage({ message }: { message
                 {message.timestamp}
               </span>
             </MessageHeader>
-            <Bubble variant="secondary" align="end" className="max-w-[85%]">
-              <BubbleContent className="px-3.5 py-2.5 text-foreground">
-                {message.content}
-              </BubbleContent>
-            </Bubble>
+            {message.attachments && message.attachments.length > 0 && (
+              <AttachmentGroup className="max-w-[85%] justify-end">
+                {message.attachments.map((attachment) => (
+                  <Attachment key={attachment.id} state="done" size="xs" className="rounded-none">
+                    <AttachmentMedia className="rounded-none">
+                      <FileIcon />
+                    </AttachmentMedia>
+                    <AttachmentContent>
+                      <AttachmentTitle title={attachment.name}>{attachment.name}</AttachmentTitle>
+                      <AttachmentDescription title={attachment.path}>
+                        {formatFileSize(attachment.size)}
+                      </AttachmentDescription>
+                    </AttachmentContent>
+                  </Attachment>
+                ))}
+              </AttachmentGroup>
+            )}
+            {message.content && (
+              <Bubble variant="secondary" align="end" className="max-w-[85%]">
+                <BubbleContent className="px-3.5 py-2.5 text-foreground">
+                  {message.content}
+                </BubbleContent>
+              </Bubble>
+            )}
           </MessageContent>
         </Message>
       )

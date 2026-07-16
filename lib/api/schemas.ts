@@ -551,6 +551,17 @@ export const ChatMessageSchema = z.object({
   title: z.string().optional(),
   timestamp: z.string(),
   tokens: z.number().optional(),
+  attachments: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        path: z.string(),
+        size: z.number(),
+        type: z.string(),
+      }),
+    )
+    .optional(),
   usage: z
     .object({
       input: z.number(),

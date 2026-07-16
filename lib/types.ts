@@ -229,6 +229,13 @@ export interface ChatMessage {
   title?: string
   timestamp: string
   tokens?: number
+  attachments?: Array<{
+    id: string
+    name: string
+    path: string
+    size: number
+    type: string
+  }>
   usage?: {
     input: number
     output: number
