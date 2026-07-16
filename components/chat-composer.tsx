@@ -49,6 +49,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import type { DraftAttachment } from '@/components/use-chat-attachments'
+import { ImageAttachmentPreview, isImageAttachment } from '@/components/image-attachment-preview'
 import type { GlobalModel, GlobalModelProvider, GlobalPromptTemplate } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -257,8 +258,23 @@ export function ChatComposer({
                   size="xs"
                   className="rounded-none"
                 >
-                  <AttachmentMedia className="rounded-none">
-                    {attachmentIcon(attachment.file)}
+                  <AttachmentMedia
+                    variant={
+                      isImageAttachment(attachment.file.name, attachment.file.type)
+                        ? 'image'
+                        : 'icon'
+                    }
+                    className="rounded-none"
+                  >
+                    {isImageAttachment(attachment.file.name, attachment.file.type) ? (
+                      <ImageAttachmentPreview
+                        file={attachment.file}
+                        alt={attachment.file.name}
+                        className="size-full"
+                      />
+                    ) : (
+                      attachmentIcon(attachment.file)
+                    )}
                   </AttachmentMedia>
                   <AttachmentContent>
                     <AttachmentTitle title={attachment.file.name}>

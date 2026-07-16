@@ -97,6 +97,7 @@ import type { StreamingMarkdownSnapshot } from '@/lib/markdown/streaming-markdow
 import { errorMessage, showToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { useChatAttachments } from '@/components/use-chat-attachments'
+import { ImageAttachmentPreview, isImageAttachment } from '@/components/image-attachment-preview'
 import { buildPromptWithAttachments } from '@/lib/chat/attachments'
 
 const EVENT_STREAM_CONNECT_TIMEOUT_MS = 5000
@@ -1622,10 +1623,11 @@ export function ChatView({
                     key={item.message.id}
                     message={item.message}
                     userAvatar={userAvatar}
+                    mediaSessionId={activeSession.id}
                   />
                 )
               })}
-              {isWaiting && <WaitingBubble agentName={activeAgent.name} />}
+              {isWaiting && <WaitingBubble agentAvatar={activeAgent.icon} />}
               {displayMessages.length === 0 && !isWaiting && !streamError && (
                 <EmptyConversationState
                   agentName={activeAgent.name}
@@ -2211,20 +2213,25 @@ function buildDisplayItems(messages: ChatMessage[]): DisplayItem[] {
   return items
 }
 
-function WaitingBubble({ agentName }: { agentName: string }) {
+function WaitingBubble({ agentAvatar }: { agentAvatar?: string }) {
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center gap-1.5">
-        <Bot className="size-3 text-accent" />
-        <Label>{agentName}</Label>
-      </div>
-      <Marker role="status" aria-live="polite" className="min-h-5 w-fit gap-1.5 font-mono text-xs">
-        <MarkerIcon className="flex size-3 items-center justify-center text-accent">
-          <LoaderCircle className="size-3 animate-spin" />
-        </MarkerIcon>
-        <MarkerContent>Thinking</MarkerContent>
-      </Marker>
-    </div>
+    <Message>
+      <MessageAvatar className="bg-transparent">
+        <ChatAvatar preset={agentAvatar} role="assistant" />
+      </MessageAvatar>
+      <MessageContent>
+        <Marker
+          role="status"
+          aria-live="polite"
+          className="min-h-5 w-fit gap-1.5 font-mono text-xs"
+        >
+          <MarkerIcon className="flex size-3 items-center justify-center text-accent">
+            <LoaderCircle className="size-3 animate-spin" />
+          </MarkerIcon>
+          <MarkerContent>Thinking</MarkerContent>
+        </Marker>
+      </MessageContent>
+    </Message>
   )
 }
 
@@ -2798,9 +2805,11 @@ function sameAttachments(left: ChatMessage['attachments'], right: ChatMessage['a
 const StandaloneMessage = memo(function StandaloneMessage({
   message,
   userAvatar,
+  mediaSessionId,
 }: {
   message: ChatMessage
   userAvatar?: string
+  mediaSessionId?: string
 }) {
   switch (message.type) {
     case 'user':
@@ -2812,19 +2821,39 @@ const StandaloneMessage = memo(function StandaloneMessage({
           <MessageContent className="items-end gap-1 pr-2">
             {message.attachments && message.attachments.length > 0 && (
               <AttachmentGroup className="max-w-[85%] justify-end">
-                {message.attachments.map((attachment) => (
-                  <Attachment key={attachment.id} state="done" size="xs" className="rounded-none">
-                    <AttachmentMedia className="rounded-none">
-                      <FileIcon />
-                    </AttachmentMedia>
-                    <AttachmentContent>
-                      <AttachmentTitle title={attachment.name}>{attachment.name}</AttachmentTitle>
-                      <AttachmentDescription title={attachment.path}>
-                        {formatFileSize(attachment.size)}
-                      </AttachmentDescription>
-                    </AttachmentContent>
-                  </Attachment>
-                ))}
+                {message.attachments.map((attachment) => {
+                  const isImage = isImageAttachment(attachment.name, attachment.type)
+                  return isImage && mediaSessionId ? (
+                    <figure key={attachment.id} className="w-fit max-w-full min-w-0">
+                      <ImageAttachmentPreview
+                        src={`/api/media?sessionId=${encodeURIComponent(mediaSessionId)}&path=${encodeURIComponent(attachment.path)}`}
+                        alt={attachment.name}
+                        className="inline-block max-w-full border border-border bg-muted"
+                        imageClassName="h-auto max-h-80 w-auto max-w-full object-contain"
+                      />
+                      <figcaption className="mt-1 flex min-w-0 items-center justify-between gap-2 px-0.5 text-[10px] leading-4 text-muted-foreground">
+                        <span className="truncate" title={attachment.name}>
+                          {attachment.name}
+                        </span>
+                        <span className="shrink-0 font-mono">
+                          {formatFileSize(attachment.size)}
+                        </span>
+                      </figcaption>
+                    </figure>
+                  ) : (
+                    <Attachment key={attachment.id} state="done" size="xs" className="rounded-none">
+                      <AttachmentMedia className="rounded-none">
+                        <FileIcon />
+                      </AttachmentMedia>
+                      <AttachmentContent>
+                        <AttachmentTitle title={attachment.name}>{attachment.name}</AttachmentTitle>
+                        <AttachmentDescription title={attachment.path}>
+                          {formatFileSize(attachment.size)}
+                        </AttachmentDescription>
+                      </AttachmentContent>
+                    </Attachment>
+                  )
+                })}
               </AttachmentGroup>
             )}
             {message.content && (
