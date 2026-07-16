@@ -11,6 +11,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "app:dev": "electron .",
+    "app:icons": "bash scripts/generate-app-icons.sh",
     "app:prepare": "node scripts/prepare-electron.mjs",
     "app:rebuild": "node scripts/rebuild-electron-native.mjs",
     "app:bundle": "pnpm build && pnpm app:prepare && pnpm app:rebuild",
