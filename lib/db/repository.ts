@@ -13,6 +13,7 @@ import type {
   GlobalSkill,
   StudioExtension,
   SessionTreeNode,
+  ThinkingLevel,
 } from '@/lib/types'
 import { piStudioDataDir } from '@/lib/runtime/paths'
 import { ensureStoredPrompt, removeStoredPrompt, writeStoredPrompt } from '@/lib/prompts/store'
@@ -42,9 +43,38 @@ import {
   promptTags,
   sessions,
   sessionTreeNodes,
+  scheduledTasks,
   skillTags,
   studioExtensions,
 } from './schema'
+
+export type ScheduledTaskScheduleType = 'interval' | 'weekly' | 'once' | 'cron'
+export type ScheduledTaskRunStatus = 'idle' | 'queued' | 'running' | 'completed' | 'failed'
+
+export interface ScheduledTask {
+  id: string
+  name: string
+  agentId: string
+  sessionId?: string
+  sessionName?: string
+  prompt: string
+  providerId?: string
+  modelId?: string
+  thinkingLevel?: ThinkingLevel
+  scheduleType: ScheduledTaskScheduleType
+  intervalMinutes?: number
+  weekday?: number
+  timeOfDay?: string
+  scheduledAt?: string
+  cronExpression?: string
+  timezone: string
+  enabled: boolean
+  lastRunAt?: string
+  lastRunStatus: ScheduledTaskRunStatus
+  nextRunAt?: string
+  createdAt: string
+  updatedAt: string
+}
 
 type Row = Record<string, unknown>
 
@@ -811,6 +841,150 @@ export function getPackageCatalogItem(id: string) {
   const item = db.select().from(packages).where(eq(packages.id, id)).get()
   if (!item) return null
   return listPackages().gallery.find((pkg) => pkg.id === id) ?? null
+}
+
+function mapScheduledTask(task: typeof scheduledTasks.$inferSelect): ScheduledTask {
+  return {
+    id: task.id,
+    name: task.name,
+    agentId: task.agentId,
+    sessionId: task.sessionId ?? undefined,
+    sessionName: task.sessionName ?? undefined,
+    prompt: task.prompt,
+    providerId: task.providerId ?? undefined,
+    modelId: task.modelId ?? undefined,
+    thinkingLevel: (task.thinkingLevel as ThinkingLevel | null) ?? undefined,
+    scheduleType: task.scheduleType as ScheduledTaskScheduleType,
+    intervalMinutes: task.intervalMinutes ?? undefined,
+    weekday: task.weekday ?? undefined,
+    timeOfDay: task.timeOfDay ?? undefined,
+    scheduledAt: task.scheduledAt ?? undefined,
+    cronExpression: task.cronExpression ?? undefined,
+    timezone: task.timezone,
+    enabled: task.enabled,
+    lastRunAt: task.lastRunAt ?? undefined,
+    lastRunStatus: task.lastRunStatus as ScheduledTaskRunStatus,
+    nextRunAt: task.nextRunAt ?? undefined,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt,
+  }
+}
+
+export function listScheduledTasks(): ScheduledTask[] {
+  return db
+    .select()
+    .from(scheduledTasks)
+    .all()
+    .map(mapScheduledTask)
+    .sort((left, right) => (left.nextRunAt ?? '').localeCompare(right.nextRunAt ?? ''))
+}
+
+export function getScheduledTask(id: string): ScheduledTask | null {
+  const task = db.select().from(scheduledTasks).where(eq(scheduledTasks.id, id)).get()
+  return task ? mapScheduledTask(task) : null
+}
+
+export function createScheduledTask(
+  input: Omit<
+    ScheduledTask,
+    'id' | 'sessionId' | 'sessionName' | 'lastRunAt' | 'lastRunStatus' | 'createdAt' | 'updatedAt'
+  > & { sessionId?: string | null; sessionName?: string | null },
+) {
+  if (!getAgent(input.agentId)) return null
+  if (input.sessionId && getSession(input.sessionId)?.agentId !== input.agentId) return null
+  const id = `task-${randomUUID()}`
+  const at = now()
+  db.insert(scheduledTasks)
+    .values({
+      id,
+      name: input.name,
+      agentId: input.agentId,
+      sessionId: input.sessionId,
+      sessionName: input.sessionId ? null : input.sessionName,
+      prompt: input.prompt,
+      providerId: input.providerId,
+      modelId: input.modelId,
+      thinkingLevel: input.thinkingLevel,
+      scheduleType: input.scheduleType,
+      intervalMinutes: input.intervalMinutes,
+      weekday: input.weekday,
+      timeOfDay: input.timeOfDay,
+      scheduledAt: input.scheduledAt,
+      cronExpression: input.cronExpression,
+      timezone: input.timezone,
+      enabled: input.enabled,
+      nextRunAt: input.nextRunAt,
+      createdAt: at,
+      updatedAt: at,
+    })
+    .run()
+  return getScheduledTask(id)
+}
+
+export function updateScheduledTask(
+  id: string,
+  input: Partial<
+    Omit<
+      ScheduledTask,
+      | 'id'
+      | 'sessionId'
+      | 'sessionName'
+      | 'lastRunAt'
+      | 'lastRunStatus'
+      | 'nextRunAt'
+      | 'createdAt'
+      | 'updatedAt'
+    >
+  > & { sessionId?: string | null; sessionName?: string | null; nextRunAt?: string | null },
+) {
+  const existing = getScheduledTask(id)
+  if (!existing) return null
+  const agentId = input.agentId ?? existing.agentId
+  if (input.sessionId && getSession(input.sessionId)?.agentId !== agentId) return null
+  db.update(scheduledTasks)
+    .set({
+      name: input.name,
+      agentId: input.agentId,
+      sessionId: input.sessionId,
+      sessionName: input.sessionId ? null : input.sessionName,
+      prompt: input.prompt,
+      providerId: input.providerId,
+      modelId: input.modelId,
+      thinkingLevel: input.thinkingLevel,
+      scheduleType: input.scheduleType,
+      intervalMinutes: input.intervalMinutes,
+      weekday: input.weekday,
+      timeOfDay: input.timeOfDay,
+      scheduledAt: input.scheduledAt,
+      cronExpression: input.cronExpression,
+      timezone: input.timezone,
+      enabled: input.enabled,
+      nextRunAt: input.nextRunAt,
+      updatedAt: now(),
+    })
+    .where(eq(scheduledTasks.id, id))
+    .run()
+  return getScheduledTask(id)
+}
+
+export function updateScheduledTaskExecution(
+  id: string,
+  input: {
+    sessionId?: string
+    lastRunAt?: string
+    lastRunStatus?: ScheduledTaskRunStatus
+    nextRunAt?: string | null
+  },
+) {
+  db.update(scheduledTasks)
+    .set({ ...input, updatedAt: now() })
+    .where(eq(scheduledTasks.id, id))
+    .run()
+  return getScheduledTask(id)
+}
+
+export function deleteScheduledTask(id: string) {
+  db.delete(scheduledTasks).where(eq(scheduledTasks.id, id)).run()
 }
 
 export function listSessions(filter?: { agentId?: string }): AgentSessionSummary[] {

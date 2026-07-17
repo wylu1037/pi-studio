@@ -4,9 +4,9 @@ import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
 import { streamSSE } from 'hono/streaming'
-import { abortRun as abortRegisteredRun, prepareRun, unregisterRun } from '@/lib/chat/run-registry'
+import { abortRun as abortRegisteredRun, prepareRun } from '@/lib/chat/run-registry'
 import { getRunCoordinator, RUN_TERMINAL_EVENT } from '@/lib/chat/run-coordinator'
-import { defaultPiSessionDir, runPiCli } from '@/lib/chat/pi-adapter'
+import { startRunExecution } from '@/lib/chat/run-execution'
 import { runNpx } from '@/lib/npx'
 import { loadPiPackageCatalog } from '@/lib/packages/pi-dev-gallery'
 import { materializeInstalledSkill, removeStoredSkill, studioRootDir } from '@/lib/skills/store'
@@ -15,15 +15,16 @@ import { clearApplicationLogs, readApplicationLogs } from '@/lib/runtime/log-fil
 import { logger } from '@/lib/runtime/logger'
 import { piStudioDataDir } from '@/lib/runtime/paths'
 import {
-  appendRunEvent,
   createAgent,
   createForkedSessionRecord,
   createRun,
+  createScheduledTask,
   createSession,
   deleteAgent,
   deleteModel,
   deletePrompt,
   deleteProvider,
+  deleteScheduledTask,
   duplicateAgent,
   duplicateSession,
   getAgent,
@@ -36,6 +37,7 @@ import {
   listAgents,
   listPrompts,
   listProviders,
+  listScheduledTasks,
   listSessionMessages,
   listSessions,
   listSkills,
@@ -45,6 +47,7 @@ import {
   testProviderConnection,
   updateAgent,
   updateAgentResources,
+  updateScheduledTask,
   updateSession,
   upsertSkill,
   upsertModel,
@@ -92,6 +95,8 @@ import {
   ProjectTrustInputSchema,
   ProjectTrustStateSchema,
   RunSchema,
+  ScheduledTaskInputSchema,
+  ScheduledTaskSchema,
   SessionSchema,
   SessionExtensionSnapshotSchema,
   UpdateSessionSchema,
@@ -105,6 +110,7 @@ import {
   StartRunSchema,
   ToggleExtensionSchema,
 } from './schemas'
+import { executeScheduledTask, nextRunAt } from '@/lib/scheduler/task-scheduler'
 
 const json = <T extends z.ZodTypeAny>(schema: T) => ({
   content: {
@@ -468,6 +474,22 @@ api.openapi(
     return c.json({ level: settings.logLevel, logDirectory: piStudioDataDir() })
   },
 )
+
+function scheduledTaskRunConfigError(input: {
+  agentId: string
+  providerId?: string
+  modelId?: string
+}) {
+  if (!input.providerId && !input.modelId) return null
+  const config = resolveAgentRunConfig(input.agentId, input.providerId)
+  if (config?.provider?.id !== input.providerId) {
+    return 'Selected provider is not enabled for this agent.'
+  }
+  if (!config.provider.models.some((model) => model.id === input.modelId)) {
+    return 'Selected model is not enabled for this agent.'
+  }
+  return null
+}
 
 api.openapi(
   createRoute({
@@ -1659,6 +1681,109 @@ api.openapi(
 
 api.openapi(
   createRoute({
+    method: 'get',
+    path: '/scheduled-tasks',
+    tags: ['Scheduled tasks'],
+    responses: { 200: json(z.array(ScheduledTaskSchema)) },
+  }),
+  (c) => c.json(listScheduledTasks()),
+)
+
+api.openapi(
+  createRoute({
+    method: 'post',
+    path: '/scheduled-tasks',
+    tags: ['Scheduled tasks'],
+    request: { body: json(ScheduledTaskInputSchema) },
+    responses: { 200: json(ScheduledTaskSchema), 400: json(ErrorSchema) },
+  }),
+  (c) => {
+    const input = c.req.valid('json')
+    const selectedSession = input.sessionId ? getSession(input.sessionId) : null
+    if (input.sessionId && selectedSession?.agentId !== input.agentId) {
+      return c.json({ error: 'Selected session does not belong to this agent.' }, 400)
+    }
+    const runConfigError = scheduledTaskRunConfigError(input)
+    if (runConfigError) return c.json({ error: runConfigError }, 400)
+    const task = createScheduledTask({
+      ...input,
+      nextRunAt: input.enabled ? (nextRunAt(input) ?? undefined) : undefined,
+    })
+    if (!task) return c.json({ error: 'Agent not found.' }, 400)
+    return c.json(task)
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/scheduled-tasks/{id}',
+    tags: ['Scheduled tasks'],
+    request: {
+      params: z.object({ id: z.string() }),
+      body: json(ScheduledTaskInputSchema),
+    },
+    responses: {
+      200: json(ScheduledTaskSchema),
+      400: json(ErrorSchema),
+      404: json(ErrorSchema),
+    },
+  }),
+  (c) => {
+    const input = c.req.valid('json')
+    const selectedSession = input.sessionId ? getSession(input.sessionId) : null
+    if (input.sessionId && selectedSession?.agentId !== input.agentId) {
+      return c.json({ error: 'Selected session does not belong to this agent.' }, 400)
+    }
+    const runConfigError = scheduledTaskRunConfigError(input)
+    if (runConfigError) return c.json({ error: runConfigError }, 400)
+    const task = updateScheduledTask(c.req.valid('param').id, {
+      ...input,
+      nextRunAt: input.enabled ? nextRunAt(input) : null,
+    })
+    if (!task) return c.json({ error: 'Scheduled task not found.' }, 404)
+    return c.json(task)
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/scheduled-tasks/{id}',
+    tags: ['Scheduled tasks'],
+    request: { params: z.object({ id: z.string() }) },
+    responses: { 200: json(z.object({ ok: z.boolean() })) },
+  }),
+  (c) => {
+    deleteScheduledTask(c.req.valid('param').id)
+    return c.json({ ok: true })
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'post',
+    path: '/scheduled-tasks/{id}/run',
+    tags: ['Scheduled tasks'],
+    request: { params: z.object({ id: z.string() }) },
+    responses: {
+      200: json(z.object({ runId: z.string(), sessionId: z.string() })),
+      404: json(ErrorSchema),
+      409: json(ErrorSchema),
+    },
+  }),
+  async (c) => {
+    try {
+      return c.json(await executeScheduledTask(c.req.valid('param').id))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to run scheduled task.'
+      return c.json({ error: message }, /not found/i.test(message) ? 404 : 409)
+    }
+  },
+)
+
+api.openapi(
+  createRoute({
     method: 'post',
     path: '/sessions',
     tags: ['Sessions'],
@@ -1964,130 +2089,7 @@ api.get('/runs/:id/events', (c) => {
   })
 })
 
-function startRunExecution(runId: string) {
-  const coordinator = getRunCoordinator()
-  const handle = coordinator.start(runId, async (context) => {
-    const run = getRun(runId)
-    const config = run ? resolveAgentRunConfig(run.agentId, run.providerId) : null
-    const publish = (event: string, payload: unknown) => {
-      const envelope = context.publish(event, payload)
-      appendRunEvent(runId, event, withEventSequence(payload, envelope.sequence))
-      return envelope
-    }
-
-    context.onAbort(() => abortRegisteredRun(runId))
-
-    if (!run || !config) {
-      const message = run ? 'Agent not found' : 'Run not found'
-      if (run) markRun(runId, 'failed', message)
-      publish('error', { message })
-      publish('done', { runId, status: 'failed' })
-      context.fail(message)
-      return
-    }
-
-    if (context.isAbortRequested()) {
-      markRun(runId, 'aborted')
-      publish('done', { runId, status: 'aborted' })
-      context.abort()
-      return
-    }
-
-    const provider = piProviderName(config.provider?.api)
-    try {
-      publish('connected', { runId })
-      markRun(runId, 'running')
-      publish('started', { runId })
-
-      for await (const event of runPiCli({
-        agentId: config.agent.id,
-        agentName: config.agent.name,
-        runId,
-        sessionId: run.sessionId,
-        sessionDir: defaultPiSessionDir(),
-        sessionFile: getSession(run.sessionId)?.filePath,
-        cwd: run.cwd,
-        prompt: run.prompt,
-        provider,
-        providerConfig: config.provider ?? undefined,
-        providerConfigs: config.providers ?? [],
-        apiKey: config.provider?.apiKey ?? undefined,
-        baseUrl: config.provider?.baseUrl ?? undefined,
-        model: run.modelId ?? config.agent.defaultModelId,
-        thinkingLevel: run.thinkingLevel,
-        extensions: config.extensions.map((extension) => ({
-          id: extension.id,
-          path: extension.path,
-        })),
-        skills: config.skills.map((skill) => ({
-          name: skill.name,
-          path: skill.path,
-        })),
-        prompts: config.prompts.map((prompt) => prompt.path),
-        packagePaths: config.packagePaths,
-        mcpConfigs: (config.mcpConfigs ?? []).map((mcp) => ({
-          id: mcp.id,
-          name: mcp.name,
-          description: mcp.description,
-          command: mcp.command,
-          args: mcp.args,
-          env: mcp.env,
-        })),
-      })) {
-        if (event.type === 'error') throw new Error(event.message)
-        if (event.type === 'done') {
-          appendRunEvent(runId, 'process_done', event)
-          if (event.exitCode && event.exitCode !== 0) {
-            throw new Error(`pi exited with code ${event.exitCode}`)
-          }
-          continue
-        }
-        publish(event.type, event)
-      }
-
-      if (context.isAbortRequested() || getRun(runId)?.status === 'aborted') {
-        markRun(runId, 'aborted')
-        publish('done', { runId, status: 'aborted' })
-        context.abort()
-        return
-      }
-
-      markRun(runId, 'completed')
-      publish('done', { runId, status: 'completed' })
-      context.complete()
-    } catch (error) {
-      if (context.isAbortRequested() || getRun(runId)?.status === 'aborted') {
-        markRun(runId, 'aborted')
-        publish('done', { runId, status: 'aborted' })
-        context.abort()
-        return
-      }
-
-      const message = error instanceof Error ? error.message : 'Unknown pi error'
-      markRun(runId, 'failed', message)
-      publish('error', { message })
-      publish('done', { runId, status: 'failed' })
-      context.fail(error)
-    }
-  })
-  void handle.completion.finally(() => unregisterRun(runId))
-}
-
 function parseLastEventId(value?: string) {
   const sequence = Number(value ?? 0)
   return Number.isInteger(sequence) && sequence > 0 ? sequence : 0
-}
-
-function withEventSequence(payload: unknown, sequence: number) {
-  return payload && typeof payload === 'object'
-    ? { ...payload, sequence }
-    : { value: payload, sequence }
-}
-
-function piProviderName(api?: string | null) {
-  if (!api) return undefined
-  if (api.startsWith('anthropic')) return 'anthropic'
-  if (api.startsWith('google')) return 'google'
-  if (api.startsWith('openai')) return 'openai'
-  return undefined
 }

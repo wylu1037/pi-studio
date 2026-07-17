@@ -35,7 +35,7 @@ export function BracketButton({
       title={title}
       disabled={disabled}
       className={cn(
-        'inline-flex items-center gap-1.5 border border-border-strong bg-card px-3 py-1.5 font-mono text-xs tracking-wide text-foreground transition-colors',
+        'inline-flex shrink-0 items-center gap-1.5 border border-border-strong bg-card px-3 py-1.5 font-mono text-xs tracking-wide whitespace-nowrap text-foreground transition-colors',
         'hover:bg-muted disabled:pointer-events-none disabled:opacity-40',
         active && 'border-primary bg-primary text-primary-foreground',
         className,
@@ -123,12 +123,18 @@ export function Panel({
   children,
   className,
   as: Comp = 'div',
+  onSubmit,
 }: {
   children: React.ReactNode
   className?: string
   as?: React.ElementType
+  onSubmit?: React.FormEventHandler<HTMLFormElement>
 }) {
-  return <Comp className={cn('border border-border bg-card', className)}>{children}</Comp>
+  return (
+    <Comp className={cn('border border-border bg-card', className)} onSubmit={onSubmit}>
+      {children}
+    </Comp>
+  )
 }
 
 export function PanelHeader({

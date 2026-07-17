@@ -43,6 +43,34 @@
       "when": 1784031922696,
       "tag": "0005_green_human_torch",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1784293200000,
+      "tag": "0006_scheduled_tasks",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1784296800000,
+      "tag": "0007_scheduled_task_cron",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1784300400000,
+      "tag": "0008_scheduled_task_session_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1784304000000,
+      "tag": "0009_scheduled_task_run_config",
+      "breakpoints": true
     }
   ]
 }

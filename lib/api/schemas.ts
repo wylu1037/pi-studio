@@ -1,4 +1,6 @@
 import { z } from '@hono/zod-openapi'
+import { isCronExpression } from '@/lib/scheduler/cron'
+import { isSupportedTimeZone } from '@/lib/scheduler/timezones'
 
 export const ErrorSchema = z.object({
   error: z.string(),
@@ -528,6 +530,97 @@ export const UpdateSessionSchema = z.object({
   name: z.string().trim().min(1),
   cwd: z.string().trim().min(1),
 })
+
+export const ScheduledTaskSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  agentId: z.string(),
+  sessionId: z.string().optional(),
+  sessionName: z.string().optional(),
+  prompt: z.string(),
+  providerId: z.string().optional(),
+  modelId: z.string().optional(),
+  thinkingLevel: ThinkingLevelSchema.optional(),
+  scheduleType: z.enum(['interval', 'weekly', 'once', 'cron']),
+  intervalMinutes: z.number().int().positive().optional(),
+  weekday: z.number().int().min(0).max(6).optional(),
+  timeOfDay: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+    .optional(),
+  scheduledAt: z.string().datetime().optional(),
+  cronExpression: z.string().optional(),
+  timezone: z.string(),
+  enabled: z.boolean(),
+  lastRunAt: z.string().optional(),
+  lastRunStatus: z.enum(['idle', 'queued', 'running', 'completed', 'failed']),
+  nextRunAt: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+})
+
+export const ScheduledTaskInputSchema = z
+  .object({
+    name: z.string().trim().min(1),
+    agentId: z.string().min(1),
+    sessionId: z.string().min(1).nullable().optional(),
+    sessionName: z.string().trim().max(200).nullable().optional(),
+    prompt: z.string().trim().min(1),
+    providerId: z.string().min(1).optional(),
+    modelId: z.string().min(1).optional(),
+    thinkingLevel: ThinkingLevelSchema.optional(),
+    scheduleType: z.enum(['interval', 'weekly', 'once', 'cron']),
+    intervalMinutes: z.number().int().positive().optional(),
+    weekday: z.number().int().min(0).max(6).optional(),
+    timeOfDay: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+      .optional(),
+    scheduledAt: z.string().datetime().optional(),
+    cronExpression: z.string().trim().optional(),
+    timezone: z
+      .string()
+      .min(1)
+      .refine(isSupportedTimeZone, 'Use a valid IANA time zone.')
+      .default('Asia/Shanghai'),
+    enabled: z.boolean().default(true),
+  })
+  .superRefine((value, context) => {
+    if (Boolean(value.providerId) !== Boolean(value.modelId)) {
+      context.addIssue({
+        code: 'custom',
+        path: [value.providerId ? 'modelId' : 'providerId'],
+        message: 'Provider and model must be selected together.',
+      })
+    }
+    if (value.scheduleType === 'interval' && !value.intervalMinutes) {
+      context.addIssue({
+        code: 'custom',
+        path: ['intervalMinutes'],
+        message: 'Interval is required.',
+      })
+    }
+    if (value.scheduleType === 'weekly' && (value.weekday == null || !value.timeOfDay)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['timeOfDay'],
+        message: 'Weekday and time are required.',
+      })
+    }
+    if (value.scheduleType === 'once' && !value.scheduledAt) {
+      context.addIssue({ code: 'custom', path: ['scheduledAt'], message: 'Run time is required.' })
+    }
+    if (
+      value.scheduleType === 'cron' &&
+      (!value.cronExpression || !isCronExpression(value.cronExpression))
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['cronExpression'],
+        message: 'Use a valid five-field cron expression.',
+      })
+    }
+  })
 
 export const AssignToAgentSchema = z.object({
   agentId: z.string(),

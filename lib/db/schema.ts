@@ -381,6 +381,39 @@ export const chatRunEvents = sqliteTable(
   (table) => [index('chat_run_events_run_idx').on(table.runId)],
 )
 
+export const scheduledTasks = sqliteTable(
+  'scheduled_tasks',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    sessionId: text('session_id').references(() => sessions.id, { onDelete: 'set null' }),
+    sessionName: text('session_name'),
+    prompt: text('prompt').notNull(),
+    providerId: text('provider_id'),
+    modelId: text('model_id'),
+    thinkingLevel: text('thinking_level'),
+    scheduleType: text('schedule_type').notNull(),
+    intervalMinutes: integer('interval_minutes'),
+    weekday: integer('weekday'),
+    timeOfDay: text('time_of_day'),
+    scheduledAt: text('scheduled_at'),
+    cronExpression: text('cron_expression'),
+    timezone: text('timezone').notNull().default('Asia/Shanghai'),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    lastRunAt: text('last_run_at'),
+    lastRunStatus: text('last_run_status').notNull().default('idle'),
+    nextRunAt: text('next_run_at'),
+    ...timestamps,
+  },
+  (table) => [
+    index('scheduled_tasks_agent_idx').on(table.agentId),
+    index('scheduled_tasks_next_run_idx').on(table.nextRunAt),
+  ],
+)
+
 export const agentsRelations = relations(agents, ({ many }) => ({
   tags: many(agentTags),
   extensions: many(agentExtensions),

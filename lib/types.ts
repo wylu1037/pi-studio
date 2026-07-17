@@ -202,6 +202,34 @@ export interface AgentSessionSummary {
   tags: string[]
 }
 
+export type ScheduledTaskScheduleType = 'interval' | 'weekly' | 'once' | 'cron'
+export type ScheduledTaskRunStatus = 'idle' | 'queued' | 'running' | 'completed' | 'failed'
+
+export interface ScheduledTask {
+  id: string
+  name: string
+  agentId: string
+  sessionId?: string
+  sessionName?: string
+  prompt: string
+  providerId?: string
+  modelId?: string
+  thinkingLevel?: ThinkingLevel
+  scheduleType: ScheduledTaskScheduleType
+  intervalMinutes?: number
+  weekday?: number
+  timeOfDay?: string
+  scheduledAt?: string
+  cronExpression?: string
+  timezone: string
+  enabled: boolean
+  lastRunAt?: string
+  lastRunStatus: ScheduledTaskRunStatus
+  nextRunAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export type TreeNodeType =
   'message' | 'model_change' | 'thinking_level_change' | 'compaction' | 'branch_summary' | 'label'
 

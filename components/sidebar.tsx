@@ -13,6 +13,7 @@ import {
   Cpu,
   FileKey2,
   Settings,
+  CalendarClock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -20,6 +21,7 @@ const nav = [
   { href: '/', label: 'Agents', icon: Bot },
   { href: '/chat', label: 'Chat', icon: MessageSquare },
   { href: '/sessions', label: 'Sessions', icon: History },
+  { href: '/scheduled-tasks', label: 'Schedule', icon: CalendarClock },
   { href: '/packages', label: 'Packages', icon: Package },
   { href: '/extensions', label: 'Extensions', icon: Puzzle },
   { href: '/skills', label: 'Skills', icon: Sparkles },

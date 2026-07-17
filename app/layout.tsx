@@ -4,6 +4,7 @@ import { Sidebar } from '@/components/sidebar'
 import { QueryProvider } from '@/components/query-provider'
 import { ToastHost } from '@/components/toast-host'
 import { getPiVersionLabel } from '@/lib/pi-version'
+import { ensureTaskScheduler } from '@/lib/scheduler/task-scheduler'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -23,6 +24,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  ensureTaskScheduler()
   const piVersion = getPiVersionLabel()
 
   return (
