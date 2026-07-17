@@ -10,6 +10,10 @@ import { defaultPiSessionDir, runPiCli } from '@/lib/chat/pi-adapter'
 import { runNpx } from '@/lib/npx'
 import { loadPiPackageCatalog } from '@/lib/packages/pi-dev-gallery'
 import { materializeInstalledSkill, removeStoredSkill, studioRootDir } from '@/lib/skills/store'
+import { LOG_LEVELS, getAppSettings, updateAppSettings } from '@/lib/runtime/app-settings'
+import { clearApplicationLogs, readApplicationLogs } from '@/lib/runtime/log-files'
+import { logger } from '@/lib/runtime/logger'
+import { piStudioDataDir } from '@/lib/runtime/paths'
 import {
   appendRunEvent,
   createAgent,
@@ -337,7 +341,7 @@ async function fetchProviderModelCatalog(providerId: string) {
 }
 
 api.onError((error, c) => {
-  console.error(error)
+  logger.error(error)
   return c.json(
     {
       error: error.message,
@@ -381,6 +385,39 @@ api.openapi(
   },
 )
 
+const LogFileSchema = z.object({
+  name: z.enum(['server.log', 'main.log']),
+  path: z.string(),
+  size: z.number(),
+  content: z.string(),
+  truncated: z.boolean(),
+})
+
+const LogSnapshotSchema = z.object({
+  files: z.array(LogFileSchema),
+  totalSize: z.number(),
+})
+
+api.openapi(
+  createRoute({
+    method: 'get',
+    path: '/settings/logging/output',
+    tags: ['System'],
+    responses: { 200: json(LogSnapshotSchema) },
+  }),
+  async (c) => c.json(await readApplicationLogs()),
+)
+
+api.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/settings/logging/output',
+    tags: ['System'],
+    responses: { 200: json(z.object({ cleared: z.number() })) },
+  }),
+  async (c) => c.json(await clearApplicationLogs()),
+)
+
 api.openapi(
   createRoute({
     method: 'get',
@@ -400,6 +437,36 @@ api.openapi(
     responses: { 200: json(z.object({ ok: z.boolean() })) },
   }),
   (c) => c.json({ ok: true }),
+)
+
+const LoggingSettingsSchema = z.object({
+  level: z.enum(LOG_LEVELS),
+  logDirectory: z.string(),
+})
+
+api.openapi(
+  createRoute({
+    method: 'get',
+    path: '/settings/logging',
+    tags: ['System'],
+    responses: { 200: json(LoggingSettingsSchema) },
+  }),
+  (c) => c.json({ level: getAppSettings().logLevel, logDirectory: piStudioDataDir() }),
+)
+
+api.openapi(
+  createRoute({
+    method: 'put',
+    path: '/settings/logging',
+    tags: ['System'],
+    request: { body: json(z.object({ level: z.enum(LOG_LEVELS) })) },
+    responses: { 200: json(LoggingSettingsSchema) },
+  }),
+  (c) => {
+    const settings = updateAppSettings({ logLevel: c.req.valid('json').level })
+    logger.info(`Log level changed to ${settings.logLevel}.`)
+    return c.json({ level: settings.logLevel, logDirectory: piStudioDataDir() })
+  },
 )
 
 api.openapi(

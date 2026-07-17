@@ -4,10 +4,11 @@ import { dirname, join, resolve } from 'node:path'
 import { defaultPiSessionDir } from '@/lib/chat/pi-adapter'
 import { databasePath, sqlite } from '@/lib/db/client'
 import { studioPromptsDir } from '@/lib/prompts/store'
+import { applicationLogPaths } from '@/lib/runtime/log-files'
 import { skillSourcePath, studioSkillsDir } from '@/lib/skills/store'
 
 export type StorageEntry = {
-  id: 'database' | 'attachments' | 'skills' | 'prompts' | 'sessions'
+  id: 'database' | 'attachments' | 'skills' | 'prompts' | 'sessions' | 'logs'
   label: string
   description: string
   paths: string[]
@@ -70,14 +71,17 @@ export async function getStorageStats(): Promise<StorageStats> {
   ]
   const skillPaths = skills.map((skill) => skillSourcePath(skill))
   const promptPaths = prompts.map(({ path }) => path)
+  const logPaths = applicationLogPaths()
 
-  const [databaseFiles, attachments, skillFiles, promptFiles, sessionFiles] = await Promise.all([
-    aggregatePaths([databasePath, `${databasePath}-wal`, `${databasePath}-shm`]),
-    aggregatePaths(attachmentPaths),
-    aggregatePaths(skillPaths),
-    aggregatePaths(promptPaths),
-    aggregatePaths(sessions.map(({ filePath }) => filePath)),
-  ])
+  const [databaseFiles, attachments, skillFiles, promptFiles, sessionFiles, logFiles] =
+    await Promise.all([
+      aggregatePaths([databasePath, `${databasePath}-wal`, `${databasePath}-shm`]),
+      aggregatePaths(attachmentPaths),
+      aggregatePaths(skillPaths),
+      aggregatePaths(promptPaths),
+      aggregatePaths(sessions.map(({ filePath }) => filePath)),
+      aggregatePaths(logPaths),
+    ])
 
   return {
     generatedAt: new Date().toISOString(),
@@ -132,6 +136,15 @@ export async function getStorageStats(): Promise<StorageStats> {
         count: sessions.length,
         countLabel: 'sessions',
         size: sessionFiles.size,
+      },
+      {
+        id: 'logs',
+        label: 'Application logs',
+        description: 'Server and Electron main-process diagnostic output.',
+        paths: logPaths,
+        count: logFiles.count,
+        countLabel: 'files',
+        size: logFiles.size,
       },
     ],
   }

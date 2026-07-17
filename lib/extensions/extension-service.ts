@@ -325,7 +325,7 @@ function templateSource(name: string, template: ExtensionTemplate) {
     return `${header}\nexport default function ${toIdentifier(name)}(pi: ExtensionAPI) {\n  pi.on('tool_call', async (event, ctx) => {\n    if (event.toolName !== 'bash') return\n    const command = String((event.input as { command?: unknown }).command ?? '')\n    if (!command.includes('rm ')) return\n    const allowed = await ctx.ui.confirm('Review command', command)\n    if (!allowed) return { block: true, reason: 'Blocked by ${name}' }\n  })\n}\n`
   }
   if (template === 'lifecycle') {
-    return `${header}\nexport default function ${toIdentifier(name)}(pi: ExtensionAPI) {\n  pi.on('session_start', (_event, ctx) => {\n    ctx.ui.notify('${titleCase(extensionName)} loaded', 'info')\n  })\n\n  pi.on('turn_end', (event) => {\n    console.info('[${name}] turn completed', event)\n  })\n}\n`
+    return `${header}\nexport default function ${toIdentifier(name)}(pi: ExtensionAPI) {\n  let completedTurns = 0\n\n  pi.on('session_start', (_event, ctx) => {\n    ctx.ui.notify('${titleCase(extensionName)} loaded', 'info')\n    ctx.ui.setStatus('${name}', 'Ready')\n  })\n\n  pi.on('turn_start', (event, ctx) => {\n    ctx.ui.setStatus('${name}', \`Turn ${'${event.turnIndex + 1}'} running\`)\n  })\n\n  pi.on('turn_end', (_event, ctx) => {\n    completedTurns += 1\n    ctx.ui.setStatus('${name}', \`Completed turns: ${'${completedTurns}'}\`)\n  })\n}\n`
   }
   if (template === 'context-modifier') {
     return `${header}\nexport default function ${toIdentifier(name)}(pi: ExtensionAPI) {\n  pi.on('before_agent_start', async (event) => ({\n    systemPrompt: \`${'${event.systemPrompt}'}\\n\\nFollow the project-specific guidance from ${name}.\`,\n  }))\n}\n`

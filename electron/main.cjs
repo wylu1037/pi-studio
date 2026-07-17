@@ -1,10 +1,25 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-/* global URL, console, process, require, setTimeout */
+/* global URL, process, require, setTimeout */
 const { app, BrowserWindow, dialog, shell, utilityProcess } = require('electron')
 const { createServer } = require('node:net')
 const { delimiter, join } = require('node:path')
-const { appendFileSync, createWriteStream, existsSync, mkdirSync, readdirSync } = require('node:fs')
+const {
+  appendFileSync,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+} = require('node:fs')
 const http = require('node:http')
+
+const LOG_PRIORITY = {
+  debug: 10,
+  info: 20,
+  warn: 30,
+  error: 40,
+  silent: Number.POSITIVE_INFINITY,
+}
 
 let mainWindow = null
 let serverProcess = null
@@ -13,6 +28,38 @@ let serverUrl = null
 let quitting = false
 
 app.setAppUserModelId('com.pistudio.desktop')
+
+function mainLogLevel() {
+  try {
+    const settings = JSON.parse(
+      readFileSync(join(app.getPath('userData'), 'settings.json'), 'utf8'),
+    )
+    return Object.hasOwn(LOG_PRIORITY, settings.logLevel) ? settings.logLevel : 'info'
+  } catch {
+    return 'info'
+  }
+}
+
+function mainLog(level, ...values) {
+  if (LOG_PRIORITY[level] < LOG_PRIORITY[mainLogLevel()]) return false
+  const message = values
+    .map((value) =>
+      value instanceof Error
+        ? value.stack || value.message
+        : typeof value === 'string'
+          ? value
+          : String(value),
+    )
+    .join(' ')
+  const line = `[pi-studio-main] ${new Date().toISOString()} ${level.toUpperCase()} ${message}\n`
+  process.stderr.write(line)
+  try {
+    appendFileSync(join(app.getPath('userData'), 'main.log'), line)
+  } catch {
+    // The terminal output above remains available if the log file cannot be written.
+  }
+  return true
+}
 
 function executablePath(homeDir) {
   const candidates = [
@@ -99,7 +146,7 @@ async function startProductionServer() {
   const serverLog = join(dataDir, 'server.log')
   mkdirSync(dataDir, { recursive: true })
   mkdirSync(workspaceDir, { recursive: true })
-  serverLogStream = createWriteStream(serverLog, { flags: 'w' })
+  serverLogStream = createWriteStream(serverLog, { flags: 'a' })
 
   serverProcess = utilityProcess.fork(serverPath, [], {
     cwd: workspaceDir,
@@ -119,7 +166,7 @@ async function startProductionServer() {
   serverProcess.stdout?.pipe(serverLogStream, { end: false })
   serverProcess.stderr?.pipe(serverLogStream, { end: false })
   serverProcess.once('exit', (code) => {
-    if (code && !quitting) console.error(`Pi Studio server exited with code ${code}.`)
+    if (code && !quitting) mainLog('error', `Pi Studio server exited with code ${code}.`)
   })
 
   const url = `http://127.0.0.1:${port}`
@@ -182,13 +229,11 @@ app.whenReady().then(async () => {
       : process.env.PI_STUDIO_DEV_URL || 'http://localhost:3000'
     createWindow(serverUrl)
   } catch (error) {
-    console.error(error)
-    const message = error instanceof Error ? error.stack || error.message : String(error)
+    const logged = mainLog('error', error)
     const logPath = join(app.getPath('userData'), 'main.log')
-    appendFileSync(logPath, `${new Date().toISOString()}\n${message}\n\n`)
     dialog.showErrorBox(
       'Pi Studio failed to start',
-      `${error instanceof Error ? error.message : String(error)}\n\nLog: ${logPath}`,
+      `${error instanceof Error ? error.message : String(error)}${logged ? `\n\nLog: ${logPath}` : ''}`,
     )
     app.quit()
   }

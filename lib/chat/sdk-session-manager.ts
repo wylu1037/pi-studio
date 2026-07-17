@@ -11,6 +11,7 @@ import {
 } from '@earendil-works/pi-coding-agent'
 import { registerPiStudioApiProviders } from '@/lib/models/pi-ai'
 import { isProjectTrusted } from '@/lib/extensions/project-trust'
+import { logger } from '@/lib/runtime/logger'
 import { createPiRunEventParser, type PiRunEvent } from './pi-events'
 import {
   disposeExtensionUiBroker,
@@ -244,9 +245,7 @@ export async function getOrCreateSdkSession(input: {
           createdAt: new Date().toISOString(),
         })
       }
-      console.error(
-        `[pi-studio] extension error in ${error.extensionPath} (${error.event}): ${error.error}`,
-      )
+      logger.error(`Extension error in ${error.extensionPath} (${error.event}): ${error.error}`)
     }
     try {
       const broker = getOrCreateExtensionUiBroker(input.studioSessionId)
@@ -256,8 +255,8 @@ export async function getOrCreateSdkSession(input: {
         onError: recordExtensionError,
       })
     } catch (error) {
-      console.error(
-        '[pi-studio] unable to bind session extensions:',
+      logger.error(
+        'Unable to bind session extensions:',
         error instanceof Error ? error.message : error,
       )
     }

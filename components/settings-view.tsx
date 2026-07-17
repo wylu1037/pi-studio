@@ -1,22 +1,51 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import {
   ChatsCircleIcon,
   DatabaseIcon,
   FileTextIcon,
   HardDrivesIcon,
+  ArrowClockwiseIcon,
   MapPinIcon,
   PaperclipIcon,
   PuzzlePieceIcon,
+  TerminalWindowIcon,
+  TrashIcon,
 } from '@phosphor-icons/react'
 import { AvatarPresetPicker } from '@/components/avatar-preset-picker'
 import { ChatAvatar, userAvatarPresets } from '@/components/chat-avatar'
 import { PageHeader, Panel } from '@/components/pi-ui'
+import { Button } from '@/components/ui/button'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Progress } from '@/components/ui/progress'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useProfileSettings } from '@/components/use-profile-settings'
+import { showToast } from '@/lib/toast'
 import type { StorageEntry, StorageStats } from '@/lib/storage/stats'
+
+const LOG_LEVELS = ['debug', 'info', 'warn', 'error', 'silent'] as const
+type LogLevel = (typeof LOG_LEVELS)[number]
+
+type LogSnapshot = {
+  totalSize: number
+  files: Array<{
+    name: 'server.log' | 'main.log'
+    path: string
+    size: number
+    content: string
+    truncated: boolean
+  }>
+}
 
 export function SettingsView({ storageStats }: { storageStats: StorageStats }) {
   const { userAvatar, setUserAvatar } = useProfileSettings()
@@ -31,7 +60,7 @@ export function SettingsView({ storageStats }: { storageStats: StorageStats }) {
             aria-label="Settings sections"
             className="h-auto gap-0 p-0 group-data-horizontal/tabs:h-auto data-[variant=line]:gap-0"
           >
-            {['Profile', 'Storage'].map((tab) => (
+            {['Profile', 'System', 'Storage'].map((tab) => (
               <TabsTrigger
                 key={tab}
                 value={tab}
@@ -65,8 +94,260 @@ export function SettingsView({ storageStats }: { storageStats: StorageStats }) {
           <TabsContent value="Storage" className="w-full">
             <StorageDashboard stats={storageStats} />
           </TabsContent>
+          <TabsContent value="System" className="max-w-4xl">
+            <LoggingSettings />
+          </TabsContent>
         </ScrollArea>
       </Tabs>
+    </div>
+  )
+}
+
+function LoggingSettings() {
+  const [level, setLevel] = useState<LogLevel>('info')
+  const [logDirectory, setLogDirectory] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [logs, setLogs] = useState<LogSnapshot | null>(null)
+  const [refreshingLogs, setRefreshingLogs] = useState(false)
+  const [clearingLogs, setClearingLogs] = useState(false)
+
+  const loadLogs = async () => {
+    setRefreshingLogs(true)
+    try {
+      const response = await fetch('/api/settings/logging/output', { cache: 'no-store' })
+      if (!response.ok) throw new Error('Unable to load application logs.')
+      setLogs((await response.json()) as LogSnapshot)
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        title: 'Application logs',
+        message: error instanceof Error ? error.message : 'Unable to load application logs.',
+      })
+    } finally {
+      setRefreshingLogs(false)
+    }
+  }
+
+  useEffect(() => {
+    let active = true
+    const load = async () => {
+      try {
+        const [settingsResponse, logsResponse] = await Promise.all([
+          fetch('/api/settings/logging', { cache: 'no-store' }),
+          fetch('/api/settings/logging/output', { cache: 'no-store' }),
+        ])
+        if (!settingsResponse.ok) throw new Error('Unable to load logging settings.')
+        if (!logsResponse.ok) throw new Error('Unable to load application logs.')
+        const settings = (await settingsResponse.json()) as {
+          level: LogLevel
+          logDirectory: string
+        }
+        const logSnapshot = (await logsResponse.json()) as LogSnapshot
+        if (active) {
+          setLevel(settings.level)
+          setLogDirectory(settings.logDirectory)
+          setLogs(logSnapshot)
+        }
+      } catch (error) {
+        if (active) {
+          showToast({
+            tone: 'error',
+            title: 'Logging settings',
+            message: error instanceof Error ? error.message : 'Unable to load logging settings.',
+          })
+        }
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+    void load()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const changeLevel = async (nextLevel: LogLevel) => {
+    const previousLevel = level
+    setLevel(nextLevel)
+    setSaving(true)
+    try {
+      const response = await fetch('/api/settings/logging', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ level: nextLevel }),
+      })
+      if (!response.ok) throw new Error('Unable to save the log level.')
+      const settings = (await response.json()) as { level: LogLevel; logDirectory: string }
+      setLevel(settings.level)
+      setLogDirectory(settings.logDirectory)
+    } catch (error) {
+      setLevel(previousLevel)
+      showToast({
+        tone: 'error',
+        title: 'Logging settings',
+        message: error instanceof Error ? error.message : 'Unable to save the log level.',
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const clearLogs = async () => {
+    setClearingLogs(true)
+    try {
+      const response = await fetch('/api/settings/logging/output', { method: 'DELETE' })
+      if (!response.ok) throw new Error('Unable to clear application logs.')
+      await loadLogs()
+      showToast({ tone: 'success', title: 'Application logs', message: 'Log files cleared.' })
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        title: 'Application logs',
+        message: error instanceof Error ? error.message : 'Unable to clear application logs.',
+      })
+    } finally {
+      setClearingLogs(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Panel className="overflow-hidden">
+        <div className="flex items-start gap-3 border-b border-border bg-panel px-5 py-4">
+          <span className="flex size-9 shrink-0 items-center justify-center border border-border bg-card text-accent">
+            <TerminalWindowIcon className="size-4" weight="duotone" />
+          </span>
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Application logging</h2>
+            <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+              Controls Pi Studio application logs. Next.js development request logs are managed by
+              the framework and are not filtered by this setting.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-col gap-5 p-5">
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+            <div>
+              <p className="text-sm font-medium text-foreground">Log level</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Messages below the selected severity are suppressed.
+              </p>
+            </div>
+            <Select
+              value={level}
+              disabled={loading || saving}
+              onValueChange={(value) => value && void changeLevel(value as LogLevel)}
+            >
+              <SelectTrigger className="min-w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start">
+                <SelectGroup>
+                  {LOG_LEVELS.map((item) => (
+                    <SelectItem key={item} value={item}>
+                      {item}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="border-t border-border pt-4">
+            <p className="font-mono text-[10px] tracking-wider text-muted-foreground uppercase">
+              Log directory
+            </p>
+            <code
+              className="mt-1.5 block truncate font-mono text-[11px] text-foreground"
+              title={logDirectory}
+            >
+              {logDirectory || 'Loading…'}
+            </code>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
+              Packaged builds write server output to server.log. main.log is created when the
+              desktop process fails during startup.
+            </p>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel className="overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-panel px-5 py-3.5">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Log output</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Latest output from server.log and main.log · {formatBytes(logs?.totalSize ?? 0)}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={refreshingLogs || clearingLogs}
+              onClick={() => void loadLogs()}
+            >
+              <ArrowClockwiseIcon data-icon="inline-start" />
+              Refresh
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={clearingLogs || (logs?.totalSize ?? 0) === 0}
+              onClick={() => void clearLogs()}
+            >
+              <TrashIcon data-icon="inline-start" />
+              Clear logs
+            </Button>
+          </div>
+        </div>
+
+        {logs && logs.totalSize > 0 ? (
+          <div className="divide-y divide-border">
+            {logs.files
+              .filter((file) => file.size > 0)
+              .map((file) => (
+                <section key={file.name}>
+                  <div className="flex min-w-0 items-center justify-between gap-3 px-4 py-2.5">
+                    <code
+                      className="truncate font-mono text-[11px] font-medium text-foreground"
+                      title={file.path}
+                    >
+                      {file.name}
+                    </code>
+                    <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                      {formatBytes(file.size)}
+                      {file.truncated ? ' · latest 256 KB' : ''}
+                    </span>
+                  </div>
+                  <ScrollArea
+                    horizontal
+                    className="h-72 border-t border-border bg-muted/35"
+                    viewportClassName="outline-none"
+                    contentClassName="min-h-full min-w-max p-4"
+                  >
+                    <pre className="font-mono text-[11px] leading-5 whitespace-pre text-foreground/85">
+                      {file.content}
+                    </pre>
+                  </ScrollArea>
+                </section>
+              ))}
+          </div>
+        ) : (
+          <Empty className="min-h-64 rounded-none border-0">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <TerminalWindowIcon />
+              </EmptyMedia>
+              <EmptyTitle>No application logs</EmptyTitle>
+              <EmptyDescription>
+                Log files have not been created yet or were recently cleared.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        )}
+      </Panel>
     </div>
   )
 }
@@ -116,7 +397,7 @@ function StorageDashboard({ stats }: { stats: StorageStats }) {
               />
             ))}
           </div>
-          <div className="mt-3 grid gap-x-5 gap-y-2 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="mt-3 grid gap-x-5 gap-y-2 sm:grid-cols-2 xl:grid-cols-6">
             {sortedEntries.map((entry) => (
               <div key={entry.id} className="flex min-w-0 items-center gap-2">
                 <span className={`size-1.5 shrink-0 ${storageToneClass(entry.id)}`} />
@@ -259,6 +540,7 @@ function StorageIcon({ id }: { id: StorageEntry['id'] }) {
   const iconProps = { className: 'size-4', weight: 'duotone' as const }
   if (id === 'database') return <DatabaseIcon {...iconProps} />
   if (id === 'attachments') return <PaperclipIcon {...iconProps} />
+  if (id === 'logs') return <TerminalWindowIcon {...iconProps} />
   if (id === 'skills') return <PuzzlePieceIcon {...iconProps} />
   if (id === 'prompts') return <FileTextIcon {...iconProps} />
   return <ChatsCircleIcon {...iconProps} />
@@ -269,6 +551,7 @@ function storageToneClass(id: StorageEntry['id']) {
   if (id === 'sessions') return 'bg-accent/75'
   if (id === 'skills') return 'bg-accent/55'
   if (id === 'attachments') return 'bg-accent/35'
+  if (id === 'logs') return 'bg-accent/25'
   return 'bg-accent/20'
 }
 

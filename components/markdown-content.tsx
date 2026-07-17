@@ -187,7 +187,14 @@ function renderInlineToken(token: string, key: number, mediaSessionId?: string) 
   if (link) {
     const rawHref = link[2].trim()
     if (mediaSessionId && isImageHref(rawHref)) {
-      return <MarkdownImage key={key} src={mediaSrc(rawHref, mediaSessionId)} alt={link[1]} />
+      return (
+        <MarkdownImage
+          key={key}
+          src={mediaSrc(rawHref, mediaSessionId)}
+          alt={link[1]}
+          location={rawHref}
+        />
+      )
     }
     if (mediaSessionId && isMp3Href(rawHref)) {
       const src = mediaSrc(rawHref, mediaSessionId)

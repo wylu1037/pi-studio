@@ -49,7 +49,14 @@ test('renders linked image files as clickable previews', () => {
     markup,
     /src="\/api\/media\?sessionId=session-1&amp;path=http%3A%2F%2Flocalhost%3A3000%2Fworkspace%2Fout%2Fweather.png"/,
   )
-  assert.match(markup, /<a[^>]+target="_blank"/)
+  assert.match(markup, /aria-label="Preview weather\.png"/)
+  assert.match(markup, /aria-label="Open image preview"/)
+  assert.match(markup, />http:\/\/localhost:3000\/workspace\/out\/weather\.png</)
+  assert.match(markup, /aria-label="Zoom in image"/)
+  assert.match(markup, /aria-label="Zoom out image"/)
+  assert.match(markup, /download="weather\.png"/)
+  assert.doesNotMatch(markup, /aspect-\[16\/10\]/)
+  assert.match(markup, /class="[^"]*h-auto max-w-full[^"]*"/)
 })
 
 test('supports standard markdown image syntax and direct remote previews', () => {

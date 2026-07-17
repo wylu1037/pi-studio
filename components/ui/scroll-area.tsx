@@ -10,12 +10,14 @@ function ScrollArea({
   viewportClassName,
   contentClassName,
   viewportRef,
+  horizontal = false,
   children,
   ...props
 }: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
   viewportClassName?: string
   contentClassName?: string
   viewportRef?: React.Ref<HTMLDivElement>
+  horizontal?: boolean
 }) {
   return (
     <ScrollAreaPrimitive.Root
@@ -26,7 +28,11 @@ function ScrollArea({
       <ScrollAreaPrimitive.Viewport
         ref={viewportRef}
         data-slot="scroll-area-viewport"
-        className={cn('size-full min-w-0 overflow-x-hidden', viewportClassName)}
+        className={cn(
+          'size-full min-w-0',
+          horizontal ? 'overflow-auto' : 'overflow-x-hidden',
+          viewportClassName,
+        )}
       >
         <ScrollAreaPrimitive.Content
           data-slot="scroll-area-content"
@@ -36,20 +42,26 @@ function ScrollArea({
         </ScrollAreaPrimitive.Content>
       </ScrollAreaPrimitive.Viewport>
       <ScrollBar />
+      {horizontal && <ScrollBar orientation="horizontal" />}
+      {horizontal && (
+        <ScrollAreaPrimitive.Corner className="absolute right-0 bottom-0 bg-background" />
+      )}
     </ScrollAreaPrimitive.Root>
   )
 }
 
 function ScrollBar({
   className,
+  orientation = 'vertical',
   ...props
 }: React.ComponentProps<typeof ScrollAreaPrimitive.Scrollbar>) {
   return (
     <ScrollAreaPrimitive.Scrollbar
       data-slot="scroll-area-scrollbar"
-      orientation="vertical"
+      orientation={orientation}
       className={cn(
-        'absolute inset-y-0 right-0 flex w-2.5 touch-none p-px opacity-70 transition-opacity select-none hover:opacity-100',
+        'absolute flex touch-none p-px opacity-70 transition-opacity select-none hover:opacity-100',
+        orientation === 'vertical' ? 'inset-y-0 right-0 w-2.5' : 'inset-x-0 bottom-0 h-2.5',
         className,
       )}
       {...props}

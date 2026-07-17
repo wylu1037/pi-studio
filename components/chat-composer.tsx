@@ -48,6 +48,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import type { DraftAttachment } from '@/components/use-chat-attachments'
 import { ImageAttachmentPreview, isImageAttachment } from '@/components/image-attachment-preview'
 import type { GlobalModel, GlobalModelProvider, GlobalPromptTemplate } from '@/lib/types'
@@ -512,38 +513,44 @@ function ModelConfigurationMenu({
           {showModels && (
             <>
               <DropdownMenuLabel>Model</DropdownMenuLabel>
-              <DropdownMenuRadioGroup
-                value={selectedModelValue}
-                onValueChange={(nextValue) => {
-                  const next = options.find(
-                    ({ provider, model }) => `${provider.id}::${model.id}` === nextValue,
-                  )
-                  if (!next) return
-                  form.setValue('providerId', next.provider.id, {
-                    shouldDirty: true,
-                    shouldValidate: true,
-                  })
-                  form.setValue('modelId', next.model.id, {
-                    shouldDirty: true,
-                    shouldValidate: true,
-                  })
-                  setOpen(false)
-                }}
-                className="scroll-fade-b flex max-h-64 flex-col gap-0.5 overflow-y-auto"
+              <ScrollArea
+                className="max-h-64"
+                viewportClassName="pr-2"
+                style={{ height: Math.min(options.length * 38, 256) }}
               >
-                {options.map(({ provider, model }) => (
-                  <DropdownMenuRadioItem
-                    key={`${provider.id}:${model.id}`}
-                    value={`${provider.id}::${model.id}`}
-                    closeOnClick={false}
-                  >
-                    <span className="min-w-0 flex-1 truncate">{model.name ?? model.id}</span>
-                    <span className="mr-3 max-w-20 truncate text-[11px] font-normal text-muted-foreground">
-                      {provider.name}
-                    </span>
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
+                <DropdownMenuRadioGroup
+                  value={selectedModelValue}
+                  onValueChange={(nextValue) => {
+                    const next = options.find(
+                      ({ provider, model }) => `${provider.id}::${model.id}` === nextValue,
+                    )
+                    if (!next) return
+                    form.setValue('providerId', next.provider.id, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                    form.setValue('modelId', next.model.id, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                    setOpen(false)
+                  }}
+                  className="flex flex-col gap-0.5"
+                >
+                  {options.map(({ provider, model }) => (
+                    <DropdownMenuRadioItem
+                      key={`${provider.id}:${model.id}`}
+                      value={`${provider.id}::${model.id}`}
+                      closeOnClick={false}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{model.name ?? model.id}</span>
+                      <span className="mr-3 max-w-20 truncate text-[11px] font-normal text-muted-foreground">
+                        {provider.name}
+                      </span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </ScrollArea>
             </>
           )}
         </DropdownMenuGroup>

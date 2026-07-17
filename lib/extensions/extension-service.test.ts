@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -54,6 +54,36 @@ test('validates ESM-style TypeScript extensions stored in the Studio library', a
     assert.equal(result.valid, true)
     assert.deepEqual(result.diagnostics, [])
     assert.deepEqual(result.capabilities.tools, ['count_characters'])
+  } finally {
+    if (extensionId) await deleteLocalExtension(extensionId, process.cwd())
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('creates lifecycle extensions without direct console logging', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pi-studio-extension-lifecycle-'))
+  const previousHome = process.env.HOME
+  const name = `lifecycle-status-${Date.now()}`
+  let extensionId: string | undefined
+
+  try {
+    process.env.HOME = root
+    const extension = await createLocalExtension({
+      name,
+      template: 'lifecycle',
+      cwd: process.cwd(),
+    })
+    extensionId = extension.id
+
+    const source = await readFile(extension.path, 'utf8')
+    const result = await validateLocalExtension(extension.id, process.cwd())
+
+    assert.doesNotMatch(source, /console\./)
+    assert.match(source, /ctx\.ui\.setStatus/)
+    assert.equal(result.valid, true)
+    assert.deepEqual(result.diagnostics, [])
   } finally {
     if (extensionId) await deleteLocalExtension(extensionId, process.cwd())
     if (previousHome === undefined) delete process.env.HOME
