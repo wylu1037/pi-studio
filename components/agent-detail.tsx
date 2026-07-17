@@ -24,6 +24,7 @@ import {
   GitBranch,
   Clock,
   ExternalLink,
+  X,
 } from 'lucide-react'
 import type {
   AgentProfile,
@@ -36,7 +37,6 @@ import type {
 } from '@/lib/types'
 import { deleteApiAgentsId } from '@/lib/api/generated/clients/deleteApiAgentsId'
 import { patchApiAgentsId } from '@/lib/api/generated/clients/patchApiAgentsId'
-import { patchApiAgentsIdResources } from '@/lib/api/generated/clients/patchApiAgentsIdResources'
 import { postApiAgentsIdAssign } from '@/lib/api/generated/clients/postApiAgentsIdAssign'
 import { refreshAfterMutation } from '@/lib/api/refresh'
 import { errorMessage, showToast } from '@/lib/toast'
@@ -51,6 +51,14 @@ import {
   BracketButton,
 } from '@/components/pi-ui'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { AvatarPresetPicker } from '@/components/avatar-preset-picker'
 import { agentAvatarPresets } from '@/components/chat-avatar'
@@ -73,9 +81,26 @@ const settingsSchema = z.object({
   description: z.string().optional(),
   icon: z.enum(agentAvatarPresetIds),
   defaultCwd: z.string().optional(),
-  tags: z.string().optional(),
+  defaultProviderId: z.string().optional(),
+  defaultModelId: z.string().optional(),
+  defaultThinkingLevel: z.enum(thinkingLevels),
 })
 type SettingsForm = z.infer<typeof settingsSchema>
+
+function mergeTags(current: string[], value: string) {
+  const existing = new Set(current.map((tag) => tag.toLocaleLowerCase()))
+  const additions = value
+    .split(',')
+    .map((tag) => tag.trim())
+    .filter((tag) => {
+      if (!tag) return false
+      const normalized = tag.toLocaleLowerCase()
+      if (existing.has(normalized)) return false
+      existing.add(normalized)
+      return true
+    })
+  return additions.length > 0 ? [...current, ...additions] : current
+}
 
 export function AgentDetail({
   agent,
@@ -240,6 +265,7 @@ export function AgentDetail({
           <TabsContent value="Settings">
             <SettingsTab
               agent={agent}
+              providers={providers}
               onDelete={() => setDeleteRequested(true)}
               deleting={pending === 'delete'}
             />
@@ -466,8 +492,8 @@ function ModelsTab({
 }) {
   const [enabledProviders, setEnabledProviders] = useState(new Set(agent.selectedProviderIds))
   const [enabledModels, setEnabledModels] = useState(new Set(agent.selectedModelIds))
-  const [thinking, setThinking] = useState(agent.defaultThinkingLevel)
   const [pending, setPending] = useState<string | null>(null)
+  const router = useRouter()
 
   const toggleResource = async (
     kind: 'provider' | 'model',
@@ -489,6 +515,7 @@ function ModelsTab({
         tone: 'success',
         message: `${kind === 'provider' ? 'Provider' : 'Model'} ${enabled ? 'enabled' : 'disabled'}.`,
       })
+      router.refresh()
     } catch (error) {
       setSelected((prev) => {
         const next = new Set(prev)
@@ -502,99 +529,66 @@ function ModelsTab({
     }
   }
 
-  const setDefaultThinking = async (level: AgentProfile['defaultThinkingLevel']) => {
-    setPending(`thinking:${level}`)
-    const previous = thinking
-    setThinking(level)
-    try {
-      await patchApiAgentsIdResources(agent.id, { defaultThinkingLevel: level })
-      showToast({ tone: 'success', message: `Default thinking level set to ${level}.` })
-    } catch (error) {
-      setThinking(previous)
-      showToast({ tone: 'error', message: errorMessage(error) })
-    } finally {
-      setPending(null)
-    }
-  }
-
   return (
-    <div className="space-y-6">
-      <Panel>
-        <div className="border-b border-border bg-panel px-4 py-2.5">
-          <Label>Allowed providers &amp; models</Label>
-        </div>
-        <div className="divide-y divide-border">
-          {providers.map((p) => {
-            const pOn = enabledProviders.has(p.id)
-            return (
-              <div key={p.id}>
-                <div className="flex items-center justify-between px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <Toggle
-                      checked={pOn}
-                      onChange={() =>
-                        toggleResource('provider', p.id, enabledProviders, setEnabledProviders)
-                      }
-                    />
-                    <span className="font-mono text-[13px] text-foreground">{p.name}</span>
-                    <Tag tone="outline">{p.api}</Tag>
-                  </div>
-                  {agent.defaultProviderId === p.id && <Tag tone="accent">default</Tag>}
+    <Panel>
+      <div className="border-b border-border bg-panel px-4 py-2.5">
+        <Label>Allowed providers &amp; models</Label>
+      </div>
+      <div className="divide-y divide-border">
+        {providers.map((p) => {
+          const pOn = enabledProviders.has(p.id)
+          return (
+            <div key={p.id}>
+              <div className="flex items-center justify-between px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <Toggle
+                    checked={pOn}
+                    onChange={() =>
+                      toggleResource('provider', p.id, enabledProviders, setEnabledProviders)
+                    }
+                  />
+                  <span className="font-mono text-[13px] text-foreground">{p.name}</span>
+                  <Tag tone="outline">{p.api}</Tag>
                 </div>
-                {pOn && (
-                  <div className="grid pl-4 sm:grid-cols-2">
-                    {p.models.map((m) => {
-                      const resourceId = `${p.id}::${m.id}`
-                      const mOn = enabledModels.has(resourceId)
-                      return (
-                        <label
-                          key={resourceId}
-                          className="flex cursor-pointer items-center gap-2.5 border-t border-border bg-card px-4 py-2.5 sm:odd:border-r"
-                        >
-                          <button
-                            type="button"
-                            onClick={() =>
-                              toggleResource('model', resourceId, enabledModels, setEnabledModels)
-                            }
-                            disabled={pending === `model:${resourceId}`}
-                            className={cn(
-                              'flex size-4 items-center justify-center border',
-                              mOn
-                                ? 'border-accent bg-accent text-accent-foreground'
-                                : 'border-border-strong bg-panel',
-                            )}
-                          >
-                            {mOn && <Check className="size-2.5" />}
-                          </button>
-                          <span className="font-mono text-xs text-foreground">{m.name}</span>
-                          {m.reasoning && <Tag tone="accent">reasoning</Tag>}
-                        </label>
-                      )
-                    })}
-                  </div>
-                )}
+                {agent.defaultProviderId === p.id && <Tag tone="accent">default</Tag>}
               </div>
-            )
-          })}
-        </div>
-      </Panel>
-
-      <Panel className="p-4">
-        <Label className="mb-3 block">Default thinking level</Label>
-        <div className="flex flex-wrap gap-1.5">
-          {thinkingLevels.map((lvl) => (
-            <BracketButton
-              key={lvl}
-              active={thinking === lvl}
-              onClick={() => setDefaultThinking(lvl)}
-              disabled={pending === `thinking:${lvl}`}
-            >
-              {lvl}
-            </BracketButton>
-          ))}
-        </div>
-      </Panel>
-    </div>
+              {pOn && (
+                <div className="grid pl-4 sm:grid-cols-2">
+                  {p.models.map((m) => {
+                    const resourceId = `${p.id}::${m.id}`
+                    const mOn = enabledModels.has(resourceId)
+                    return (
+                      <label
+                        key={resourceId}
+                        className="flex cursor-pointer items-center gap-2.5 border-t border-border bg-card px-4 py-2.5 sm:odd:border-r"
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            toggleResource('model', resourceId, enabledModels, setEnabledModels)
+                          }
+                          disabled={pending === `model:${resourceId}`}
+                          className={cn(
+                            'flex size-4 items-center justify-center border',
+                            mOn
+                              ? 'border-accent bg-accent text-accent-foreground'
+                              : 'border-border-strong bg-panel',
+                          )}
+                        >
+                          {mOn && <Check className="size-2.5" />}
+                        </button>
+                        <span className="font-mono text-xs text-foreground">{m.name}</span>
+                        {m.reasoning && <Tag tone="accent">reasoning</Tag>}
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </Panel>
   )
 }
 
@@ -670,10 +664,12 @@ function SessionsTab({
 
 function SettingsTab({
   agent,
+  providers,
   onDelete,
   deleting,
 }: {
   agent: AgentProfile
+  providers: GlobalModelProvider[]
   onDelete: () => void
   deleting?: boolean
 }) {
@@ -690,12 +686,41 @@ function SettingsTab({
       description: agent.description ?? '',
       icon: normalizeAgentAvatarPreset(agent.icon),
       defaultCwd: agent.defaultCwd ?? '',
-      tags: agent.tags.join(', '),
+      defaultProviderId: agent.defaultProviderId ?? '',
+      defaultModelId: agent.defaultModelId ?? '',
+      defaultThinkingLevel: agent.defaultThinkingLevel,
     },
   })
   const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false)
+  const [tags, setTags] = useState(agent.tags)
+  const [tagDraft, setTagDraft] = useState('')
   const defaultCwd = watch('defaultCwd')
+  const defaultProviderId = watch('defaultProviderId')
+  const defaultModelId = watch('defaultModelId')
+  const defaultThinkingLevel = watch('defaultThinkingLevel')
   const icon = watch('icon')
+  const enabledProviderIds = new Set(agent.selectedProviderIds)
+  const enabledModelIds = new Set(agent.selectedModelIds)
+  const enabledModelsFor = (provider: GlobalModelProvider) =>
+    provider.models.filter(
+      (model) =>
+        enabledModelIds.has(`${provider.id}::${model.id}`) || enabledModelIds.has(model.id),
+    )
+  const availableProviders = providers.filter(
+    (provider) => enabledProviderIds.has(provider.id) && enabledModelsFor(provider).length > 0,
+  )
+  const selectedProvider = availableProviders.find((provider) => provider.id === defaultProviderId)
+  const availableModels = selectedProvider ? enabledModelsFor(selectedProvider) : []
+  const selectedModel = availableModels.find((model) => model.id === defaultModelId)
+
+  const addTags = (value: string) => {
+    setTags((current) => mergeTags(current, value))
+    setTagDraft('')
+  }
+
+  const removeTag = (index: number) => {
+    setTags((current) => current.filter((_, tagIndex) => tagIndex !== index))
+  }
 
   const save = async (values: SettingsForm) => {
     await patchApiAgentsId(agent.id, {
@@ -703,10 +728,10 @@ function SettingsTab({
       description: values.description,
       icon: values.icon,
       defaultCwd: values.defaultCwd,
-      tags: (values.tags ?? '')
-        .split(',')
-        .map((tag) => tag.trim())
-        .filter(Boolean),
+      defaultProviderId: values.defaultProviderId || undefined,
+      defaultModelId: values.defaultModelId || undefined,
+      defaultThinkingLevel: values.defaultThinkingLevel,
+      tags: mergeTags(tags, tagDraft),
     })
     refreshAfterMutation()
   }
@@ -748,11 +773,119 @@ function SettingsTab({
             <span className="font-mono text-[11px] text-accent">Browse</span>
           </button>
         </Field>
-        <Field label="Tags (comma separated)">
+        <Field label="Default provider">
+          <Select
+            value={defaultProviderId || null}
+            disabled={availableProviders.length === 0}
+            onValueChange={(providerId) => {
+              if (!providerId) return
+              const provider = availableProviders.find((candidate) => candidate.id === providerId)
+              const nextModels = provider ? enabledModelsFor(provider) : []
+              const nextModel =
+                nextModels.find((model) => model.id === defaultModelId) ?? nextModels[0]
+              setValue('defaultProviderId', providerId, { shouldDirty: true })
+              setValue('defaultModelId', nextModel?.id ?? '', { shouldDirty: true })
+            }}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue>
+                {selectedProvider?.name ??
+                  (availableProviders.length === 0
+                    ? 'No enabled providers with models'
+                    : 'Select a provider')}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {availableProviders.map((provider) => (
+                  <SelectItem key={provider.id} value={provider.id}>
+                    {provider.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label="Default model">
+          <Select
+            value={defaultModelId || null}
+            disabled={!selectedProvider || availableModels.length === 0}
+            onValueChange={(modelId) => {
+              if (!modelId) return
+              setValue('defaultModelId', modelId, { shouldDirty: true })
+            }}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue>
+                {selectedModel?.name ??
+                  selectedModel?.id ??
+                  (availableModels.length > 0
+                    ? 'Select a model'
+                    : selectedProvider
+                      ? 'No enabled models'
+                      : 'Select a provider first')}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {availableModels.map((model) => (
+                  <SelectItem key={model.id} value={model.id}>
+                    {model.name ?? model.id}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label="Default thinking level">
+          <div className="flex flex-nowrap gap-1.5">
+            {thinkingLevels.map((level) => (
+              <BracketButton
+                key={level}
+                active={defaultThinkingLevel === level}
+                onClick={() => setValue('defaultThinkingLevel', level, { shouldDirty: true })}
+                disabled={isSubmitting}
+              >
+                {level}
+              </BracketButton>
+            ))}
+          </div>
+        </Field>
+        <Field label="Tags">
           <input
-            {...register('tags')}
+            value={tagDraft}
+            onChange={(event) => setTagDraft(event.target.value)}
+            onBlur={() => addTags(tagDraft)}
+            onKeyDown={(event) => {
+              if ((event.key === 'Enter' || event.key === ',') && !event.nativeEvent.isComposing) {
+                event.preventDefault()
+                addTags(tagDraft)
+                return
+              }
+              if (event.key === 'Backspace' && tagDraft.length === 0 && tags.length > 0) {
+                removeTag(tags.length - 1)
+              }
+            }}
+            placeholder="Add tag"
             className="w-full border border-input bg-panel px-3 py-2 font-mono text-[13px] text-foreground outline-none focus:border-ring"
           />
+          {tags.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Agent tags">
+              {tags.map((tag, index) => (
+                <Tag key={`${tag}:${index}`} tone="outline" className="gap-1 py-1 pr-1 pl-2">
+                  <span>{tag}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeTag(index)}
+                    className="inline-flex size-4 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                    aria-label={`Remove ${tag}`}
+                  >
+                    <X className="size-3" aria-hidden="true" />
+                  </button>
+                </Tag>
+              ))}
+            </div>
+          )}
         </Field>
       </Panel>
       <div className="flex items-center justify-between">
