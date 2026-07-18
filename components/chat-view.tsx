@@ -107,6 +107,7 @@ import { cn } from '@/lib/utils'
 import { useChatAttachments } from '@/components/use-chat-attachments'
 import { ImageAttachmentPreview, isImageAttachment } from '@/components/image-attachment-preview'
 import { buildPromptWithAttachments } from '@/lib/chat/attachments'
+import { hasPersistedAssistantResponse } from '@/lib/chat/stream-lifecycle'
 
 const EVENT_STREAM_CONNECT_TIMEOUT_MS = 5000
 const RUN_RECONCILE_INITIAL_DELAY_MS = 1000
@@ -163,6 +164,7 @@ export function ChatView({
   const [streamPhase, setStreamPhase] = useState<StreamPhase>('idle')
   const [optimisticMessage, setOptimisticMessage] = useState<ChatMessage | null>(null)
   const [runId, setRunId] = useState<string | null>(null)
+  const [sdkActiveRunId, setSdkActiveRunId] = useState<string | null>(null)
   const [sdkSessionRunning, setSdkSessionRunning] = useState(false)
   const [abortingRun, setAbortingRun] = useState(false)
   const [streamError, setStreamError] = useState<string | null>(null)
@@ -196,6 +198,7 @@ export function ChatView({
   const streamMessageSequenceRef = useRef(0)
   const sourceMessageCountAtRunStartRef = useRef(messages.length)
   const sdkSessionWasRunningRef = useRef(false)
+  const ignoreSdkRunningUntilIdleRef = useRef(false)
 
   const applyStreamingContentBatch = useCallback((batch: StreamingContentBatch) => {
     if (batch.length === 0) return
@@ -568,18 +571,32 @@ export function ChatView({
   useEffect(() => {
     let active = true
     let timer: number | undefined
+    const activeSessionId = activeSession?.id
     sdkSessionWasRunningRef.current = false
+    ignoreSdkRunningUntilIdleRef.current = false
     setSdkSessionRunning(false)
+    setSdkActiveRunId(null)
 
     const poll = async () => {
-      if (!activeSession) return
+      if (!activeSessionId) return
       try {
-        const state = await getApiSessionsIdAgentState(activeSession.id, {
+        const state = (await getApiSessionsIdAgentState(activeSessionId, {
           headers: { 'cache-control': 'no-cache' },
-        })
+        })) as Awaited<ReturnType<typeof getApiSessionsIdAgentState>> & {
+          activeRunId?: string | null
+        }
         if (!active) return
+        if (ignoreSdkRunningUntilIdleRef.current) {
+          if (!state.running) ignoreSdkRunningUntilIdleRef.current = false
+          sdkSessionWasRunningRef.current = false
+          setSdkActiveRunId(null)
+          setSdkSessionRunning(false)
+          if (active) timer = window.setTimeout(poll, RUN_RECONCILE_POLL_MS)
+          return
+        }
         const wasRunning = sdkSessionWasRunningRef.current
         sdkSessionWasRunningRef.current = state.running
+        setSdkActiveRunId(state.activeRunId ?? null)
         setSdkSessionRunning(state.running)
         if (wasRunning && !state.running) {
           if (!activeRunIdRef.current) {
@@ -599,7 +616,7 @@ export function ChatView({
       active = false
       if (timer) window.clearTimeout(timer)
     }
-  }, [activeSession, router])
+  }, [activeSession?.id, router])
 
   useEffect(() => {
     setSelectedNodeId(findCurrentTreeNodeId(tree))
@@ -617,8 +634,12 @@ export function ChatView({
     return () => window.clearTimeout(timer)
   }, [router, streamDone])
 
+  const hasPersistedRun =
+    streamDone &&
+    hasPersistedAssistantResponse(sourceMessages, sourceMessageCountAtRunStartRef.current)
+
   useEffect(() => {
-    if (!streamDone || sourceMessages.length <= sourceMessageCountAtRunStartRef.current) return
+    if (!hasPersistedRun) return
 
     setStreamMessages([])
     setStreamStartedAt(null)
@@ -629,7 +650,7 @@ export function ChatView({
     currentStreamingAssistantIdRef.current = null
     latestStreamingAssistantIdRef.current = null
     resetStreamingMarkdown()
-  }, [resetStreamingMarkdown, sourceMessages.length, streamDone])
+  }, [hasPersistedRun, resetStreamingMarkdown])
 
   const baseMessages = useMemo(() => {
     if (!optimisticMessage) return sourceMessages
@@ -644,8 +665,6 @@ export function ChatView({
     return hasPersistedOptimisticMessage ? sourceMessages : [...sourceMessages, optimisticMessage]
   }, [optimisticMessage, sourceMessages])
 
-  const hasPersistedRun =
-    streamDone && sourceMessages.length > sourceMessageCountAtRunStartRef.current
   const displayMessages = useMemo(
     () =>
       hasPersistedRun
@@ -723,8 +742,13 @@ export function ChatView({
       behavior: 'smooth',
     })
   }
+  const isStartingRun = streamPhase === 'starting' && !runId
+  const isRunningRun = Boolean(runId) || sdkSessionRunning
   const isWaiting =
-    !streamError && runId !== null && streamPhase !== 'idle' && streamMessages.length === 0
+    !streamError &&
+    !hasPersistedRun &&
+    (streamPhase !== 'idle' || sdkSessionRunning) &&
+    streamMessages.length === 0
 
   const clearReconciliation = () => {
     if (!reconcileTimerRef.current) return
@@ -739,7 +763,11 @@ export function ChatView({
     source?.close()
     if (eventSourceRef.current === source) eventSourceRef.current = null
     activeRunIdRef.current = null
+    ignoreSdkRunningUntilIdleRef.current = true
+    sdkSessionWasRunningRef.current = false
     setRunId(null)
+    setSdkActiveRunId(null)
+    setSdkSessionRunning(false)
     setAbortingRun(false)
     setStreamPhase('idle')
     setStreamDone(true)
@@ -867,7 +895,8 @@ export function ChatView({
   )
 
   useEffect(() => {
-    if (!activeSession || !sdkSessionRunning || runId) return
+    if (!activeSession || !sdkSessionRunning || runId || ignoreSdkRunningUntilIdleRef.current)
+      return
 
     setStreamStartedAt(Date.now())
     setStreamDone(false)
@@ -1075,6 +1104,8 @@ export function ChatView({
     eventSourceRef.current?.close()
     clearReconciliation()
     activeRunIdRef.current = null
+    ignoreSdkRunningUntilIdleRef.current = false
+    setSdkActiveRunId(null)
     setStreamMessages([])
     resetStreamingMarkdown()
     setStreamStartedAt(Date.now())
@@ -1275,16 +1306,18 @@ export function ChatView({
   })
 
   const abort = async () => {
-    if (!runId || abortingRun) return
+    const abortRunId = runId ?? sdkActiveRunId
+    if (!abortRunId || abortingRun) return
     setAbortingRun(true)
     try {
-      await postApiRunsIdAbort(runId)
+      await postApiRunsIdAbort(abortRunId)
       clearReconciliation()
       eventSourceRef.current?.close()
       eventSourceRef.current = null
       activeRunIdRef.current = null
       finishAllStreamingMarkdown()
       setRunId(null)
+      setSdkActiveRunId(null)
       setStreamPhase('idle')
       setStreamStartedAt(null)
       router.refresh()
@@ -1393,19 +1426,17 @@ export function ChatView({
     return <EmptyState onOpenAgents={() => router.push('/')} />
   }
 
-  const isStartingRun = streamPhase === 'starting' && !runId
-  const isRunningRun = Boolean(runId) || sdkSessionRunning
-  const canAbortRun = Boolean(runId)
+  const canAbortRun = Boolean(runId ?? sdkActiveRunId)
   const sendButtonLabel = abortingRun
     ? 'Stopping'
-    : isRunningRun
-      ? canAbortRun
-        ? 'Stop'
-        : 'Working'
-      : creatingSession
-        ? 'Creating'
-        : isStartingRun
-          ? 'Sending'
+    : isStartingRun && !canAbortRun
+      ? 'Sending'
+      : isRunningRun
+        ? canAbortRun
+          ? 'Stop'
+          : 'Working'
+        : creatingSession
+          ? 'Creating'
           : isNewSessionCommand
             ? 'New session'
             : 'Send'

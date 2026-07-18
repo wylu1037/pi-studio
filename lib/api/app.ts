@@ -28,6 +28,7 @@ import {
   duplicateAgent,
   duplicateSession,
   getAgent,
+  getActiveRunForSession,
   getModelCapabilities,
   getProvider,
   getRun,
@@ -501,17 +502,26 @@ api.openapi(
   }),
   async (c) => {
     const { getSdkSessionState } = await import('@/lib/chat/sdk-session-manager')
-    const state = getSdkSessionState(c.req.valid('param').id)
+    const sessionId = c.req.valid('param').id
+    const state = getSdkSessionState(sessionId)
+    const storedActiveRun = getActiveRunForSession(sessionId)
+    const activeRunSnapshot = storedActiveRun
+      ? getRunCoordinator().getSnapshot(storedActiveRun.id)
+      : null
+    const activeRunId =
+      activeRunSnapshot && !activeRunSnapshot.terminal ? (storedActiveRun?.id ?? null) : null
     return c.json(
       state
         ? {
             active: true,
             ...state,
+            activeRunId,
             sdkSessionId: state.sessionId,
           }
         : {
             active: false,
-            running: false,
+            running: Boolean(activeRunId),
+            activeRunId,
             isStreaming: false,
             isCompacting: false,
             model: null,

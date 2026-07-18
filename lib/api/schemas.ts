@@ -729,6 +729,7 @@ export const RunSchema = z.object({
 export const AgentSessionStateSchema = z.object({
   active: z.boolean(),
   running: z.boolean(),
+  activeRunId: z.string().nullable(),
   isStreaming: z.boolean(),
   isCompacting: z.boolean(),
   model: z.object({ provider: z.string(), modelId: z.string() }).nullable(),

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 import type {
   AgentProfile,
   AgentSessionSummary,
@@ -1157,6 +1157,19 @@ export function createRun(input: {
 
 export function getRun(id: string) {
   return db.select().from(chatRuns).where(eq(chatRuns.id, id)).get() ?? null
+}
+
+export function getActiveRunForSession(sessionId: string) {
+  return (
+    db
+      .select()
+      .from(chatRuns)
+      .where(
+        and(eq(chatRuns.sessionId, sessionId), inArray(chatRuns.status, ['queued', 'running'])),
+      )
+      .orderBy(desc(chatRuns.createdAt))
+      .get() ?? null
+  )
 }
 
 export function markRun(
