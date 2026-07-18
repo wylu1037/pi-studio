@@ -161,6 +161,7 @@ export function TextInput({
   value,
   onChange,
   placeholder,
+  ariaLabel,
   className,
   mono = true,
   icon,
@@ -168,6 +169,7 @@ export function TextInput({
   value?: string
   onChange?: (v: string) => void
   placeholder?: string
+  ariaLabel?: string
   className?: string
   mono?: boolean
   icon?: React.ReactNode
@@ -181,6 +183,7 @@ export function TextInput({
         value={value}
         onChange={(e) => onChange?.(e.target.value)}
         placeholder={placeholder}
+        aria-label={ariaLabel}
         className={cn(
           'w-full border border-input bg-panel px-3 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/70 focus:border-ring',
           mono && 'font-mono text-[13px]',

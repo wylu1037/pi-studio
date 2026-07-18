@@ -24,6 +24,7 @@ import {
   GitBranch,
   Clock,
   ExternalLink,
+  Star,
   X,
 } from 'lucide-react'
 import type {
@@ -47,9 +48,9 @@ import {
   Panel,
   Tag,
   TextInput,
-  Toggle,
   BracketButton,
 } from '@/components/pi-ui'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Select,
@@ -60,8 +61,17 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { AvatarPresetPicker } from '@/components/avatar-preset-picker'
 import { agentAvatarPresets } from '@/components/chat-avatar'
+import { ProviderLogo } from '@/components/models-view'
 import { agentAvatarPresetIds, normalizeAgentAvatarPreset } from '@/lib/profile-settings'
 import { cn } from '@/lib/utils'
 
@@ -76,6 +86,21 @@ const TABS = [
   'Settings',
 ] as const
 const thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+const providerApiLabels: Record<GlobalModelProvider['api'], string> = {
+  'openai-completions': 'OpenAI Completions',
+  'openai-responses': 'OpenAI Responses',
+  'anthropic-messages': 'Anthropic Messages',
+  'google-generative-ai': 'Google Generative AI',
+}
+const compactModelNumber = new Intl.NumberFormat('en', {
+  notation: 'compact',
+  maximumFractionDigits: 1,
+})
+
+function formatModelLimit(value?: number) {
+  return value ? compactModelNumber.format(value) : '—'
+}
+
 const settingsSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
@@ -192,7 +217,7 @@ export function AgentDetail({
 
         <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto p-6">
           <TabsContent value="Overview">
-            <OverviewTab agent={agent} />
+            <OverviewTab agent={agent} providers={providers} />
           </TabsContent>
           <TabsContent value="Extensions">
             <ResourcePicker
@@ -285,7 +310,13 @@ export function AgentDetail({
   )
 }
 
-function OverviewTab({ agent }: { agent: AgentProfile }) {
+function OverviewTab({
+  agent,
+  providers,
+}: {
+  agent: AgentProfile
+  providers: GlobalModelProvider[]
+}) {
   const stats = [
     { icon: Puzzle, value: agent.selectedExtensionIds.length, label: 'Extensions' },
     { icon: Package, value: agent.selectedPackageSources.length, label: 'Packages' },
@@ -298,7 +329,10 @@ function OverviewTab({ agent }: { agent: AgentProfile }) {
     ['Name', agent.name],
     ['Description', agent.description ?? '—'],
     ['Default working dir', agent.defaultCwd ?? '—'],
-    ['Default provider', agent.defaultProviderId ?? '—'],
+    [
+      'Default provider',
+      providers.find((provider) => provider.id === agent.defaultProviderId)?.name ?? '—',
+    ],
     ['Default model', agent.defaultModelId ?? '—'],
     ['Default thinking', agent.defaultThinkingLevel],
     ['Created', agent.createdAt],
@@ -492,28 +526,31 @@ function ModelsTab({
 }) {
   const [enabledProviders, setEnabledProviders] = useState(new Set(agent.selectedProviderIds))
   const [enabledModels, setEnabledModels] = useState(new Set(agent.selectedModelIds))
-  const [pending, setPending] = useState<string | null>(null)
+  const [pendingResources, setPendingResources] = useState<Set<string>>(new Set())
+  const [query, setQuery] = useState('')
   const router = useRouter()
 
   const toggleResource = async (
     kind: 'provider' | 'model',
     resourceId: string,
-    selected: Set<string>,
+    enabled: boolean,
     setSelected: React.Dispatch<React.SetStateAction<Set<string>>>,
+    label: string,
+    pendingResourceId = resourceId,
   ) => {
-    const enabled = !selected.has(resourceId)
-    setPending(`${kind}:${resourceId}`)
+    const pendingKey = `${kind}:${pendingResourceId}`
+    setPendingResources((current) => new Set(current).add(pendingKey))
     setSelected((prev) => {
       const next = new Set(prev)
-      if (next.has(resourceId)) next.delete(resourceId)
-      else next.add(resourceId)
+      if (enabled) next.add(resourceId)
+      else next.delete(resourceId)
       return next
     })
     try {
       await postApiAgentsIdAssign(agent.id, { kind, resourceId, enabled })
       showToast({
         tone: 'success',
-        message: `${kind === 'provider' ? 'Provider' : 'Model'} ${enabled ? 'enabled' : 'disabled'}.`,
+        message: `${label} ${enabled ? 'enabled' : 'disabled'}.`,
       })
       router.refresh()
     } catch (error) {
@@ -525,70 +562,343 @@ function ModelsTab({
       })
       showToast({ tone: 'error', message: errorMessage(error) })
     } finally {
-      setPending(null)
+      setPendingResources((current) => {
+        const next = new Set(current)
+        next.delete(pendingKey)
+        return next
+      })
     }
   }
 
+  const selectedModelResourceId = (providerId: string, modelId: string) => {
+    const resourceId = `${providerId}::${modelId}`
+    if (enabledModels.has(resourceId)) return resourceId
+    if (enabledModels.has(modelId)) return modelId
+    return resourceId
+  }
+
+  const modelIsEnabled = (providerId: string, modelId: string) =>
+    enabledModels.has(`${providerId}::${modelId}`) || enabledModels.has(modelId)
+
+  const normalizedQuery = query.trim().toLocaleLowerCase()
+  const filteredProviders = providers.flatMap((provider) => {
+    const providerMatches =
+      !normalizedQuery ||
+      provider.name.toLocaleLowerCase().includes(normalizedQuery) ||
+      provider.api.toLocaleLowerCase().includes(normalizedQuery) ||
+      provider.baseUrl.toLocaleLowerCase().includes(normalizedQuery) ||
+      provider.status.toLocaleLowerCase().includes(normalizedQuery)
+    const models = provider.models.filter(
+      (model) =>
+        providerMatches ||
+        model.name?.toLocaleLowerCase().includes(normalizedQuery) ||
+        model.id.toLocaleLowerCase().includes(normalizedQuery) ||
+        (model.reasoning && 'reasoning'.includes(normalizedQuery)) ||
+        model.input.some((input) => input.includes(normalizedQuery)),
+    )
+    return providerMatches || models.length > 0 ? [{ provider, models }] : []
+  })
   return (
-    <Panel>
-      <div className="border-b border-border bg-panel px-4 py-2.5">
-        <Label>Allowed providers &amp; models</Label>
+    <div className="flex flex-col gap-3">
+      <div className="flex justify-end">
+        <TextInput
+          value={query}
+          onChange={setQuery}
+          placeholder="Filter providers or models"
+          ariaLabel="Search providers or models"
+          icon={<Search className="size-3.5" aria-hidden="true" />}
+          className="w-full sm:w-64"
+        />
       </div>
-      <div className="divide-y divide-border">
-        {providers.map((p) => {
-          const pOn = enabledProviders.has(p.id)
-          return (
-            <div key={p.id}>
-              <div className="flex items-center justify-between px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <Toggle
-                    checked={pOn}
-                    onChange={() =>
-                      toggleResource('provider', p.id, enabledProviders, setEnabledProviders)
-                    }
-                  />
-                  <span className="font-mono text-[13px] text-foreground">{p.name}</span>
-                  <Tag tone="outline">{p.api}</Tag>
-                </div>
-                {agent.defaultProviderId === p.id && <Tag tone="accent">default</Tag>}
-              </div>
-              {pOn && (
-                <div className="grid pl-4 sm:grid-cols-2">
-                  {p.models.map((m) => {
-                    const resourceId = `${p.id}::${m.id}`
-                    const mOn = enabledModels.has(resourceId)
-                    return (
-                      <label
-                        key={resourceId}
-                        className="flex cursor-pointer items-center gap-2.5 border-t border-border bg-card px-4 py-2.5 sm:odd:border-r"
-                      >
-                        <button
-                          type="button"
-                          onClick={() =>
-                            toggleResource('model', resourceId, enabledModels, setEnabledModels)
-                          }
-                          disabled={pending === `model:${resourceId}`}
+
+      <Panel className="overflow-hidden">
+        {providers.length === 0 ? (
+          <Empty className="rounded-none border-0 py-16">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Cpu aria-hidden="true" />
+              </EmptyMedia>
+              <EmptyTitle className="font-mono text-[13px]">No providers available</EmptyTitle>
+            </EmptyHeader>
+          </Empty>
+        ) : filteredProviders.length === 0 ? (
+          <Empty className="rounded-none border-0 py-14">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Search aria-hidden="true" />
+              </EmptyMedia>
+              <EmptyTitle className="font-mono text-[13px]">No matching models</EmptyTitle>
+              <EmptyDescription className="font-mono text-xs">
+                Try a different provider, model, status, or capability.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <Table className="min-w-[760px] table-fixed">
+            <colgroup>
+              <col className="w-[26%]" />
+              <col className="w-[62%]" />
+              <col className="w-[12%]" />
+            </colgroup>
+            <TableHeader className="bg-panel">
+              <TableRow className="hover:bg-panel">
+                <TableHead className="px-4 text-center font-mono text-[10px] tracking-wider text-muted-foreground uppercase">
+                  Provider
+                </TableHead>
+                <TableHead className="border-l border-border px-4 font-mono text-[10px] tracking-wider text-muted-foreground uppercase">
+                  Models
+                </TableHead>
+                <TableHead className="border-l border-border px-4 text-center font-mono text-[10px] tracking-wider text-muted-foreground uppercase">
+                  Access
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredProviders.map(({ provider, models }) => {
+                const providerEnabled = enabledProviders.has(provider.id)
+                const providerPending = pendingResources.has(`provider:${provider.id}`)
+                const providerIsDefault = provider.id === agent.defaultProviderId
+                return (
+                  <TableRow
+                    key={provider.id}
+                    className={cn('hover:bg-transparent', providerEnabled && 'bg-accent/[0.02]')}
+                    aria-busy={providerPending}
+                  >
+                    <TableCell className="border-r border-border p-4 align-middle whitespace-normal">
+                      <div className="flex min-w-0 items-center justify-center">
+                        <div className="flex max-w-72 min-w-0 items-center gap-3 text-left">
+                          <span
+                            className="flex size-10 shrink-0 items-center justify-center"
+                            title={providerApiLabels[provider.api]}
+                          >
+                            <ProviderLogo api={provider.api} />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                              <span className="truncate font-mono text-[13px] font-medium text-foreground">
+                                {provider.name}
+                              </span>
+                              {providerIsDefault && (
+                                <span
+                                  className="inline-flex text-accent"
+                                  title="Agent default provider"
+                                  aria-label="Agent default provider"
+                                >
+                                  <Star className="size-3 fill-current" aria-hidden="true" />
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1 flex min-w-0 items-center gap-1.5">
+                              <span className="truncate font-mono text-[10px] text-muted-foreground">
+                                {providerApiLabels[provider.api]}
+                              </span>
+                              <span
+                                className={cn(
+                                  'inline-flex shrink-0',
+                                  provider.status === 'connected'
+                                    ? 'text-success'
+                                    : provider.status === 'error'
+                                      ? 'text-destructive'
+                                      : 'text-muted-foreground',
+                                )}
+                                title={provider.status}
+                                aria-label={`Status: ${provider.status}`}
+                              >
+                                {provider.status === 'connected' ? (
+                                  <Check className="size-3" aria-hidden="true" />
+                                ) : provider.status === 'error' ? (
+                                  <X className="size-3" aria-hidden="true" />
+                                ) : (
+                                  <Clock className="size-3" aria-hidden="true" />
+                                )}
+                              </span>
+                            </div>
+                            <p
+                              className="mt-1.5 truncate font-mono text-[9px] text-muted-foreground/80"
+                              title={provider.baseUrl}
+                            >
+                              {provider.baseUrl}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </TableCell>
+
+                    <TableCell className="p-0 align-top whitespace-normal">
+                      {models.length === 0 ? (
+                        <p className="px-4 py-6 font-mono text-xs text-muted-foreground">
+                          No models configured for this provider.
+                        </p>
+                      ) : (
+                        <ul className="divide-y divide-border">
+                          {models.map((model) => {
+                            const modelResourceId = `${provider.id}::${model.id}`
+                            const persistedResourceId = selectedModelResourceId(
+                              provider.id,
+                              model.id,
+                            )
+                            const modelEnabled = modelIsEnabled(provider.id, model.id)
+                            const modelPending = pendingResources.has(`model:${modelResourceId}`)
+                            const modelIsDefault =
+                              providerIsDefault && agent.defaultModelId === model.id
+
+                            return (
+                              <li key={modelResourceId}>
+                                <button
+                                  type="button"
+                                  aria-pressed={modelEnabled}
+                                  aria-busy={modelPending}
+                                  aria-label={`${modelEnabled ? 'Disable' : 'Enable'} ${
+                                    model.name ?? model.id
+                                  }${
+                                    modelIsDefault
+                                      ? '. Agent default model. Change it in Settings before disabling.'
+                                      : ''
+                                  }`}
+                                  onClick={() => {
+                                    if (modelIsDefault && modelEnabled) {
+                                      showToast({
+                                        tone: 'info',
+                                        message:
+                                          'Change the default model in Settings before disabling it.',
+                                      })
+                                      return
+                                    }
+                                    void toggleResource(
+                                      'model',
+                                      persistedResourceId,
+                                      !modelEnabled,
+                                      setEnabledModels,
+                                      model.name ?? model.id,
+                                      modelResourceId,
+                                    )
+                                  }}
+                                  disabled={!providerEnabled || providerPending || modelPending}
+                                  title={
+                                    !providerEnabled ? `Enable ${provider.name} first.` : undefined
+                                  }
+                                  className={cn(
+                                    'grid min-h-14 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 py-2.5 text-left transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring active:translate-y-px disabled:cursor-not-allowed disabled:opacity-45 disabled:active:translate-y-0',
+                                    modelEnabled && providerEnabled && 'bg-accent/5',
+                                  )}
+                                >
+                                  <span
+                                    className={cn(
+                                      'row-span-2 flex size-4 items-center justify-center border',
+                                      modelEnabled
+                                        ? 'border-accent bg-accent text-accent-foreground'
+                                        : 'border-border-strong bg-panel text-muted-foreground',
+                                    )}
+                                    aria-hidden="true"
+                                  >
+                                    {modelPending ? (
+                                      <LoaderCircle className="size-2.5 animate-spin" />
+                                    ) : (
+                                      modelEnabled && <Check className="size-2.5" />
+                                    )}
+                                  </span>
+
+                                  <span className="min-w-0">
+                                    <span className="block truncate font-mono text-xs text-foreground">
+                                      {model.name ?? model.id}
+                                    </span>
+                                    {model.name && model.name !== model.id && (
+                                      <span className="mt-0.5 block truncate font-mono text-[9px] text-muted-foreground">
+                                        {model.id}
+                                      </span>
+                                    )}
+                                  </span>
+
+                                  <span className="flex shrink-0 items-center gap-3 font-mono text-[9px] tracking-wide text-muted-foreground">
+                                    <span
+                                      title={`Context window: ${model.contextWindow?.toLocaleString() ?? 'Unknown'}`}
+                                    >
+                                      {formatModelLimit(model.contextWindow)} ctx
+                                    </span>
+                                    <span
+                                      title={`Max output: ${model.maxTokens?.toLocaleString() ?? 'Unknown'}`}
+                                    >
+                                      {formatModelLimit(model.maxTokens)} out
+                                    </span>
+                                  </span>
+
+                                  <span className="col-start-2 col-end-4 flex min-w-0 flex-wrap items-center gap-1.5">
+                                    {model.reasoning && <Tag tone="accent">reasoning</Tag>}
+                                    {model.input.map((input) => (
+                                      <Tag key={input} tone="outline">
+                                        {input}
+                                      </Tag>
+                                    ))}
+                                    {modelIsDefault && (
+                                      <span
+                                        className="inline-flex text-accent"
+                                        title="Agent default model"
+                                        aria-label="Agent default model"
+                                      >
+                                        <Star className="size-3 fill-current" aria-hidden="true" />
+                                      </span>
+                                    )}
+                                  </span>
+                                </button>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )}
+                    </TableCell>
+
+                    <TableCell className="border-l border-border p-4 align-middle whitespace-normal">
+                      <div className="flex flex-col items-center justify-center gap-2.5 text-center">
+                        {providerPending ? (
+                          <LoaderCircle
+                            className="size-4 animate-spin text-muted-foreground"
+                            aria-label={`Updating ${provider.name}`}
+                          />
+                        ) : (
+                          <Switch
+                            checked={providerEnabled}
+                            onCheckedChange={(checked) => {
+                              if (!checked && providerIsDefault) {
+                                showToast({
+                                  tone: 'info',
+                                  message:
+                                    'Change the default provider in Settings before disabling it.',
+                                })
+                                return
+                              }
+                              void toggleResource(
+                                'provider',
+                                provider.id,
+                                checked,
+                                setEnabledProviders,
+                                provider.name,
+                              )
+                            }}
+                            aria-label={`${providerEnabled ? 'Disable' : 'Enable'} ${provider.name}${
+                              providerIsDefault
+                                ? '. Agent default provider. Change it in Settings before disabling.'
+                                : ''
+                            }`}
+                          />
+                        )}
+                        <span
                           className={cn(
-                            'flex size-4 items-center justify-center border',
-                            mOn
-                              ? 'border-accent bg-accent text-accent-foreground'
-                              : 'border-border-strong bg-panel',
+                            'font-mono text-[9px] tracking-wider uppercase',
+                            providerEnabled ? 'text-accent' : 'text-muted-foreground',
                           )}
                         >
-                          {mOn && <Check className="size-2.5" />}
-                        </button>
-                        <span className="font-mono text-xs text-foreground">{m.name}</span>
-                        {m.reasoning && <Tag tone="accent">reasoning</Tag>}
-                      </label>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </Panel>
+                          {providerEnabled ? 'Enabled' : 'Disabled'}
+                        </span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </Panel>
+    </div>
   )
 }
 

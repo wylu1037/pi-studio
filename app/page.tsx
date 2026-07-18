@@ -1,8 +1,12 @@
 import { AgentsDashboard } from '@/components/agents-dashboard'
-import { listAgents } from '@/lib/db/repository'
+import { listAgents, listProviders } from '@/lib/db/repository'
 
 export const dynamic = 'force-dynamic'
 
 export default function Page() {
-  return <AgentsDashboard agents={listAgents()} />
+  const providerNames = Object.fromEntries(
+    listProviders().map((provider) => [provider.id, provider.name]),
+  )
+
+  return <AgentsDashboard agents={listAgents()} providerNames={providerNames} />
 }

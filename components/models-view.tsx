@@ -275,7 +275,7 @@ function ModelsEmptyState({ onAdd, disabled }: { onAdd: () => void; disabled?: b
   )
 }
 
-function ProviderLogo({ api }: { api: ProviderApi }) {
+export function ProviderLogo({ api }: { api: ProviderApi }) {
   const brand = providerBrand[api]
   return (
     <span title={brand.label} className="flex size-8 shrink-0 items-center justify-center">

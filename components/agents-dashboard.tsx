@@ -39,7 +39,13 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 
-export function AgentsDashboard({ agents }: { agents: AgentProfile[] }) {
+export function AgentsDashboard({
+  agents,
+  providerNames,
+}: {
+  agents: AgentProfile[]
+  providerNames: Record<string, string>
+}) {
   const [query, setQuery] = useState('')
   const [activeTag, setActiveTag] = useState<string | null>(null)
   const [pendingId, setPendingId] = useState<string | null>(null)
@@ -139,6 +145,7 @@ export function AgentsDashboard({ agents }: { agents: AgentProfile[] }) {
               <AgentCard
                 key={agent.id}
                 agent={agent}
+                providerNames={providerNames}
                 onDuplicate={duplicateAgent}
                 onDelete={setDeleteTarget}
                 pendingId={pendingId}
@@ -164,11 +171,13 @@ export function AgentsDashboard({ agents }: { agents: AgentProfile[] }) {
 
 function AgentCard({
   agent,
+  providerNames,
   onDuplicate,
   onDelete,
   pendingId,
 }: {
   agent: AgentProfile
+  providerNames: Record<string, string>
   onDuplicate: (id: string) => void
   onDelete: (agent: AgentProfile) => void
   pendingId: string | null
@@ -228,8 +237,10 @@ function AgentCard({
             {agent.defaultModelId ?? 'Automatic selection'}
           </p>
           <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
-            {agent.defaultProviderId ?? 'Default provider'} · {agent.selectedModelIds.length}{' '}
-            enabled
+            {agent.defaultProviderId
+              ? (providerNames[agent.defaultProviderId] ?? 'Default provider')
+              : 'Default provider'}{' '}
+            · {agent.selectedModelIds.length} enabled
           </p>
         </div>
         <div className="border-l border-border px-4 py-3">
