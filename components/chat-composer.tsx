@@ -13,6 +13,8 @@ import type { UseFormReturn } from 'react-hook-form'
 import {
   ChevronDown,
   ChevronRight,
+  ChevronUp,
+  Eraser,
   File,
   FileCode2,
   FileImage,
@@ -73,8 +75,8 @@ export type ComposerModelOption = {
 export type SlashCommandOption =
   | {
       kind: 'builtin'
-      id: 'new-session'
-      command: 'new-session'
+      id: 'new-session' | 'clear-session' | 'next-session' | 'prev-session'
+      command: 'new-session' | 'clear-session' | 'next-session' | 'prev-session'
       description: string
     }
   | {
@@ -117,6 +119,7 @@ export function ChatComposer({
   isStartingRun,
   abortingRun,
   creatingSession,
+  clearingSession,
   queueingMessage,
   canSend,
   sendButtonLabel,
@@ -145,6 +148,7 @@ export function ChatComposer({
   isStartingRun: boolean
   abortingRun: boolean
   creatingSession: boolean
+  clearingSession: boolean
   queueingMessage: 'steer' | 'follow-up' | null
   canSend: boolean
   sendButtonLabel: string
@@ -180,6 +184,7 @@ export function ChatComposer({
       }
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault()
+        if (isRunningRun || creatingSession || clearingSession) return
         onExecuteSlashCommand(slashCommandOptions[slashSelection] ?? slashCommandOptions[0])
         return
       }
@@ -196,7 +201,14 @@ export function ChatComposer({
       event.keyCode !== 229
     ) {
       event.preventDefault()
-      if (canSend && !isStartingRun && !isRunningRun && !abortingRun && !creatingSession) {
+      if (
+        canSend &&
+        !isStartingRun &&
+        !isRunningRun &&
+        !abortingRun &&
+        !creatingSession &&
+        !clearingSession
+      ) {
         onSubmit()
       }
     }
@@ -210,7 +222,7 @@ export function ChatComposer({
           <SlashCommandMenu
             options={slashCommandOptions}
             selectedIndex={slashSelection}
-            disabled={isRunningRun || creatingSession}
+            disabled={isRunningRun || creatingSession || clearingSession}
             onSelect={onExecuteSlashCommand}
           />
         )}
@@ -361,7 +373,7 @@ export function ChatComposer({
               disabled={
                 isRunningRun
                   ? !canAbortRun || abortingRun
-                  : isStartingRun || creatingSession || !canSend
+                  : isStartingRun || creatingSession || clearingSession || !canSend
               }
               className={cn(
                 'ml-1 flex h-8 shrink-0 items-center justify-center gap-1.5 border font-mono text-[10px] uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-60',
@@ -372,10 +384,10 @@ export function ChatComposer({
                     : 'border-accent bg-accent px-2.5 text-accent-foreground hover:opacity-90',
               )}
               aria-label={
-                canAbortRun ? 'Abort run' : isRunningRun ? 'Agent processing' : 'Send message'
+                canAbortRun ? 'Abort run' : isRunningRun ? 'Agent processing' : sendButtonLabel
               }
             >
-              {abortingRun || isStartingRun || creatingSession ? (
+              {abortingRun || isStartingRun || creatingSession || clearingSession ? (
                 <LoaderCircle className="size-3.5 animate-spin" />
               ) : canAbortRun ? (
                 <Square className="size-3 fill-current" />
@@ -383,6 +395,12 @@ export function ChatComposer({
                 <LoaderCircle className="size-3.5 animate-spin" />
               ) : message.trim().toLowerCase() === '/new-session' ? (
                 <MessageSquarePlus className="size-3.5" />
+              ) : message.trim().toLowerCase() === '/clear-session' ? (
+                <Eraser className="size-3.5" />
+              ) : message.trim().toLowerCase() === '/next-session' ? (
+                <ChevronDown className="size-3.5" />
+              ) : message.trim().toLowerCase() === '/prev-session' ? (
+                <ChevronUp className="size-3.5" />
               ) : (
                 <Send className="size-3.5" />
               )}
@@ -606,7 +624,15 @@ function SlashCommandMenu({
             >
               <span className="flex min-w-0 items-center gap-2.5">
                 {option.kind === 'builtin' ? (
-                  <MessageSquarePlus className="size-3.5 shrink-0 text-accent" />
+                  option.command === 'clear-session' ? (
+                    <Eraser className="size-3.5 shrink-0 text-accent" />
+                  ) : option.command === 'next-session' ? (
+                    <ChevronDown className="size-3.5 shrink-0 text-accent" />
+                  ) : option.command === 'prev-session' ? (
+                    <ChevronUp className="size-3.5 shrink-0 text-accent" />
+                  ) : (
+                    <MessageSquarePlus className="size-3.5 shrink-0 text-accent" />
+                  )
                 ) : (
                   <Terminal className="size-3.5 shrink-0 text-muted-foreground" />
                 )}

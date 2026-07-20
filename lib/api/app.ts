@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, rmSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
 import { streamSSE } from 'hono/streaming'
@@ -20,6 +20,7 @@ import {
   createRun,
   createScheduledTask,
   createSession,
+  clearSessionMessages,
   deleteAgent,
   deleteModel,
   deletePrompt,
@@ -1818,6 +1819,53 @@ api.openapi(
   (c) => {
     deleteSession(c.req.valid('param').id)
     return c.json({ ok: true })
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'post',
+    path: '/sessions/{id}/clear',
+    tags: ['Sessions'],
+    request: { params: z.object({ id: z.string() }) },
+    responses: {
+      200: json(z.object({ ok: z.boolean() })),
+      404: json(ErrorSchema),
+      409: json(ErrorSchema),
+      500: json(ErrorSchema),
+    },
+  }),
+  async (c) => {
+    const id = c.req.valid('param').id
+    const session = getSession(id)
+    if (!session) return c.json({ error: 'Session not found' }, 404)
+
+    const hasActiveRun = () => {
+      const activeRun = getActiveRunForSession(id)
+      const snapshot = activeRun ? getRunCoordinator().getSnapshot(activeRun.id) : null
+      return Boolean(snapshot && !snapshot.terminal)
+    }
+    if (hasActiveRun()) {
+      return c.json({ error: 'Stop the active run before clearing this session.' }, 409)
+    }
+
+    const { disposeSdkSession } = await import('@/lib/chat/sdk-session-manager')
+    if (hasActiveRun()) {
+      return c.json({ error: 'Stop the active run before clearing this session.' }, 409)
+    }
+    const disposed = disposeSdkSession(id)
+    if (disposed.status === 'running') {
+      return c.json({ error: 'Stop the active run before clearing this session.' }, 409)
+    }
+
+    try {
+      rmSync(session.filePath, { force: true })
+      clearSessionMessages(id)
+      return c.json({ ok: true })
+    } catch (error) {
+      logger.error(`Unable to clear session ${id}:`, error instanceof Error ? error.message : error)
+      return c.json({ error: 'Unable to clear the session.' }, 500)
+    }
   },
 )
 

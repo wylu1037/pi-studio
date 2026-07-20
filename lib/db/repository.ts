@@ -1344,6 +1344,28 @@ export function deleteSession(id: string) {
   db.delete(sessions).where(eq(sessions.id, id)).run()
 }
 
+export function clearSessionMessages(id: string) {
+  const session = db.select({ id: sessions.id }).from(sessions).where(eq(sessions.id, id)).get()
+  if (!session) return false
+
+  sqlite.transaction(() => {
+    db.delete(chatRuns).where(eq(chatRuns.sessionId, id)).run()
+    db.delete(chatMessages).where(eq(chatMessages.sessionId, id)).run()
+    db.delete(sessionTreeNodes).where(eq(sessionTreeNodes.sessionId, id)).run()
+    db.update(sessions)
+      .set({
+        activeNodeId: null,
+        totalTokens: 0,
+        totalCost: 0,
+        updatedAt: now(),
+      })
+      .where(eq(sessions.id, id))
+      .run()
+  })()
+
+  return true
+}
+
 export function duplicateSession(id: string) {
   const source = db.select().from(sessions).where(eq(sessions.id, id)).get()
   if (!source) return null

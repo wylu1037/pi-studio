@@ -328,6 +328,19 @@ export function getSdkSessionState(studioSessionId: string) {
   }
 }
 
+export function disposeSdkSession(studioSessionId: string) {
+  if (locks().has(studioSessionId)) return { status: 'running' as const }
+
+  const session = getSdkSession(studioSessionId)
+  if (session && (session.inner.isStreaming || !session.inner.isIdle)) {
+    return { status: 'running' as const }
+  }
+
+  session?.destroy()
+  pendingBranches().delete(studioSessionId)
+  return { status: 'disposed' as const }
+}
+
 export function getSdkSessionExtensions(studioSessionId: string) {
   const session = getSdkSession(studioSessionId)
   if (!session) return null

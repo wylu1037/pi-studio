@@ -178,6 +178,7 @@ export function ChatView({
   const [visibleMessageLimit, setVisibleMessageLimit] = useState(INITIAL_VISIBLE_MESSAGE_LIMIT)
   const [slashSelection, setSlashSelection] = useState(0)
   const [creatingSession, setCreatingSession] = useState(false)
+  const [clearingSession, setClearingSession] = useState(false)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(() =>
     findCurrentTreeNodeId(tree),
   )
@@ -347,8 +348,14 @@ export function ChatView({
       provider.id === composerValues.providerId && candidate.id === composerValues.modelId,
   )
   const isNewSessionCommand = composerValues.message.toLowerCase() === '/new-session'
+  const isClearSessionCommand = composerValues.message.toLowerCase() === '/clear-session'
+  const isNextSessionCommand = composerValues.message.toLowerCase() === '/next-session'
+  const isPrevSessionCommand = composerValues.message.toLowerCase() === '/prev-session'
   const canSend = Boolean(
     isNewSessionCommand ||
+    isClearSessionCommand ||
+    isNextSessionCommand ||
+    isPrevSessionCommand ||
     selectedExtensionCommand ||
     (selectedModelOption &&
       (composerValues.message.length > 0 || attachments.length > 0) &&
@@ -424,7 +431,7 @@ export function ChatView({
   }, [activeSession])
 
   const createNewSession = async () => {
-    if (!activeAgent || creatingSession) return
+    if (!activeAgent || creatingSession || clearingSession) return
     if (runId || sdkSessionRunning) {
       showToast({
         tone: 'error',
@@ -460,6 +467,85 @@ export function ChatView({
     }
   }
 
+  const clearCurrentSession = async () => {
+    if (!activeSession || clearingSession || creatingSession) return
+    if (runId || sdkSessionRunning) {
+      showToast({
+        tone: 'error',
+        title: 'Run in progress',
+        message: 'Stop the active run before clearing this session.',
+      })
+      return
+    }
+
+    setClearingSession(true)
+    try {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(activeSession.id)}/clear`, {
+        method: 'POST',
+      })
+      const body = (await response.json()) as { ok?: boolean; error?: string }
+      if (!response.ok || !body.ok) {
+        throw new Error(body.error ?? 'Unable to clear the session.')
+      }
+
+      eventSourceRef.current?.close()
+      eventSourceRef.current = null
+      if (reconcileTimerRef.current) {
+        window.clearTimeout(reconcileTimerRef.current)
+        reconcileTimerRef.current = null
+      }
+      finishAllStreamingMarkdown()
+      resetStreamingMarkdown()
+      activeRunIdRef.current = null
+      currentStreamingAssistantIdRef.current = null
+      latestStreamingAssistantIdRef.current = null
+      streamMessageSequenceRef.current = 0
+      sourceMessageCountAtRunStartRef.current = 0
+      sdkSessionWasRunningRef.current = false
+      ignoreSdkRunningUntilIdleRef.current = false
+      shouldFollowMessagesRef.current = true
+      setStreamMessages([])
+      setStreamStartedAt(null)
+      setStreamDone(false)
+      setStreamPhase('idle')
+      setOptimisticMessage(null)
+      setRunId(null)
+      setSdkActiveRunId(null)
+      setSdkSessionRunning(false)
+      setAbortingRun(false)
+      setStreamError(null)
+      setQueueingMessage(null)
+      setSelectedNodeId(null)
+      setBranchMessages(null)
+      setBranchPending(null)
+      setBranchError(null)
+      setExtensionCommands([])
+      setVisibleMessageLimit(INITIAL_VISIBLE_MESSAGE_LIMIT)
+      clearAttachments()
+      const values = form.getValues()
+      form.reset({
+        message: '',
+        providerId: values.providerId,
+        modelId: values.modelId,
+        thinkingLevel: values.thinkingLevel,
+      })
+      showToast({
+        tone: 'success',
+        title: 'Session cleared',
+        message: 'All messages were removed from this conversation.',
+      })
+      router.refresh()
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        title: 'Unable to clear session',
+        message: errorMessage(error, 'Session clearing failed.'),
+      })
+    } finally {
+      setClearingSession(false)
+    }
+  }
+
   const switchSession = (sessionId: string) => {
     if (
       !activeAgent ||
@@ -467,12 +553,59 @@ export function ChatView({
       streamPhase !== 'idle' ||
       sdkSessionRunning ||
       creatingSession ||
+      clearingSession ||
       branchPending !== null
     )
       return
     router.push(
       `/chat?agent=${encodeURIComponent(activeAgent.id)}&session=${encodeURIComponent(sessionId)}`,
     )
+  }
+
+  const switchRelativeSession = (direction: 'next' | 'previous') => {
+    if (!activeAgent || !activeSession) return
+    form.setValue('message', '')
+    if (
+      streamPhase !== 'idle' ||
+      sdkSessionRunning ||
+      creatingSession ||
+      clearingSession ||
+      branchPending !== null
+    ) {
+      showToast({
+        tone: 'warning',
+        title: 'Session switch unavailable',
+        message: 'Wait for the current session activity to finish before switching sessions.',
+      })
+      return
+    }
+
+    const orderedSessions = sessions.toReversed()
+    const currentIndex = orderedSessions.findIndex((session) => session.id === activeSession.id)
+    if (currentIndex < 0) {
+      showToast({
+        tone: 'error',
+        title: 'Session not found',
+        message: 'The current session is no longer available in the session list.',
+      })
+      return
+    }
+    const targetIndex = currentIndex + (direction === 'next' ? 1 : -1)
+    const target = orderedSessions[targetIndex]
+    if (!target) {
+      showToast({
+        tone: 'info',
+        title: direction === 'next' ? 'No next session' : 'No previous session',
+        message:
+          direction === 'next'
+            ? 'You are already at the last session in the list.'
+            : 'You are already at the first session in the list.',
+      })
+      return
+    }
+
+    clearAttachments()
+    switchSession(target.id)
   }
 
   const switchAgent = (agentId: string) => {
@@ -482,6 +615,7 @@ export function ChatView({
       streamPhase !== 'idle' ||
       sdkSessionRunning ||
       creatingSession ||
+      clearingSession ||
       branchPending !== null
     )
       return
@@ -498,6 +632,30 @@ export function ChatView({
         id: 'new-session',
         command: 'new-session',
         description: 'Start a clean conversation with the current agent.',
+      })
+    }
+    if ('clear-session'.includes(slashQuery)) {
+      options.push({
+        kind: 'builtin',
+        id: 'clear-session',
+        command: 'clear-session',
+        description: 'Clear every message from the current conversation.',
+      })
+    }
+    if ('next-session'.includes(slashQuery)) {
+      options.push({
+        kind: 'builtin',
+        id: 'next-session',
+        command: 'next-session',
+        description: 'Switch to the next conversation in the session list.',
+      })
+    }
+    if ('prev-session'.includes(slashQuery)) {
+      options.push({
+        kind: 'builtin',
+        id: 'prev-session',
+        command: 'prev-session',
+        description: 'Switch to the previous conversation in the session list.',
       })
     }
     options.push(
@@ -544,7 +702,10 @@ export function ChatView({
 
   const executeSlashCommand = (option: SlashCommandOption) => {
     if (option.kind === 'builtin') {
-      void createNewSession()
+      if (option.command === 'clear-session') void clearCurrentSession()
+      else if (option.command === 'next-session') switchRelativeSession('next')
+      else if (option.command === 'prev-session') switchRelativeSession('previous')
+      else void createNewSession()
       return
     }
     if (option.kind === 'extension') {
@@ -1027,6 +1188,18 @@ export function ChatView({
       await createNewSession()
       return
     }
+    if (values.message.trim().toLowerCase() === '/clear-session') {
+      await clearCurrentSession()
+      return
+    }
+    if (values.message.trim().toLowerCase() === '/next-session') {
+      switchRelativeSession('next')
+      return
+    }
+    if (values.message.trim().toLowerCase() === '/prev-session') {
+      switchRelativeSession('previous')
+      return
+    }
     const commandMatch = values.message.trim().match(/^\/([^\s]+)(?:\s+(.*))?$/)
     const extensionCommand = extensionCommands.find((command) => command.name === commandMatch?.[1])
     if (extensionCommand) {
@@ -1344,7 +1517,7 @@ export function ChatView({
   }
 
   const selectTreeNode = async (entryId: string) => {
-    if (!activeSession || isRunningRun) return
+    if (!activeSession || isRunningRun || clearingSession) return
     setSelectedNodeId(entryId)
     setBranchError(null)
     try {
@@ -1364,7 +1537,7 @@ export function ChatView({
   }
 
   const startBranch = async () => {
-    if (!activeSession || !selectedNodeId || isRunningRun) return
+    if (!activeSession || !selectedNodeId || isRunningRun || clearingSession) return
     setBranchPending('navigate')
     setBranchError(null)
     try {
@@ -1384,7 +1557,7 @@ export function ChatView({
   }
 
   const forkSession = async () => {
-    if (!activeAgent || !activeSession || !selectedNodeId || isRunningRun) return
+    if (!activeAgent || !activeSession || !selectedNodeId || isRunningRun || clearingSession) return
     setBranchPending('fork')
     setBranchError(null)
     try {
@@ -1426,9 +1599,17 @@ export function ChatView({
           : 'Working'
         : creatingSession
           ? 'Creating'
-          : isNewSessionCommand
-            ? 'New session'
-            : 'Send'
+          : clearingSession
+            ? 'Clearing'
+            : isNewSessionCommand
+              ? 'New session'
+              : isClearSessionCommand
+                ? 'Clear session'
+                : isNextSessionCommand
+                  ? 'Next session'
+                  : isPrevSessionCommand
+                    ? 'Previous session'
+                    : 'Send'
 
   return (
     <div className="flex h-full min-h-0">
@@ -1723,6 +1904,7 @@ export function ChatView({
             isStartingRun={isStartingRun}
             abortingRun={abortingRun}
             creatingSession={creatingSession}
+            clearingSession={clearingSession}
             queueingMessage={queueingMessage}
             canSend={canSend}
             sendButtonLabel={sendButtonLabel}
