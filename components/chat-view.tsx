@@ -33,8 +33,6 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
-  ArrowDown,
-  ArrowUp,
   Package,
 } from 'lucide-react'
 import { ActionButton, Label, Tag, BracketButton, Panel, PanelHeader } from '@/components/pi-ui'
@@ -53,6 +51,7 @@ import {
 import { WorkspaceExplorer } from '@/components/workspace-explorer'
 import { ExtensionUiHost } from '@/components/extension-ui-host'
 import { ChatAvatar } from '@/components/chat-avatar'
+import { ChatMessageOutline, type ChatMessageOutlineEntry } from '@/components/chat-message-outline'
 import { useProfileSettings } from '@/components/use-profile-settings'
 import { Bubble, BubbleContent } from '@/components/ui/bubble'
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker'
@@ -176,8 +175,6 @@ export function ChatView({
   const composerContainerRef = useRef<HTMLDivElement>(null)
   const shouldFollowMessagesRef = useRef(true)
   const prependScrollRef = useRef<{ height: number; top: number } | null>(null)
-  const [canScrollUp, setCanScrollUp] = useState(false)
-  const [canScrollDown, setCanScrollDown] = useState(false)
   const [visibleMessageLimit, setVisibleMessageLimit] = useState(INITIAL_VISIBLE_MESSAGE_LIMIT)
   const [slashSelection, setSlashSelection] = useState(0)
   const [creatingSession, setCreatingSession] = useState(false)
@@ -681,6 +678,10 @@ export function ChatView({
     () => buildDisplayItems(visibleDisplayMessages),
     [visibleDisplayMessages],
   )
+  const messageOutlineEntries = useMemo(
+    () => buildMessageOutlineEntries(displayItems),
+    [displayItems],
+  )
 
   const loadOlderMessages = () => {
     const viewport = messageViewportRef.current
@@ -709,20 +710,17 @@ export function ChatView({
     const viewport = messageViewportRef.current
     if (!viewport) return
 
-    const updateScrollState = () => {
+    const updateFollowState = () => {
       const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
-      const nearBottom = distanceFromBottom < 96
-      shouldFollowMessagesRef.current = nearBottom
-      setCanScrollUp(viewport.scrollTop > 96)
-      setCanScrollDown(distanceFromBottom > 96)
+      shouldFollowMessagesRef.current = distanceFromBottom < 96
     }
 
-    updateScrollState()
-    viewport.addEventListener('scroll', updateScrollState, { passive: true })
-    const observer = new ResizeObserver(updateScrollState)
+    updateFollowState()
+    viewport.addEventListener('scroll', updateFollowState, { passive: true })
+    const observer = new ResizeObserver(updateFollowState)
     observer.observe(viewport)
     return () => {
-      viewport.removeEventListener('scroll', updateScrollState)
+      viewport.removeEventListener('scroll', updateFollowState)
       observer.disconnect()
     }
   }, [])
@@ -733,15 +731,6 @@ export function ChatView({
     viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'auto' })
   }, [displayMessages.length, streamMessages])
 
-  const scrollMessagesTo = (position: 'top' | 'bottom') => {
-    const viewport = messageViewportRef.current
-    if (!viewport) return
-    shouldFollowMessagesRef.current = position === 'bottom'
-    viewport.scrollTo({
-      top: position === 'top' ? 0 : viewport.scrollHeight,
-      behavior: 'smooth',
-    })
-  }
   const isStartingRun = streamPhase === 'starting' && !runId
   const isRunningRun = Boolean(runId) || sdkSessionRunning
   const isWaiting =
@@ -1619,7 +1608,7 @@ export function ChatView({
         <div className="relative min-h-0 flex-1">
           <ScrollArea
             className="h-full min-h-0"
-            viewportClassName="px-5 py-6"
+            viewportClassName="px-5 py-6 xl:pr-14"
             viewportRef={messageViewportRef}
           >
             <div className="mx-auto flex w-full max-w-208 min-w-0 flex-col gap-4 overflow-x-hidden px-8">
@@ -1633,6 +1622,7 @@ export function ChatView({
                 </button>
               )}
               {displayItems.map((item) => {
+                const anchorId = messageOutlineAnchorId(item)
                 if (item.type === 'assistant-turn') {
                   const isStreaming = item.messages.some(
                     (message) => message.timestamp === 'streaming',
@@ -1641,29 +1631,31 @@ export function ChatView({
                     (message) => message.type === 'assistant',
                   )
                   return (
-                    <AssistantTurn
-                      key={item.id}
-                      messages={item.messages}
-                      agentAvatar={activeAgent.icon}
-                      mediaSessionId={activeSession.id}
-                      streamStartedAt={isStreaming ? streamStartedAt : null}
-                      isStreaming={isStreaming}
-                      streamingMarkdown={
-                        primaryAssistant
-                          ? streamingMarkdownSnapshots[primaryAssistant.id]
-                          : undefined
-                      }
-                    />
+                    <div key={item.id} id={anchorId} data-message-outline-anchor>
+                      <AssistantTurn
+                        messages={item.messages}
+                        agentAvatar={activeAgent.icon}
+                        mediaSessionId={activeSession.id}
+                        streamStartedAt={isStreaming ? streamStartedAt : null}
+                        isStreaming={isStreaming}
+                        streamingMarkdown={
+                          primaryAssistant
+                            ? streamingMarkdownSnapshots[primaryAssistant.id]
+                            : undefined
+                        }
+                      />
+                    </div>
                   )
                 }
 
                 return (
-                  <StandaloneMessage
-                    key={item.message.id}
-                    message={item.message}
-                    userAvatar={userAvatar}
-                    mediaSessionId={activeSession.id}
-                  />
+                  <div key={item.message.id} id={anchorId} data-message-outline-anchor>
+                    <StandaloneMessage
+                      message={item.message}
+                      userAvatar={userAvatar}
+                      mediaSessionId={activeSession.id}
+                    />
+                  </div>
                 )
               })}
               {isWaiting && <WaitingBubble agentAvatar={activeAgent.icon} />}
@@ -1695,6 +1687,11 @@ export function ChatView({
               />
             </div>
           </ScrollArea>
+          <ChatMessageOutline
+            entries={messageOutlineEntries}
+            viewportRef={messageViewportRef}
+            bottomOffset={composerOverlayHeight + 16}
+          />
           {/* composer */}
           <ChatComposer
             form={form}
@@ -1730,35 +1727,6 @@ export function ChatView({
             canSend={canSend}
             sendButtonLabel={sendButtonLabel}
           />
-          {(canScrollUp || canScrollDown) && (
-            <div
-              className="pointer-events-none absolute right-5 flex flex-col border border-border bg-card shadow-lg"
-              style={{ bottom: composerOverlayHeight + 20 }}
-            >
-              {canScrollUp && (
-                <button
-                  type="button"
-                  onClick={() => scrollMessagesTo('top')}
-                  className="pointer-events-auto flex size-9 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98]"
-                  title="Back to top"
-                  aria-label="Back to top"
-                >
-                  <ArrowUp className="size-4" />
-                </button>
-              )}
-              {canScrollDown && (
-                <button
-                  type="button"
-                  onClick={() => scrollMessagesTo('bottom')}
-                  className="pointer-events-auto flex size-9 items-center justify-center border-t border-border text-muted-foreground transition-colors first:border-t-0 hover:bg-muted hover:text-foreground active:scale-[0.98]"
-                  title="Jump to latest message"
-                  aria-label="Jump to latest message"
-                >
-                  <ArrowDown className="size-4" />
-                </button>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
@@ -2252,6 +2220,95 @@ function buildDisplayItems(messages: ChatMessage[]): DisplayItem[] {
 
   flushAssistantTurn()
   return items
+}
+
+function messageOutlineAnchorId(item: DisplayItem) {
+  return `chat-message-${item.type === 'assistant-turn' ? item.id : item.message.id}`
+}
+
+function buildMessageOutlineEntries(items: DisplayItem[]): ChatMessageOutlineEntry[] {
+  const entries: ChatMessageOutlineEntry[] = []
+
+  for (const item of items) {
+    if (item.type === 'message' && item.message.type === 'user') {
+      const attachmentNames = item.message.attachments
+        ?.map((attachment) => attachment.name)
+        .join(', ')
+      entries.push({
+        id: `outline-${item.message.id}`,
+        anchorId: messageOutlineAnchorId(item),
+        title:
+          messageOutlinePreview(item.message.content, 120) ||
+          attachmentNames ||
+          'Message with attachments',
+        timestamp: item.message.timestamp,
+        attachmentCount: item.message.attachments?.length,
+      })
+      continue
+    }
+
+    if (item.type !== 'assistant-turn') continue
+    const response =
+      item.messages.findLast((message) => message.type === 'assistant') ??
+      item.messages.findLast((message) => message.type === 'error')
+    if (!response?.content) continue
+
+    const summary = messageOutlinePreview(response.content, 180)
+    const references = messageOutlineReferences(response.content)
+    const currentTurn = entries.at(-1)
+    if (currentTurn && !currentTurn.summary) {
+      currentTurn.summary = summary
+      currentTurn.references = references
+      continue
+    }
+
+    entries.push({
+      id: `outline-${item.id}`,
+      anchorId: messageOutlineAnchorId(item),
+      title: 'Assistant response',
+      summary,
+      timestamp: response.timestamp,
+      references,
+    })
+  }
+
+  return entries
+}
+
+function messageOutlinePreview(content: string, maxLength: number) {
+  const preview = content
+    .replace(/```[\s\S]*?```/g, ' code block ')
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1 image')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[#>*_`~|-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  return preview.length > maxLength ? `${preview.slice(0, maxLength).trimEnd()}…` : preview
+}
+
+function messageOutlineReferences(content: string) {
+  const references: string[] = []
+  const addReference = (value: string) => {
+    const normalized = value.trim().replace(/^.*[\\/]/, '')
+    if (normalized && !references.includes(normalized)) references.push(normalized)
+  }
+
+  for (const match of content.matchAll(
+    /\[([^\]]+\.(?:tsx?|jsx?|css|json|ya?ml|md|cjs|mjs)(?::\d+)?)\]\([^)]+\)/gi,
+  )) {
+    addReference(match[1])
+    if (references.length === 2) return references
+  }
+
+  for (const match of content.matchAll(
+    /`([^`\n]+\.(?:tsx?|jsx?|css|json|ya?ml|md|cjs|mjs)(?::\d+)?)`/gi,
+  )) {
+    addReference(match[1])
+    if (references.length === 2) break
+  }
+
+  return references
 }
 
 function WaitingBubble({ agentAvatar }: { agentAvatar?: string }) {
