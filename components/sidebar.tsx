@@ -71,7 +71,7 @@ export function Sidebar({ piVersion }: { piVersion: string }) {
           </span>
         </Link>
         <SidebarTrigger
-          className="absolute top-[18px] right-2 opacity-100 transition-opacity group-data-[collapsible=icon]:pointer-events-auto group-data-[collapsible=icon]:right-2.5 group-data-[collapsible=icon]:opacity-100 md:pointer-events-none md:opacity-0 md:group-hover/header:pointer-events-auto md:group-hover/header:opacity-100"
+          className="absolute top-4.5 right-2 opacity-100 transition-opacity group-data-[collapsible=icon]:pointer-events-auto group-data-[collapsible=icon]:right-2.5 group-data-[collapsible=icon]:opacity-100 md:pointer-events-none md:opacity-0 md:group-hover/header:pointer-events-auto md:group-hover/header:opacity-100"
           title="Toggle sidebar (Ctrl+B)"
         />
       </SidebarHeader>

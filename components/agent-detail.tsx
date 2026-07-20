@@ -634,7 +634,7 @@ function ModelsTab({
             </EmptyHeader>
           </Empty>
         ) : (
-          <Table className="min-w-[760px] table-fixed">
+          <Table className="min-w-190 table-fixed">
             <colgroup>
               <col className="w-[26%]" />
               <col className="w-[62%]" />
@@ -661,7 +661,7 @@ function ModelsTab({
                 return (
                   <TableRow
                     key={provider.id}
-                    className={cn('hover:bg-transparent', providerEnabled && 'bg-accent/[0.02]')}
+                    className={cn('hover:bg-transparent', providerEnabled && 'bg-accent/2')}
                     aria-busy={providerPending}
                   >
                     <TableCell className="border-r border-border p-4 align-middle whitespace-normal">
