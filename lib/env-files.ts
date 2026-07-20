@@ -15,6 +15,10 @@ import { basename, dirname, join, resolve } from 'node:path'
 
 export const MAX_ENV_FILE_BYTES = 1024 * 1024
 
+export function isEnvFileName(filename: string) {
+  return /^\.env(?:\.[A-Za-z0-9_-]+)*$/.test(filename)
+}
+
 export class EnvFileError extends Error {
   readonly status: number
 
@@ -79,7 +83,7 @@ export function resolveEnvFilePath(inputPath: string, baseDir = process.cwd()) {
         : trimmed
   const requested = resolve(baseDir, expanded)
   const filename = basename(requested)
-  if (!/^\.env(?:\.[A-Za-z0-9_-]+)*$/.test(filename)) {
+  if (!isEnvFileName(filename)) {
     throw new EnvFileError('File name must be .env or a variant such as .env.local.', 400)
   }
 

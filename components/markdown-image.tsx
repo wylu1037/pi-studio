@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useLayoutEffect, useState } from 'react'
 import { Dialog } from '@base-ui/react/dialog'
 import { Download, ImageOff, Maximize2, RotateCcw, X, ZoomIn, ZoomOut } from 'lucide-react'
 
@@ -11,6 +11,34 @@ import { cn } from '@/lib/utils'
 const MIN_ZOOM = 0.5
 const MAX_ZOOM = 3
 const ZOOM_STEP = 0.25
+
+function useSidebarOffset(active: boolean) {
+  const [offset, setOffset] = useState(0)
+
+  useLayoutEffect(() => {
+    if (!active) {
+      setOffset(0)
+      return
+    }
+
+    const sidebarGap = document.querySelector<HTMLElement>('[data-slot="sidebar-gap"]')
+    if (!sidebarGap) return
+
+    const updateOffset = () => setOffset(sidebarGap.getBoundingClientRect().width)
+    updateOffset()
+
+    const resizeObserver = new ResizeObserver(updateOffset)
+    resizeObserver.observe(sidebarGap)
+    window.addEventListener('resize', updateOffset)
+
+    return () => {
+      resizeObserver.disconnect()
+      window.removeEventListener('resize', updateOffset)
+    }
+  }, [active])
+
+  return offset
+}
 
 export function MarkdownImage({
   src,
@@ -26,6 +54,7 @@ export function MarkdownImage({
   const [zoom, setZoom] = useState(1)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewZoom, setPreviewZoom] = useState(1)
+  const sidebarOffset = useSidebarOffset(previewOpen)
 
   const zoomOut = () => setZoom((current) => Math.max(MIN_ZOOM, current - ZOOM_STEP))
   const zoomIn = () => setZoom((current) => Math.min(MAX_ZOOM, current + ZOOM_STEP))
@@ -130,8 +159,11 @@ export function MarkdownImage({
 
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 min-h-dvh bg-background/85 backdrop-blur-sm transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0 supports-[-webkit-touch-callout:none]:absolute" />
-        <Dialog.Viewport className="fixed inset-0 flex min-h-dvh items-center justify-center p-3 sm:p-6">
-          <Dialog.Popup className="flex h-[min(92dvh,64rem)] w-[min(96vw,96rem)] flex-col overflow-hidden rounded-xl border border-border-strong bg-card shadow-2xl transition-[scale,opacity] duration-200 outline-none data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0">
+        <Dialog.Viewport
+          className="fixed inset-y-0 right-0 flex min-h-dvh items-center justify-center p-3 sm:p-6"
+          style={{ left: sidebarOffset }}
+        >
+          <Dialog.Popup className="flex h-[min(92dvh,64rem)] w-[min(96%,96rem)] flex-col overflow-hidden rounded-xl border border-border-strong bg-card shadow-2xl transition-[scale,opacity] duration-200 outline-none data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0">
             <Dialog.Title className="sr-only">Image preview: {alt}</Dialog.Title>
 
             <ScrollArea

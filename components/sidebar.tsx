@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { LayoutGroup, motion } from 'motion/react'
 import {
   Bot,
   CalendarClock,
@@ -77,36 +78,47 @@ export function Sidebar({ piVersion }: { piVersion: string }) {
 
       <SidebarContent className="scrollbar-thin font-mono">
         <SidebarGroup className="p-0 px-2 py-3">
-          <SidebarMenu className="gap-0.5">
-            {nav.map((item) => {
-              const active =
-                item.href === '/'
-                  ? pathname === '/' || pathname.startsWith('/agents')
-                  : pathname.startsWith(item.href)
-              const Icon = item.icon
+          <LayoutGroup id="primary-navigation">
+            <SidebarMenu className="gap-0.5">
+              {nav.map((item) => {
+                const active =
+                  item.href === '/'
+                    ? pathname === '/' || pathname.startsWith('/agents')
+                    : pathname.startsWith(item.href)
+                const Icon = item.icon
 
-              return (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton
-                    render={
-                      <Link
-                        href={item.href}
-                        aria-current={active ? 'page' : undefined}
-                        onClick={closeMobileSidebar}
+                return (
+                  <SidebarMenuItem key={item.href}>
+                    {active && (
+                      <motion.span
+                        layoutId="sidebar-active-item"
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 border border-sidebar-border bg-card"
+                        transition={{ type: 'spring', stiffness: 420, damping: 36, mass: 0.75 }}
                       />
-                    }
-                    isActive={active}
-                    variant="studio"
-                    size="studio"
-                    tooltip={item.label}
-                  >
-                    <Icon />
-                    <span>{item.label}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )
-            })}
-          </SidebarMenu>
+                    )}
+                    <SidebarMenuButton
+                      render={
+                        <Link
+                          href={item.href}
+                          aria-current={active ? 'page' : undefined}
+                          onClick={closeMobileSidebar}
+                        />
+                      }
+                      className="relative data-active:border-transparent data-active:bg-transparent data-active:hover:bg-transparent"
+                      isActive={active}
+                      variant="studio"
+                      size="studio"
+                      tooltip={item.label}
+                    >
+                      <Icon />
+                      <span>{item.label}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )
+              })}
+            </SidebarMenu>
+          </LayoutGroup>
         </SidebarGroup>
       </SidebarContent>
 

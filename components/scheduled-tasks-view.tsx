@@ -406,13 +406,13 @@ export function ScheduledTasksView({
         <TabsList className="h-auto rounded-none border border-border-strong bg-panel p-0.5 group-data-horizontal/tabs:h-auto">
           <TabsTrigger
             value="manage"
-            className="h-auto flex-none rounded-none px-4 py-1.5 font-mono text-[11px] tracking-[0.12em] text-muted-foreground uppercase hover:bg-muted hover:text-foreground active:scale-[0.98] data-active:bg-primary data-active:text-primary-foreground"
+            className="h-auto flex-none rounded-none px-4 py-1.5 font-mono text-[11px] tracking-[0.12em] text-muted-foreground uppercase hover:bg-muted hover:text-foreground active:scale-[0.98] data-active:bg-primary data-active:text-primary-foreground data-active:hover:bg-primary/90 data-active:hover:text-primary-foreground"
           >
             Manage
           </TabsTrigger>
           <TabsTrigger
             value="create"
-            className="h-auto flex-none rounded-none px-4 py-1.5 font-mono text-[11px] tracking-[0.12em] text-muted-foreground uppercase hover:bg-muted hover:text-foreground active:scale-[0.98] data-active:bg-primary data-active:text-primary-foreground"
+            className="h-auto flex-none rounded-none px-4 py-1.5 font-mono text-[11px] tracking-[0.12em] text-muted-foreground uppercase hover:bg-muted hover:text-foreground active:scale-[0.98] data-active:bg-primary data-active:text-primary-foreground data-active:hover:bg-primary/90 data-active:hover:text-primary-foreground"
             disabled={!canCreate}
           >
             Create

@@ -1,6 +1,7 @@
 'use client'
 
 import type React from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import { cn } from '@/lib/utils'
 
 /* Uppercase tracked mono label used for section headers */
@@ -35,15 +36,16 @@ export function BracketButton({
       title={title}
       disabled={disabled}
       className={cn(
-        'inline-flex shrink-0 items-center gap-1.5 border border-border-strong bg-card px-3 py-1.5 font-mono text-xs tracking-wide whitespace-nowrap text-foreground transition-colors',
-        'hover:bg-muted disabled:pointer-events-none disabled:opacity-40',
-        active && 'border-primary bg-primary text-primary-foreground',
+        'inline-flex shrink-0 items-center gap-1.5 border border-border-strong bg-card px-3 py-1.5 font-mono text-xs tracking-wide whitespace-nowrap text-muted-foreground transition-colors',
+        'hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40',
+        active &&
+          'border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground',
         className,
       )}
     >
-      <span className="text-muted-foreground/70">[</span>
+      <span className="opacity-70">[</span>
       <span className="uppercase">{children}</span>
-      <span className="text-muted-foreground/70">]</span>
+      <span className="opacity-70">]</span>
     </button>
   )
 }
@@ -239,11 +241,10 @@ export function Toggle({
         checked ? 'border-accent bg-accent/80' : 'border-border-strong bg-muted',
       )}
     >
-      <span
-        className={cn(
-          'absolute top-0.5 size-3 bg-card transition-all',
-          checked ? 'left-4' : 'left-0.5',
-        )}
+      <motion.span
+        className="absolute top-0.5 left-0.5 size-3 bg-card"
+        animate={{ x: checked ? 14 : 0 }}
+        transition={{ type: 'spring', stiffness: 520, damping: 34, mass: 0.5 }}
       />
     </button>
   )
@@ -292,43 +293,56 @@ export function ConfirmDialog({
   onConfirm: () => void
   onCancel: () => void
 }) {
-  if (!open) return null
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      role="alertdialog"
-      aria-modal="true"
-      aria-labelledby="confirm-dialog-title"
-      aria-describedby="confirm-dialog-description"
-    >
-      <button
-        type="button"
-        aria-label="Close confirmation"
-        onClick={busy ? undefined : onCancel}
-        className="absolute inset-0 bg-foreground/25"
-      />
-      <div className="relative w-full max-w-md border border-border bg-card shadow-xl">
-        <div className="border-b border-border bg-panel px-4 py-3">
-          <h2 id="confirm-dialog-title" className="font-serif text-lg text-foreground italic">
-            {title}
-          </h2>
-        </div>
-        <p
-          id="confirm-dialog-description"
-          className="px-4 py-4 text-sm leading-relaxed text-muted-foreground"
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          key="confirm-dialog"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="confirm-dialog-title"
+          aria-describedby="confirm-dialog-description"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.16 }}
         >
-          {description}
-        </p>
-        <div className="flex items-center justify-end gap-2 border-t border-border bg-panel px-4 py-3">
-          <ActionButton onClick={onCancel} disabled={busy}>
-            {cancelLabel}
-          </ActionButton>
-          <ActionButton variant="danger" onClick={onConfirm} disabled={busy}>
-            {confirmLabel}
-          </ActionButton>
-        </div>
-      </div>
-    </div>
+          <button
+            type="button"
+            aria-label="Close confirmation"
+            onClick={busy ? undefined : onCancel}
+            className="absolute inset-0 bg-foreground/25"
+          />
+          <motion.div
+            className="relative w-full max-w-md border border-border bg-card shadow-xl"
+            initial={{ y: 8, scale: 0.98 }}
+            animate={{ y: 0, scale: 1 }}
+            exit={{ y: 4, scale: 0.985 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 34, mass: 0.7 }}
+          >
+            <div className="border-b border-border bg-panel px-4 py-3">
+              <h2 id="confirm-dialog-title" className="font-serif text-lg text-foreground italic">
+                {title}
+              </h2>
+            </div>
+            <p
+              id="confirm-dialog-description"
+              className="px-4 py-4 text-sm leading-relaxed text-muted-foreground"
+            >
+              {description}
+            </p>
+            <div className="flex items-center justify-end gap-2 border-t border-border bg-panel px-4 py-3">
+              <ActionButton onClick={onCancel} disabled={busy}>
+                {cancelLabel}
+              </ActionButton>
+              <ActionButton variant="danger" onClick={onConfirm} disabled={busy}>
+                {confirmLabel}
+              </ActionButton>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }

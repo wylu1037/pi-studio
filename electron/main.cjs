@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-/* global URL, process, require, setTimeout */
-const { app, BrowserWindow, dialog, shell, utilityProcess } = require('electron')
+/* global URL, __dirname, process, require, setTimeout */
+const { app, BrowserWindow, dialog, ipcMain, shell, utilityProcess } = require('electron')
 const { createServer } = require('node:net')
 const { delimiter, join } = require('node:path')
 const {
@@ -26,6 +26,8 @@ let serverProcess = null
 let serverLogStream = null
 let serverUrl = null
 let quitting = false
+
+const SELECT_ENV_FILE_CHANNEL = 'pi-studio:select-env-file'
 
 app.setAppUserModelId('com.pistudio.desktop')
 
@@ -187,6 +189,7 @@ function createWindow(url) {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      preload: join(__dirname, 'preload.cjs'),
       sandbox: true,
     },
   })
@@ -211,6 +214,20 @@ function createWindow(url) {
   })
   void mainWindow.loadURL(url)
 }
+
+ipcMain.handle(SELECT_ENV_FILE_CHANNEL, async () => {
+  const options = {
+    title: 'Choose environment file',
+    buttonLabel: 'Choose file',
+    defaultPath: app.getPath('home'),
+    properties: ['openFile', 'showHiddenFiles'],
+  }
+  const result =
+    mainWindow && !mainWindow.isDestroyed()
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options)
+  return result.canceled ? null : (result.filePaths[0] ?? null)
+})
 
 const hasLock = app.requestSingleInstanceLock()
 if (!hasLock) app.quit()

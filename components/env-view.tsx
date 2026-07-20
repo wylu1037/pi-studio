@@ -1,7 +1,21 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { FileKey2, Pencil, Plus, Save, Search, ShieldAlert, Trash2, X } from 'lucide-react'
+import {
+  ChevronUp,
+  FileKey2,
+  Folder,
+  FolderOpen,
+  LoaderCircle,
+  Pencil,
+  Plus,
+  Save,
+  Search,
+  ShieldAlert,
+  Trash2,
+  X,
+} from 'lucide-react'
+import { cn } from '@/lib/utils'
 import {
   ActionButton,
   ConfirmDialog,
@@ -19,6 +33,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
+import { ScrollArea } from '@/components/ui/scroll-area'
 
 const MANAGED_FILES_KEY = 'pi-studio:environment:managed-files'
 
@@ -34,11 +49,11 @@ type ManagedEnvFile = Omit<EnvFilePayload, 'content'> & {
   variableCount: number
 }
 
-export function EnvView({ defaultPath }: { defaultPath: string }) {
+export function EnvView() {
   const [files, setFiles] = useState<ManagedEnvFile[]>([])
   const [hydrated, setHydrated] = useState(false)
   const [adding, setAdding] = useState(false)
-  const [path, setPath] = useState(defaultPath)
+  const [path, setPath] = useState('')
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState<ManagedEnvFile | null>(null)
   const [content, setContent] = useState('')
@@ -77,6 +92,12 @@ export function EnvView({ defaultPath }: { defaultPath: string }) {
     persistFiles(next)
   }
 
+  const openAddDialog = () => {
+    setPath('')
+    setError(null)
+    setAdding(true)
+  }
+
   const requestFile = async (requestedPath: string) => {
     const response = await fetch(`/api/env-file?path=${encodeURIComponent(requestedPath)}`)
     const body = (await response.json()) as EnvFilePayload | { error?: string }
@@ -94,7 +115,7 @@ export function EnvView({ defaultPath }: { defaultPath: string }) {
       const body = await requestFile(path)
       const file = toManagedFile(body)
       upsertFile(file)
-      setPath(defaultPath)
+      setPath('')
       setAdding(false)
     } catch (addError) {
       setError(addError instanceof Error ? addError.message : 'Unable to add file.')
@@ -181,10 +202,7 @@ export function EnvView({ defaultPath }: { defaultPath: string }) {
       >
         <ActionButton
           variant="accent"
-          onClick={() => {
-            setError(null)
-            setAdding(true)
-          }}
+          onClick={openAddDialog}
           disabled={adding || Boolean(editing)}
         >
           <Plus className="size-3.5" />
@@ -213,12 +231,7 @@ export function EnvView({ defaultPath }: { defaultPath: string }) {
             {!hydrated ? (
               <div className="min-h-64 animate-pulse bg-muted/70" aria-label="Loading files" />
             ) : files.length === 0 ? (
-              <EnvFilesEmptyState
-                onAdd={() => {
-                  setError(null)
-                  setAdding(true)
-                }}
-              />
+              <EnvFilesEmptyState onAdd={openAddDialog} />
             ) : filteredFiles.length === 0 ? (
               <p className="px-4 py-16 text-center font-mono text-[11px] text-muted-foreground">
                 No paths match this filter
@@ -297,10 +310,12 @@ export function EnvView({ defaultPath }: { defaultPath: string }) {
             setPath(value)
             setError(null)
           }}
+          onError={setError}
           onAdd={() => void addFile()}
           onClose={() => {
             if (pending === null) {
               setAdding(false)
+              setPath('')
               setError(null)
             }
           }}
@@ -541,6 +556,7 @@ function AddEnvFileDialog({
   pending,
   error,
   onPathChange,
+  onError,
   onAdd,
   onClose,
 }: {
@@ -548,16 +564,48 @@ function AddEnvFileDialog({
   pending: boolean
   error: string | null
   onPathChange: (value: string) => void
+  onError: (message: string) => void
   onAdd: () => void
   onClose: () => void
 }) {
+  const [choosing, setChoosing] = useState(false)
+  const [browserOpen, setBrowserOpen] = useState(false)
+
   useEffect(() => {
     const handleEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape' && !pending) onClose()
+      if (event.key === 'Escape' && !pending && !choosing && !browserOpen) onClose()
     }
     window.addEventListener('keydown', handleEscape)
     return () => window.removeEventListener('keydown', handleEscape)
-  }, [onClose, pending])
+  }, [browserOpen, choosing, onClose, pending])
+
+  const chooseExistingFile = async () => {
+    if (!window.piStudio?.selectEnvFile) {
+      setBrowserOpen(true)
+      return
+    }
+    setChoosing(true)
+    try {
+      const selectedPath = await window.piStudio.selectEnvFile()
+      if (selectedPath) onPathChange(selectedPath)
+    } catch (selectError) {
+      onError(selectError instanceof Error ? selectError.message : 'Unable to select file.')
+    } finally {
+      setChoosing(false)
+    }
+  }
+
+  if (browserOpen) {
+    return (
+      <EnvFilePickerDialog
+        onClose={() => setBrowserOpen(false)}
+        onSelect={(selectedPath) => {
+          onPathChange(selectedPath)
+          setBrowserOpen(false)
+        }}
+      />
+    )
+  }
 
   return (
     <div
@@ -588,14 +636,26 @@ function AddEnvFileDialog({
         <div className="space-y-4 p-4">
           <div>
             <Label className="mb-1.5 block">Environment file path</Label>
-            <input
-              value={path}
-              onChange={(event) => onPathChange(event.target.value)}
-              placeholder="/path/to/project/.env"
-              autoFocus
-              spellCheck={false}
-              className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-ring"
-            />
+            <div className="flex w-full items-center border border-input bg-panel transition-colors focus-within:border-ring">
+              <FolderOpen className="ml-3 size-3.5 shrink-0 text-muted-foreground" />
+              <input
+                value={path}
+                onChange={(event) => onPathChange(event.target.value)}
+                placeholder="/path/to/project/.env"
+                autoFocus
+                spellCheck={false}
+                className="min-w-0 flex-1 bg-transparent px-2.5 py-2 font-mono text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60"
+              />
+              <button
+                type="button"
+                onClick={() => void chooseExistingFile()}
+                disabled={pending || choosing}
+                title="Choose an existing environment file"
+                className="self-stretch border-l border-input px-3 font-mono text-[11px] text-accent transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:text-muted-foreground disabled:opacity-50"
+              >
+                {choosing ? 'Choosing…' : 'Browse'}
+              </button>
+            </div>
             <p className="mt-1 font-mono text-[10px] leading-relaxed text-muted-foreground">
               The parent directory must exist. Supported names include .env, .env.local, and
               .env.production.local.
@@ -610,13 +670,13 @@ function AddEnvFileDialog({
         </div>
 
         <footer className="flex items-center justify-end gap-2 border-t border-border bg-panel px-4 py-3">
-          <ActionButton onClick={onClose} disabled={pending}>
+          <ActionButton onClick={onClose} disabled={pending || choosing}>
             Cancel
           </ActionButton>
           <ActionButton
             variant="accent"
             type="submit"
-            disabled={!path.trim() || pending}
+            disabled={!path.trim() || pending || choosing}
             className="active:scale-[0.98]"
           >
             <Plus className="size-3.5" />
@@ -624,6 +684,191 @@ function AddEnvFileDialog({
           </ActionButton>
         </footer>
       </form>
+    </div>
+  )
+}
+
+type EnvFileBrowserEntry = {
+  name: string
+  path: string
+}
+
+type EnvFileBrowserListing = {
+  path: string
+  parent?: string
+  entries: EnvFileBrowserEntry[]
+  files: EnvFileBrowserEntry[]
+}
+
+function EnvFilePickerDialog({
+  onClose,
+  onSelect,
+}: {
+  onClose: () => void
+  onSelect: (path: string) => void
+}) {
+  const [requestedPath, setRequestedPath] = useState('')
+  const [directory, setDirectory] = useState<EnvFileBrowserListing | null>(null)
+  const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const query = new URLSearchParams({ includeFiles: 'env' })
+    if (requestedPath) query.set('path', requestedPath)
+
+    setLoading(true)
+    setError(null)
+    setSelectedPath(null)
+    fetch(`/api/directories?${query}`, { signal: controller.signal })
+      .then(async (response) => {
+        const body = (await response.json()) as EnvFileBrowserListing & { error?: string }
+        if (!response.ok) throw new Error(body.error ?? 'Unable to load this directory.')
+        setDirectory(body)
+      })
+      .catch((requestError: unknown) => {
+        if (controller.signal.aborted) return
+        setDirectory(null)
+        setError(
+          requestError instanceof Error ? requestError.message : 'Unable to load this directory.',
+        )
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [reloadKey, requestedPath])
+
+  useEffect(() => {
+    const handleEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="env-file-picker-title"
+    >
+      <button
+        type="button"
+        aria-label="Close environment file picker"
+        onClick={onClose}
+        className="absolute inset-0 bg-foreground/25"
+      />
+      <div className="relative flex w-full max-w-xl flex-col border border-border bg-card shadow-xl">
+        <header className="border-b border-border bg-panel px-4 py-3">
+          <h2 id="env-file-picker-title" className="font-serif text-lg text-foreground italic">
+            Select environment file
+          </h2>
+          <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+            Browse folders and choose an existing .env file.
+          </p>
+        </header>
+
+        <div className="flex flex-col gap-3 p-4">
+          <div className="flex items-center gap-2 border border-input bg-panel p-2">
+            <ActionButton
+              title="Go to parent folder"
+              onClick={() => directory?.parent && setRequestedPath(directory.parent)}
+              disabled={!directory?.parent || loading}
+              className="px-2"
+            >
+              <ChevronUp className="size-3.5" />
+            </ActionButton>
+            <p
+              className="min-w-0 flex-1 truncate font-mono text-[12px] text-foreground"
+              title={directory?.path}
+            >
+              {directory?.path ?? (loading ? 'Loading directory…' : 'Choose a directory')}
+            </p>
+          </div>
+
+          <ScrollArea
+            className="h-72 border border-border bg-panel"
+            viewportClassName="pr-2"
+            contentClassName="min-h-full"
+          >
+            {loading && !directory ? (
+              <div className="flex h-full items-center justify-center gap-2 font-mono text-xs text-muted-foreground">
+                <LoaderCircle className="size-4 animate-spin" />
+                Loading files
+              </div>
+            ) : error ? (
+              <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+                <p className="font-mono text-xs text-destructive">{error}</p>
+                <div className="flex items-center gap-2">
+                  {requestedPath && (
+                    <ActionButton onClick={() => setRequestedPath('')}>
+                      Open home folder
+                    </ActionButton>
+                  )}
+                  <ActionButton onClick={() => setReloadKey((value) => value + 1)}>
+                    Retry
+                  </ActionButton>
+                </div>
+              </div>
+            ) : directory && directory.entries.length === 0 && directory.files.length === 0 ? (
+              <p className="px-4 py-10 text-center font-mono text-xs text-muted-foreground">
+                No folders or environment files in this directory.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {directory?.entries.map((entry) => (
+                  <li key={entry.path}>
+                    <button
+                      type="button"
+                      onClick={() => setRequestedPath(entry.path)}
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-muted"
+                    >
+                      <Folder className="size-4 shrink-0 text-accent" />
+                      <span className="truncate font-mono text-[13px] text-foreground">
+                        {entry.name}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+                {directory?.files.map((file) => (
+                  <li key={file.path}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPath(file.path)}
+                      onDoubleClick={() => onSelect(file.path)}
+                      className={cn(
+                        'flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-muted',
+                        selectedPath === file.path && 'bg-muted',
+                      )}
+                    >
+                      <FileKey2 className="size-4 shrink-0 text-accent" />
+                      <span className="truncate font-mono text-[13px] text-foreground">
+                        {file.name}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </ScrollArea>
+        </div>
+
+        <footer className="flex items-center justify-end gap-2 border-t border-border bg-panel px-4 py-3">
+          <ActionButton onClick={onClose}>Cancel</ActionButton>
+          <ActionButton
+            variant="accent"
+            onClick={() => selectedPath && onSelect(selectedPath)}
+            disabled={!selectedPath || loading}
+          >
+            Select file
+          </ActionButton>
+        </footer>
+      </div>
     </div>
   )
 }

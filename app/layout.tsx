@@ -2,7 +2,9 @@ import type { Metadata, Viewport } from 'next'
 import { Analytics } from '@vercel/analytics/next'
 import { cookies } from 'next/headers'
 import { Sidebar } from '@/components/sidebar'
+import { MotionProvider } from '@/components/motion-provider'
 import { QueryProvider } from '@/components/query-provider'
+import { RouteTransition } from '@/components/route-transition'
 import { ToastHost } from '@/components/toast-host'
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -34,24 +36,28 @@ export default async function RootLayout({
   return (
     <html lang="en" className="bg-background" suppressHydrationWarning>
       <body className="antialiased">
-        <TooltipProvider>
-          <QueryProvider>
-            <SidebarProvider
-              defaultOpen={sidebarOpen}
-              className="h-svh min-h-0 overflow-hidden"
-              style={{ '--sidebar-width': '14rem' } as React.CSSProperties}
-            >
-              <Sidebar piVersion={piVersion} />
-              <main className="flex h-svh min-w-0 flex-1 flex-col overflow-hidden">
-                <header className="flex h-10 shrink-0 items-center gap-2 border-b border-sidebar-border bg-sidebar px-2 md:hidden">
-                  <SidebarTrigger title="Open navigation" />
-                  <span className="font-serif text-base italic">Pi Studio</span>
-                </header>
-                <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
-              </main>
-            </SidebarProvider>
-          </QueryProvider>
-        </TooltipProvider>
+        <MotionProvider>
+          <TooltipProvider>
+            <QueryProvider>
+              <SidebarProvider
+                defaultOpen={sidebarOpen}
+                className="h-svh min-h-0 overflow-hidden"
+                style={{ '--sidebar-width': '14rem' } as React.CSSProperties}
+              >
+                <Sidebar piVersion={piVersion} />
+                <main className="flex h-svh min-w-0 flex-1 flex-col overflow-hidden">
+                  <header className="flex h-10 shrink-0 items-center gap-2 border-b border-sidebar-border bg-sidebar px-2 md:hidden">
+                    <SidebarTrigger title="Open navigation" />
+                    <span className="font-serif text-base italic">Pi Studio</span>
+                  </header>
+                  <div className="min-h-0 flex-1 overflow-hidden">
+                    <RouteTransition>{children}</RouteTransition>
+                  </div>
+                </main>
+              </SidebarProvider>
+            </QueryProvider>
+          </TooltipProvider>
+        </MotionProvider>
         <ToastHost />
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>

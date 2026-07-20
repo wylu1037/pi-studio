@@ -273,7 +273,7 @@ export function ExtensionsView({
             <TabsTrigger
               key={value}
               value={value}
-              className="h-auto flex-none rounded-none px-4 py-1.5 font-mono text-[11px] tracking-[0.12em] text-muted-foreground uppercase hover:bg-muted hover:text-foreground active:scale-[0.98] data-active:bg-primary data-active:text-primary-foreground"
+              className="h-auto flex-none rounded-none px-4 py-1.5 font-mono text-[11px] tracking-[0.12em] text-muted-foreground uppercase hover:bg-muted hover:text-foreground active:scale-[0.98] data-active:bg-primary data-active:text-primary-foreground data-active:hover:bg-primary/90 data-active:hover:text-primary-foreground"
             >
               {value}
             </TabsTrigger>
