@@ -35,10 +35,12 @@ import { ActionButton, ConfirmDialog, Label, PageHeader, Panel, Tag } from '@/co
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
 import { NumberField } from '@/components/ui/number-field'
 import {
   Empty,
@@ -68,6 +70,7 @@ const providerFormSchema = z.object({
   ]),
   apiKey: z.string().optional(),
   headersText: z.string().optional(),
+  userAgent: z.string().optional(),
 })
 type ProviderForm = z.infer<typeof providerFormSchema>
 const addModelFormSchema = z.object({
@@ -92,6 +95,24 @@ const providerApis: ProviderApi[] = [
   'google-generative-ai',
 ]
 
+const CUSTOM_USER_AGENT = '__custom__'
+const USER_AGENT_PRESETS = [
+  { value: 'Pi-Studio/1.0', label: 'Pi Studio' },
+  { value: 'claude-cli/2.1.202 (external, cli)', label: 'Claude Code CLI' },
+  {
+    value: 'claude-cli/2.1.202 (external, claude-vscode, agent-sdk/0.3.202)',
+    label: 'Claude VS Code',
+  },
+  {
+    value: 'codex_cli_rs/0.144.5 (Mac OS 15.5.0; aarch64) Apple_Terminal',
+    label: 'Codex CLI (macOS ARM)',
+  },
+  { value: 'OpenAI-Compatible-Client/1.0', label: 'OpenAI-compatible client' },
+  { value: 'Anthropic-Compatible-Client/1.0', label: 'Anthropic-compatible client' },
+  { value: 'curl/8.0.1', label: 'curl' },
+  { value: 'Mozilla/5.0', label: 'Browser-like' },
+] as const
+
 const providerBrand: Record<ProviderApi, { label: string }> = {
   'openai-completions': {
     label: 'OPENAI',
@@ -105,6 +126,20 @@ const providerBrand: Record<ProviderApi, { label: string }> = {
   'google-generative-ai': {
     label: 'GEMINI',
   },
+}
+
+function headerValue(headers: Record<string, string> | undefined, name: string) {
+  const expected = name.toLowerCase()
+  return Object.entries(headers ?? {}).find(([key]) => key.toLowerCase() === expected)?.[1] ?? ''
+}
+
+function withUserAgent(headers: Record<string, string>, userAgent: string) {
+  const next = Object.fromEntries(
+    Object.entries(headers).filter(([key]) => key.toLowerCase() !== 'user-agent'),
+  )
+  const trimmed = userAgent.trim()
+  if (trimmed) next['User-Agent'] = trimmed
+  return next
 }
 
 export function ModelsView({ providers }: { providers: GlobalModelProvider[] }) {
@@ -358,6 +393,7 @@ function ProviderDetail({
       api: provider.api,
       apiKey: provider.apiKey ?? '',
       headersText: JSON.stringify(provider.headers ?? {}, null, 2),
+      userAgent: headerValue(provider.headers, 'user-agent'),
     },
   })
   const [pending, setPending] = useState<string | null>(null)
@@ -376,6 +412,7 @@ function ProviderDetail({
       if (values.headersText?.trim()) {
         headers = JSON.parse(values.headersText) as Record<string, string>
       }
+      headers = withUserAgent(headers, values.userAgent ?? '')
       const updated = await postApiModelProviders({
         id: provider.id,
         name: values.name,
@@ -614,12 +651,66 @@ function ProviderDetail({
             </Config>
           </div>
           <div className="mt-4">
-            <Label className="mb-1.5 block">Custom headers</Label>
-            <textarea
-              {...register('headersText')}
-              rows={5}
-              className="w-full resize-none border border-input bg-panel px-3 py-1.5 font-mono text-[12px] text-foreground outline-none focus:border-ring"
-            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Config label="User-Agent">
+                <Controller
+                  control={control}
+                  name="userAgent"
+                  render={({ field }) => {
+                    const preset =
+                      USER_AGENT_PRESETS.find((item) => item.value === field.value)?.value ??
+                      CUSTOM_USER_AGENT
+                    return (
+                      <div className="flex gap-2">
+                        <Input
+                          ref={field.ref}
+                          name={field.name}
+                          value={field.value ?? ''}
+                          onBlur={field.onBlur}
+                          onChange={field.onChange}
+                          placeholder="Enter a custom User-Agent"
+                          className="min-w-0 flex-1 rounded-none border-input bg-panel font-mono text-[12px]"
+                        />
+                        <Select
+                          value={preset}
+                          onValueChange={(value) => {
+                            if (value === CUSTOM_USER_AGENT) field.onChange('')
+                            else if (value !== null) field.onChange(value)
+                          }}
+                        >
+                          <SelectTrigger className="shrink-0">
+                            <SelectValue>
+                              {preset === CUSTOM_USER_AGENT ? 'Custom' : 'Preset'}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent
+                            align="end"
+                            alignItemWithTrigger={false}
+                            className="w-max min-w-(--anchor-width)"
+                          >
+                            <SelectGroup>
+                              {USER_AGENT_PRESETS.map((item) => (
+                                <SelectItem key={item.value} value={item.value}>
+                                  {item.label}
+                                </SelectItem>
+                              ))}
+                              <SelectItem value={CUSTOM_USER_AGENT}>Custom</SelectItem>
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )
+                  }}
+                />
+              </Config>
+              <Config label="Custom headers">
+                <textarea
+                  {...register('headersText')}
+                  rows={5}
+                  className="w-full resize-none border border-input bg-panel px-3 py-1.5 font-mono text-[12px] text-foreground outline-none focus:border-ring"
+                />
+              </Config>
+            </div>
           </div>
         </Panel>
 

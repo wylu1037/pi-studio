@@ -110,7 +110,10 @@ import { cn } from '@/lib/utils'
 import { useChatAttachments } from '@/components/use-chat-attachments'
 import { ImageAttachmentPreview, isImageAttachment } from '@/components/image-attachment-preview'
 import { buildPromptWithAttachments } from '@/lib/chat/attachments'
-import { hasPersistedAssistantResponse } from '@/lib/chat/stream-lifecycle'
+import {
+  hasPersistedAssistantResponse,
+  hasPersistedUserMessage,
+} from '@/lib/chat/stream-lifecycle'
 
 const EVENT_STREAM_CONNECT_TIMEOUT_MS = 5000
 const RUN_RECONCILE_INITIAL_DELAY_MS = 1000
@@ -825,11 +828,10 @@ export function ChatView({
   const baseMessages = useMemo(() => {
     if (!optimisticMessage) return sourceMessages
 
-    const hasPersistedOptimisticMessage = sourceMessages.some(
-      (message) =>
-        message.type === 'user' &&
-        message.content === optimisticMessage.content &&
-        sameAttachments(message.attachments, optimisticMessage.attachments),
+    const hasPersistedOptimisticMessage = hasPersistedUserMessage(
+      sourceMessages,
+      sourceMessageCountAtRunStartRef.current,
+      optimisticMessage,
     )
 
     return hasPersistedOptimisticMessage ? sourceMessages : [...sourceMessages, optimisticMessage]
@@ -3129,12 +3131,6 @@ function processMessageMeta(message: ChatMessage) {
         color: 'text-muted-foreground',
       }
   }
-}
-
-function sameAttachments(left: ChatMessage['attachments'], right: ChatMessage['attachments']) {
-  if (!left?.length && !right?.length) return true
-  if (!left || !right || left.length !== right.length) return false
-  return left.every((attachment, index) => attachment.path === right[index]?.path)
 }
 
 const StandaloneMessage = memo(function StandaloneMessage({
