@@ -1,25 +1,29 @@
 import { prepareRun } from '@/lib/chat/run-registry'
 import { startRunExecution } from '@/lib/chat/run-execution'
-import { matchesCron, parseCronExpression } from '@/lib/scheduler/cron'
+import { nextCronRunAt } from '@/lib/scheduler/cron'
 import { isSupportedTimeZone } from '@/lib/scheduler/timezones'
 import {
+  claimScheduledTaskExecution,
   createRun,
   createSession,
   getRun,
   getScheduledTask,
   getSession,
-  listScheduledTasks,
+  listDueScheduledTasks,
+  listInterruptedScheduledTasks,
   resolveAgentRunConfig,
-  updateScheduledTask,
   updateScheduledTaskExecution,
   type ScheduledTask,
 } from '@/lib/db/repository'
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MAX_CONCURRENT_SCHEDULED_TASKS = 3
 
 declare global {
   var __piStudioTaskScheduler: ReturnType<typeof setInterval> | undefined
   var __piStudioTaskSchedulerTick: Promise<void> | undefined
+  var __piStudioTaskSchedulerRecovered: boolean | undefined
+  var __piStudioScheduledTaskRuns: Map<string, Promise<void>> | undefined
 }
 
 export function nextRunAt(
@@ -36,8 +40,10 @@ export function nextRunAt(
   from = new Date(),
 ) {
   if (input.scheduleType === 'once') return input.scheduledAt ?? null
-  if (input.scheduleType === 'cron')
-    return nextCronRunAt(input.cronExpression, input.timezone, from)
+  if (input.scheduleType === 'cron') {
+    const timezone = isSupportedTimeZone(input.timezone) ? input.timezone : 'Asia/Shanghai'
+    return nextCronRunAt(input.cronExpression, timezone, from)
+  }
   if (input.scheduleType === 'interval') {
     const minutes = input.intervalMinutes ?? 0
     return minutes > 0 ? new Date(from.getTime() + minutes * 60_000).toISOString() : null
@@ -77,36 +83,9 @@ export function nextRunAt(
   return next.toISOString()
 }
 
-function nextCronRunAt(expression: string | undefined, timezone: string, from: Date) {
-  if (!expression) return null
-  const schedule = parseCronExpression(expression)
-  if (!schedule) return null
-  const resolvedTimeZone = isSupportedTimeZone(timezone) ? timezone : 'Asia/Shanghai'
-  const candidate = new Date(from)
-  candidate.setUTCSeconds(0, 0)
-  candidate.setUTCMinutes(candidate.getUTCMinutes() + 1)
-  const limit = 527_040
-  for (let index = 0; index < limit; index += 1) {
-    const parts = zonedParts(candidate, resolvedTimeZone)
-    const weekday = DAY_NAMES.indexOf(parts.weekday)
-    if (
-      matchesCron(schedule, {
-        minute: parts.minute,
-        hour: parts.hour,
-        day: parts.day,
-        month: parts.month,
-        weekday,
-      })
-    ) {
-      return candidate.toISOString()
-    }
-    candidate.setUTCMinutes(candidate.getUTCMinutes() + 1)
-  }
-  return null
-}
-
 export function ensureTaskScheduler() {
   if (globalThis.__piStudioTaskScheduler) return
+  recoverInterruptedScheduledTasks()
   globalThis.__piStudioTaskScheduler = setInterval(() => void tickScheduledTasks(), 30_000)
   void tickScheduledTasks()
 }
@@ -114,16 +93,12 @@ export function ensureTaskScheduler() {
 export async function tickScheduledTasks() {
   if (globalThis.__piStudioTaskSchedulerTick) return globalThis.__piStudioTaskSchedulerTick
   const tick = (async () => {
-    const now = new Date()
-    const due = listScheduledTasks().filter(
-      (task) =>
-        task.enabled &&
-        task.nextRunAt &&
-        new Date(task.nextRunAt) <= now &&
-        task.lastRunStatus !== 'queued' &&
-        task.lastRunStatus !== 'running',
+    const capacity = MAX_CONCURRENT_SCHEDULED_TASKS - scheduledTaskRuns().size
+    if (capacity <= 0) return
+    const due = listDueScheduledTasks(new Date().toISOString(), capacity)
+    await Promise.allSettled(
+      due.map((task) => executeScheduledTask(task.id, { requireDue: true })),
     )
-    await Promise.all(due.map((task) => executeScheduledTask(task.id)))
   })().finally(() => {
     globalThis.__piStudioTaskSchedulerTick = undefined
   })
@@ -131,76 +106,105 @@ export async function tickScheduledTasks() {
   return tick
 }
 
-export async function executeScheduledTask(taskId: string) {
+export async function executeScheduledTask(
+  taskId: string,
+  options: { requireDue?: boolean } = {},
+) {
   const task = getScheduledTask(taskId)
   if (!task) throw new Error('Scheduled task not found.')
-  if (task.lastRunStatus === 'queued' || task.lastRunStatus === 'running') {
-    throw new Error('This scheduled task is already running.')
+  if (scheduledTaskRuns().size >= MAX_CONCURRENT_SCHEDULED_TASKS) {
+    throw new Error('The scheduled task concurrency limit has been reached.')
   }
 
   const now = new Date()
-  const next = task.scheduleType === 'once' ? null : nextRunAt(task, now)
-  if (task.scheduleType === 'once') {
-    updateScheduledTask(task.id, { enabled: false, nextRunAt: null })
-  }
-  updateScheduledTaskExecution(task.id, {
-    lastRunAt: now.toISOString(),
-    lastRunStatus: 'queued',
+  const claimedAt = now.toISOString()
+  const next = task.enabled && task.scheduleType !== 'once' ? nextRunAt(task, now) : null
+  const claimedTask = claimScheduledTaskExecution(task.id, {
+    expectedUpdatedAt: task.updatedAt,
+    claimedAt,
     nextRunAt: next,
+    disable: task.scheduleType === 'once',
+    requireDue: options.requireDue ?? false,
   })
+  if (!claimedTask) throw new Error('This scheduled task is already running or has changed.')
 
   let runConfig: ReturnType<typeof scheduledTaskRunConfig>
   try {
-    runConfig = scheduledTaskRunConfig(task)
+    runConfig = scheduledTaskRunConfig(claimedTask)
   } catch (error) {
-    updateScheduledTaskExecution(task.id, { lastRunStatus: 'failed' })
+    finishScheduledTaskExecution(task.id, 'failed')
     throw error
   }
 
-  const existing = task.sessionId ? getSession(task.sessionId) : null
+  const existing = claimedTask.sessionId ? getSession(claimedTask.sessionId) : null
   const session =
-    existing && existing.agentId === task.agentId
+    existing && existing.agentId === claimedTask.agentId
       ? existing
       : createSession({
-          agentId: task.agentId,
-          name: task.sessionName?.trim() || `Scheduled · ${task.name}`,
+          agentId: claimedTask.agentId,
+          name: claimedTask.sessionName?.trim() || `Scheduled · ${claimedTask.name}`,
         })
   if (!session) {
-    updateScheduledTaskExecution(task.id, { lastRunStatus: 'failed' })
+    finishScheduledTaskExecution(task.id, 'failed')
     throw new Error('The scheduled task agent is no longer available.')
   }
 
-  updateScheduledTaskExecution(task.id, { sessionId: session.id })
+  updateScheduledTaskExecution(task.id, { sessionId: session.id, lastRunStatus: 'running' })
   const run = createRun({
     sessionId: session.id,
-    agentId: task.agentId,
-    prompt: task.prompt,
+    agentId: claimedTask.agentId,
+    prompt: claimedTask.prompt,
     providerId: runConfig.providerId,
     modelId: runConfig.modelId,
     thinkingLevel: runConfig.thinkingLevel,
     cwd: session.cwd,
   })
   if (!run) {
-    updateScheduledTaskExecution(task.id, { lastRunStatus: 'failed' })
+    finishScheduledTaskExecution(task.id, 'failed')
     throw new Error('Unable to create the scheduled run.')
   }
 
   prepareRun(run.id)
-  void startRunExecution(run.id).then(
-    () => {
+  const execution = startRunExecution(run.id)
+    .then(() => {
       const finished = getRun(run.id)
-      updateScheduledTaskExecution(task.id, {
-        lastRunStatus: finished?.status === 'completed' ? 'completed' : 'failed',
-        nextRunAt: task.scheduleType === 'once' ? null : nextRunAt(task),
-      })
-    },
-    () =>
-      updateScheduledTaskExecution(task.id, {
-        lastRunStatus: 'failed',
-        nextRunAt: task.scheduleType === 'once' ? null : nextRunAt(task),
-      }),
-  )
+      finishScheduledTaskExecution(
+        task.id,
+        finished?.status === 'completed' ? 'completed' : 'failed',
+      )
+    })
+    .catch(() => finishScheduledTaskExecution(task.id, 'failed'))
+    .finally(() => {
+      scheduledTaskRuns().delete(task.id)
+      void tickScheduledTasks()
+    })
+  scheduledTaskRuns().set(task.id, execution)
   return { runId: run.id, sessionId: session.id }
+}
+
+function scheduledTaskRuns() {
+  globalThis.__piStudioScheduledTaskRuns ??= new Map<string, Promise<void>>()
+  return globalThis.__piStudioScheduledTaskRuns
+}
+
+function recoverInterruptedScheduledTasks() {
+  if (globalThis.__piStudioTaskSchedulerRecovered) return
+  globalThis.__piStudioTaskSchedulerRecovered = true
+  for (const task of listInterruptedScheduledTasks()) {
+    finishScheduledTaskExecution(task.id, 'failed')
+  }
+}
+
+function finishScheduledTaskExecution(
+  taskId: string,
+  status: 'completed' | 'failed',
+) {
+  const task = getScheduledTask(taskId)
+  if (!task) return
+  updateScheduledTaskExecution(task.id, {
+    lastRunStatus: status,
+    nextRunAt: task.enabled && task.scheduleType !== 'once' ? nextRunAt(task) : null,
+  })
 }
 
 function scheduledTaskRunConfig(task: ScheduledTask) {

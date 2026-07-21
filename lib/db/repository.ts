@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, lte, notInArray } from 'drizzle-orm'
 import type {
   AgentProfile,
   AgentSessionSummary,
@@ -879,6 +879,33 @@ export function listScheduledTasks(): ScheduledTask[] {
     .sort((left, right) => (left.nextRunAt ?? '').localeCompare(right.nextRunAt ?? ''))
 }
 
+export function listDueScheduledTasks(at: string, limit = 100): ScheduledTask[] {
+  return db
+    .select()
+    .from(scheduledTasks)
+    .where(
+      and(
+        eq(scheduledTasks.enabled, true),
+        isNotNull(scheduledTasks.nextRunAt),
+        lte(scheduledTasks.nextRunAt, at),
+        notInArray(scheduledTasks.lastRunStatus, ['queued', 'running']),
+      ),
+    )
+    .orderBy(asc(scheduledTasks.nextRunAt))
+    .limit(Math.max(1, limit))
+    .all()
+    .map(mapScheduledTask)
+}
+
+export function listInterruptedScheduledTasks(): ScheduledTask[] {
+  return db
+    .select()
+    .from(scheduledTasks)
+    .where(inArray(scheduledTasks.lastRunStatus, ['queued', 'running']))
+    .all()
+    .map(mapScheduledTask)
+}
+
 export function getScheduledTask(id: string): ScheduledTask | null {
   const task = db.select().from(scheduledTasks).where(eq(scheduledTasks.id, id)).get()
   return task ? mapScheduledTask(task) : null
@@ -981,6 +1008,42 @@ export function updateScheduledTaskExecution(
     .where(eq(scheduledTasks.id, id))
     .run()
   return getScheduledTask(id)
+}
+
+export function claimScheduledTaskExecution(
+  id: string,
+  input: {
+    expectedUpdatedAt: string
+    claimedAt: string
+    nextRunAt: string | null
+    disable: boolean
+    requireDue: boolean
+  },
+) {
+  const conditions = [
+    eq(scheduledTasks.id, id),
+    eq(scheduledTasks.updatedAt, input.expectedUpdatedAt),
+    notInArray(scheduledTasks.lastRunStatus, ['queued', 'running']),
+  ]
+  if (input.requireDue) {
+    conditions.push(
+      eq(scheduledTasks.enabled, true),
+      isNotNull(scheduledTasks.nextRunAt),
+      lte(scheduledTasks.nextRunAt, input.claimedAt),
+    )
+  }
+  const result = db
+    .update(scheduledTasks)
+    .set({
+      enabled: input.disable ? false : undefined,
+      lastRunAt: input.claimedAt,
+      lastRunStatus: 'queued',
+      nextRunAt: input.nextRunAt,
+      updatedAt: input.claimedAt,
+    })
+    .where(and(...conditions))
+    .run()
+  return result.changes === 1 ? getScheduledTask(id) : null
 }
 
 export function deleteScheduledTask(id: string) {

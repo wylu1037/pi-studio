@@ -1,20 +1,31 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { isCronExpression, matchesCron, parseCronExpression } from './cron'
+import { isCronExpression, nextCronRunAt } from './cron'
 
-test('parses five-field cron expressions with ranges, lists, and steps', () => {
-  const schedule = parseCronExpression('*/10 9-17 * * 1,3,5')
-  assert.ok(schedule)
-  assert.equal(matchesCron(schedule, { minute: 20, hour: 9, day: 14, month: 7, weekday: 1 }), true)
-  assert.equal(matchesCron(schedule, { minute: 21, hour: 9, day: 14, month: 7, weekday: 1 }), false)
-  assert.equal(matchesCron(schedule, { minute: 20, hour: 9, day: 14, month: 7, weekday: 2 }), false)
-})
-
-test('accepts Sunday as either 0 or 7 and rejects invalid cron expressions', () => {
-  const schedule = parseCronExpression('0 0 * * 7')
-  assert.ok(schedule)
-  assert.equal(matchesCron(schedule, { minute: 0, hour: 0, day: 14, month: 7, weekday: 0 }), true)
-  assert.equal(isCronExpression('0 9 * * 1'), true)
+test('validates five-field cron expressions with ranges, lists, and steps', () => {
+  assert.equal(isCronExpression('*/10 9-17 * * 1,3,5'), true)
   assert.equal(isCronExpression('every monday'), false)
   assert.equal(isCronExpression('* * * * * *'), false)
+})
+
+test('calculates the next run with IANA timezone and Sunday aliases', () => {
+  assert.equal(
+    nextCronRunAt('0 9 * * 1', 'Asia/Shanghai', new Date('2026-07-19T00:00:00.000Z')),
+    '2026-07-20T01:00:00.000Z',
+  )
+  assert.equal(
+    nextCronRunAt('0 0 * * 7', 'UTC', new Date('2026-07-14T00:00:00.000Z')),
+    '2026-07-19T00:00:00.000Z',
+  )
+})
+
+test('handles daylight-saving transitions through cron-parser', () => {
+  assert.equal(
+    nextCronRunAt(
+      '30 2 * * *',
+      'America/New_York',
+      new Date('2026-03-07T12:00:00.000Z'),
+    ),
+    '2026-03-08T07:30:00.000Z',
+  )
 })
