@@ -34,6 +34,9 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Package,
+  Pencil,
+  Copy,
+  Check,
 } from 'lucide-react'
 import { ActionButton, Label, Tag, BracketButton, Panel, PanelHeader } from '@/components/pi-ui'
 import {
@@ -195,6 +198,7 @@ export function ChatView({
   const latestStreamingAssistantIdRef = useRef<string | null>(null)
   const streamMessageSequenceRef = useRef(0)
   const sourceMessageCountAtRunStartRef = useRef(messages.length)
+  const pendingSourceCountRef = useRef<number | null>(null)
   const sdkSessionWasRunningRef = useRef(false)
   const ignoreSdkRunningUntilIdleRef = useRef(false)
 
@@ -1278,7 +1282,9 @@ export function ChatView({
     currentStreamingAssistantIdRef.current = null
     latestStreamingAssistantIdRef.current = null
     streamMessageSequenceRef.current = 0
-    sourceMessageCountAtRunStartRef.current = sourceMessages.length
+    sourceMessageCountAtRunStartRef.current =
+      pendingSourceCountRef.current ?? sourceMessages.length
+    pendingSourceCountRef.current = null
     setOptimisticMessage({
       id: `optimistic-user-${Date.now()}`,
       type: 'user',
@@ -1577,6 +1583,56 @@ export function ChatView({
     }
   }
 
+  const resubmitEditedUserMessage = async (message: ChatMessage, content: string) => {
+    if (!activeSession || !activeAgent || isRunningRun || clearingSession) return
+    const trimmed = content.trim()
+    if (!trimmed) return
+
+    const userMessages = displayMessages.filter((item) => item.type === 'user')
+    const userIndex = userMessages.findIndex((item) => item.id === message.id)
+    const entry = userIndex >= 0 ? findUserTreeNodeByIndex(tree, userIndex) : null
+
+    if (entry?.parentId) {
+      try {
+        const navigateResponse = await fetch(`/api/sessions/${activeSession.id}/navigate`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ entryId: entry.parentId }),
+        })
+        const navigateBody = (await navigateResponse.json()) as { error?: string }
+        if (!navigateResponse.ok) {
+          throw new Error(navigateBody.error ?? 'Unable to branch from this message.')
+        }
+
+        const contextResponse = await fetch(
+          `/api/sessions/${encodeURIComponent(activeSession.id)}/context?leafId=${encodeURIComponent(entry.parentId)}`,
+        )
+        const contextBody = (await contextResponse.json()) as {
+          messages?: ChatMessage[]
+          error?: string
+        }
+        if (!contextResponse.ok || !contextBody.messages) {
+          throw new Error(contextBody.error ?? 'Unable to load branch context.')
+        }
+        setSelectedNodeId(entry.parentId)
+        setBranchMessages(contextBody.messages)
+        pendingSourceCountRef.current = contextBody.messages.length
+      } catch (error) {
+        showToast({
+          tone: 'error',
+          title: 'Edit message',
+          message: error instanceof Error ? error.message : 'Unable to branch from this message.',
+        })
+        return
+      }
+    }
+
+    clearAttachments()
+    form.setValue('message', trimmed, { shouldDirty: true })
+    await submit()
+  }
+
+
   const totalTreeNodes = countTreeNodes(tree)
   const visibleTree = useMemo(
     () => buildRecentSessionTree(tree, SESSION_TREE_RECENT_NODE_LIMIT, selectedNodeId),
@@ -1835,6 +1891,8 @@ export function ChatView({
                       message={item.message}
                       userAvatar={userAvatar}
                       mediaSessionId={activeSession.id}
+                      canEdit={!isRunningRun && !clearingSession}
+                      onResubmit={resubmitEditedUserMessage}
                     />
                   </div>
                 )
@@ -2608,9 +2666,9 @@ const AssistantTurn = memo(function AssistantTurn({
         <ChatAvatar preset={agentAvatar} role="assistant" />
       </MessageAvatar>
       <MessageContent className="gap-0.5">
-        {primaryAssistant ? (
+        {primaryAssistant || errorMessages.length > 0 || detailMessages.length > 0 ? (
           <Bubble variant="ghost" className="w-full max-w-full">
-            <BubbleContent className="w-full p-0">
+            <BubbleContent className="w-full max-w-full min-w-0 p-0">
               {detailMessages.length > 0 && (
                 <ProcessDetailsGroup
                   messages={detailMessages}
@@ -2618,65 +2676,57 @@ const AssistantTurn = memo(function AssistantTurn({
                   mediaSessionId={mediaSessionId}
                 />
               )}
-              <div className="px-3.5 pt-3 pb-2">
-                {streamingMarkdown ? (
-                  <StreamingMarkdownContent
-                    snapshot={streamingMarkdown}
-                    mediaSessionId={mediaSessionId}
-                  />
-                ) : primaryAssistant.timestamp === 'streaming' ? (
-                  <div className="whitespace-pre-wrap text-foreground">
-                    {primaryAssistant.content}
-                  </div>
-                ) : (
-                  <MarkdownContent
-                    content={primaryAssistant.content}
-                    mediaSessionId={mediaSessionId}
-                  />
-                )}
-              </div>
-              {errorMessages.map((message) => (
-                <div
-                  key={message.id}
-                  className="flex items-start gap-2 border-t border-destructive/30 bg-destructive/8 px-3.5 py-2.5"
-                >
-                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
-                  <p className="font-mono text-[11px] leading-relaxed text-destructive">
-                    {message.content}
-                  </p>
+              {primaryAssistant ? (
+                <div className="w-full max-w-full min-w-0 px-3.5 pt-3 pb-2">
+                  {streamingMarkdown ? (
+                    <StreamingMarkdownContent
+                      snapshot={streamingMarkdown}
+                      mediaSessionId={mediaSessionId}
+                    />
+                  ) : primaryAssistant.timestamp === 'streaming' ? (
+                    <div className="whitespace-pre-wrap text-foreground">
+                      {primaryAssistant.content}
+                    </div>
+                  ) : (
+                    <MarkdownContent
+                      content={primaryAssistant.content}
+                      mediaSessionId={mediaSessionId}
+                    />
+                  )}
                 </div>
-              ))}
+              ) : null}
+              {errorMessages.length > 0 ? (
+                <div
+                  className={cn(
+                    'flex w-full max-w-full min-w-0 flex-col gap-2 px-3.5',
+                    primaryAssistant ? 'pt-1 pb-3' : 'py-3',
+                  )}
+                >
+                  {errorMessages.map((message) => (
+                    <ChatErrorCallout key={message.id} content={message.content} />
+                  ))}
+                </div>
+              ) : null}
             </BubbleContent>
           </Bubble>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {errorMessages.map((message) => (
-              <Bubble key={message.id} variant="destructive" className="w-full max-w-full">
-                <BubbleContent className="flex w-full items-start gap-2">
-                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-                  <p className="font-mono text-[11px] leading-relaxed">{message.content}</p>
-                </BubbleContent>
-              </Bubble>
-            ))}
-            {detailMessages.length > 0 && (
-              <ProcessDetailsGroup
-                messages={detailMessages}
-                isStreaming={isStreaming}
-                mediaSessionId={mediaSessionId}
-              />
-            )}
-          </div>
-        )}
+        ) : null}
         {assistantMessages.length > 0 && (
-          <MessageFooter className="justify-end px-0">
+          <MessageFooter className="justify-end gap-1.5 px-0 opacity-100 transition-opacity md:opacity-0 md:group-hover/message:opacity-100 md:group-focus-within/message:opacity-100">
             <AssistantMessageMetrics
               usage={usage}
               fallbackTokens={fallbackTokens}
               estimated={Boolean(isStreaming && !usage)}
               streamSeconds={streamSeconds}
               timestamp={latestTimestamp}
-              className="mr-3.5"
             />
+            {primaryAssistant?.content ? (
+              <MessageActionIconButton
+                label="Copy"
+                onClick={() => void copyTextToClipboard(primaryAssistant.content)}
+              >
+                <Copy className="size-3" />
+              </MessageActionIconButton>
+            ) : null}
           </MessageFooter>
         )}
       </MessageContent>
@@ -3086,79 +3136,39 @@ const StandaloneMessage = memo(function StandaloneMessage({
   message,
   userAvatar,
   mediaSessionId,
+  canEdit = false,
+  onResubmit,
 }: {
   message: ChatMessage
   userAvatar?: string
   mediaSessionId?: string
+  canEdit?: boolean
+  onResubmit?: (message: ChatMessage, content: string) => Promise<void> | void
 }) {
   switch (message.type) {
     case 'user':
       return (
-        <Message align="end">
-          <MessageAvatar className="bg-transparent">
-            <ChatAvatar preset={userAvatar} role="user" />
-          </MessageAvatar>
-          <MessageContent className="items-end gap-1 pr-2">
-            {message.attachments && message.attachments.length > 0 && (
-              <AttachmentGroup className="max-w-[85%] justify-end">
-                {message.attachments.map((attachment) => {
-                  const isImage = isImageAttachment(attachment.name, attachment.type)
-                  return isImage && mediaSessionId ? (
-                    <figure key={attachment.id} className="w-fit max-w-full min-w-0">
-                      <ImageAttachmentPreview
-                        src={`/api/media?sessionId=${encodeURIComponent(mediaSessionId)}&path=${encodeURIComponent(attachment.path)}`}
-                        alt={attachment.name}
-                        className="inline-block max-w-full border border-border bg-muted"
-                        imageClassName="h-auto max-h-80 w-auto max-w-full object-contain"
-                      />
-                      <figcaption className="mt-1 flex min-w-0 items-center justify-between gap-2 px-0.5 text-[10px] leading-4 text-muted-foreground">
-                        <span className="truncate" title={attachment.name}>
-                          {attachment.name}
-                        </span>
-                        <span className="shrink-0 font-mono">
-                          {formatFileSize(attachment.size)}
-                        </span>
-                      </figcaption>
-                    </figure>
-                  ) : (
-                    <Attachment key={attachment.id} state="done" size="xs" className="rounded-none">
-                      <AttachmentMedia className="rounded-none">
-                        <FileIcon />
-                      </AttachmentMedia>
-                      <AttachmentContent>
-                        <AttachmentTitle title={attachment.name}>{attachment.name}</AttachmentTitle>
-                        <AttachmentDescription title={attachment.path}>
-                          {formatFileSize(attachment.size)}
-                        </AttachmentDescription>
-                      </AttachmentContent>
-                    </Attachment>
-                  )
-                })}
-              </AttachmentGroup>
-            )}
-            {message.content && (
-              <Bubble variant="secondary" align="end" className="max-w-[85%]">
-                <BubbleContent className="px-3.5 py-2.5 text-foreground">
-                  {message.content}
-                </BubbleContent>
-              </Bubble>
-            )}
-            <MessageFooter className="justify-end px-0">
-              <span className="font-mono text-[10px] text-muted-foreground/50">
-                {message.timestamp}
-              </span>
-            </MessageFooter>
-          </MessageContent>
-        </Message>
+        <UserMessage
+          message={message}
+          userAvatar={userAvatar}
+          mediaSessionId={mediaSessionId}
+          canEdit={canEdit}
+          onResubmit={onResubmit}
+        />
       )
     case 'error':
       return (
-        <div className="flex items-start gap-2 border border-destructive/40 bg-destructive/8 px-3 py-2">
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
-          <p className="font-mono text-[11px] leading-relaxed text-destructive">
-            {message.content}
-          </p>
-        </div>
+        <Message>
+          <MessageContent className="gap-0.5">
+            <Bubble variant="ghost" className="w-full max-w-full">
+              <BubbleContent className="w-full max-w-full min-w-0 p-0">
+                <div className="w-full max-w-full min-w-0 px-3.5 py-3">
+                  <ChatErrorCallout content={message.content} />
+                </div>
+              </BubbleContent>
+            </Bubble>
+          </MessageContent>
+        </Message>
       )
     case 'compaction':
       return (
@@ -3176,6 +3186,471 @@ const StandaloneMessage = memo(function StandaloneMessage({
       return null
   }
 })
+
+function UserMessage({
+  message,
+  userAvatar,
+  mediaSessionId,
+  canEdit = false,
+  onResubmit,
+}: {
+  message: ChatMessage
+  userAvatar?: string
+  mediaSessionId?: string
+  canEdit?: boolean
+  onResubmit?: (message: ChatMessage, content: string) => Promise<void> | void
+}) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [draft, setDraft] = useState(message.content)
+  const [submitting, setSubmitting] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (!isEditing) setDraft(message.content)
+  }, [isEditing, message.content])
+
+  const copyMessage = async () => {
+    const ok = await copyTextToClipboard(message.content)
+    if (!ok) return
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1500)
+  }
+
+  const cancelEdit = () => {
+    setIsEditing(false)
+    setDraft(message.content)
+  }
+
+  const sendEdit = async () => {
+    const trimmed = draft.trim()
+    if (!trimmed || !onResubmit || submitting) return
+    setSubmitting(true)
+    try {
+      await onResubmit(message, trimmed)
+      setIsEditing(false)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Message align="end">
+      <MessageAvatar className="bg-transparent">
+        <ChatAvatar preset={userAvatar} role="user" />
+      </MessageAvatar>
+      <MessageContent className="items-end gap-1 pr-2">
+        {message.attachments && message.attachments.length > 0 && !isEditing && (
+          <AttachmentGroup className="max-w-[85%] justify-end">
+            {message.attachments.map((attachment) => {
+              const isImage = isImageAttachment(attachment.name, attachment.type)
+              return isImage && mediaSessionId ? (
+                <figure key={attachment.id} className="w-fit max-w-full min-w-0">
+                  <ImageAttachmentPreview
+                    src={`/api/media?sessionId=${encodeURIComponent(mediaSessionId)}&path=${encodeURIComponent(attachment.path)}`}
+                    alt={attachment.name}
+                    className="inline-block max-w-full border border-border bg-muted"
+                    imageClassName="h-auto max-h-80 w-auto max-w-full object-contain"
+                  />
+                  <figcaption className="mt-1 flex min-w-0 items-center justify-between gap-2 px-0.5 text-[10px] leading-4 text-muted-foreground">
+                    <span className="truncate" title={attachment.name}>
+                      {attachment.name}
+                    </span>
+                    <span className="shrink-0 font-mono">{formatFileSize(attachment.size)}</span>
+                  </figcaption>
+                </figure>
+              ) : (
+                <Attachment key={attachment.id} state="done" size="xs" className="rounded-none">
+                  <AttachmentMedia className="rounded-none">
+                    <FileIcon />
+                  </AttachmentMedia>
+                  <AttachmentContent>
+                    <AttachmentTitle title={attachment.name}>{attachment.name}</AttachmentTitle>
+                    <AttachmentDescription title={attachment.path}>
+                      {formatFileSize(attachment.size)}
+                    </AttachmentDescription>
+                  </AttachmentContent>
+                </Attachment>
+              )
+            })}
+          </AttachmentGroup>
+        )}
+        {isEditing ? (
+          <div className="w-full max-w-[85%] rounded-md bg-secondary px-4 pt-3.5 pb-3 shadow-sm">
+            <textarea
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              className="min-h-20 w-full resize-none bg-transparent text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60"
+              autoFocus
+              disabled={submitting}
+              rows={Math.min(12, Math.max(3, draft.split('\n').length))}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  cancelEdit()
+                }
+                if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                  event.preventDefault()
+                  void sendEdit()
+                }
+              }}
+            />
+            <div className="mt-3 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={cancelEdit}
+                disabled={submitting}
+                className="rounded-md border border-border/80 bg-transparent px-3.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-background/50 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void sendEdit()}
+                disabled={submitting || !draft.trim()}
+                className="rounded-md bg-foreground px-3.5 py-1.5 text-xs font-medium text-background transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
+              >
+                {submitting ? 'Sending' : 'Send'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {message.content && (
+              <Bubble variant="secondary" align="end" className="max-w-[85%]">
+                <BubbleContent className="px-3.5 py-2.5 text-foreground">
+                  {message.content}
+                </BubbleContent>
+              </Bubble>
+            )}
+            <MessageFooter className="justify-end gap-1 px-0 opacity-100 transition-opacity md:opacity-0 md:group-hover/message:opacity-100 md:group-focus-within/message:opacity-100">
+              <span className="font-mono text-[10px] text-muted-foreground/50">
+                {message.timestamp}
+              </span>
+              <MessageActionIconButton
+                label={copied ? 'Copied' : 'Copy'}
+                onClick={() => void copyMessage()}
+              >
+                {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+              </MessageActionIconButton>
+              {canEdit && onResubmit ? (
+                <MessageActionIconButton
+                  label="Edit"
+                  onClick={() => {
+                    setDraft(message.content)
+                    setIsEditing(true)
+                  }}
+                >
+                  <Pencil className="size-3" />
+                </MessageActionIconButton>
+              ) : null}
+            </MessageFooter>
+          </>
+        )}
+      </MessageContent>
+    </Message>
+  )
+}
+
+type ParsedChatError = {
+  title: string
+  message: string
+  status?: string
+  code?: string
+  requestId?: string
+  type?: string
+  raw: string
+}
+
+function tryParseJsonObject(value: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(value) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    return parsed as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+function stringField(record: Record<string, unknown>, key: string) {
+  const value = record[key]
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function extractRequestId(value: string) {
+  const match = value.match(/request id[:\s]+["']?([A-Za-z0-9_-]+)/i)
+  return match?.[1] ?? null
+}
+
+function humanizeErrorCode(code: string) {
+  return code
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function titleFromError(code?: string | null, status?: string | null) {
+  switch (code) {
+    case 'model_not_found':
+      return 'Model not available'
+    case 'rate_limit_exceeded':
+      return 'Rate limit exceeded'
+    case 'insufficient_quota':
+      return 'Insufficient quota'
+    case 'invalid_api_key':
+    case 'authentication_error':
+      return 'Authentication failed'
+    case 'context_length_exceeded':
+      return 'Context too long'
+    case 'new_api_error':
+      return 'API error'
+    default:
+      break
+  }
+  switch (status) {
+    case '400':
+      return 'Bad request'
+    case '401':
+    case '403':
+      return 'Authentication failed'
+    case '404':
+      return 'Not found'
+    case '429':
+      return 'Too many requests'
+    case '500':
+      return 'Server error'
+    case '502':
+    case '503':
+    case '504':
+      return 'Service unavailable'
+    default:
+      break
+  }
+  if (code) return humanizeErrorCode(code)
+  return 'Request failed'
+}
+
+function parseApiErrorFields(raw: string) {
+  const code = raw.match(/"code"\s*:\s*"([^"]+)"/)?.[1] ?? null
+  const type = raw.match(/"type"\s*:\s*"([^"]+)"/)?.[1] ?? null
+  const message =
+    raw.match(/"message"\s*:\s*"((?:\\.|[^"\\])*)"/)?.[1]?.replace(/\\"/g, '"').replace(/\\n/g, '\n') ??
+    raw.match(/"message"\s*:\s*"([^"]*)/)?.[1] ??
+    null
+  const requestId =
+    extractRequestId(raw) ??
+    raw.match(/"request[_ ]?id"\s*:\s*"([^"]+)"/i)?.[1] ??
+    null
+  return { code, type, message, requestId }
+}
+
+function parseChatError(rawInput: string): ParsedChatError {
+  const raw = rawInput.trim()
+  if (!raw) {
+    return {
+      title: 'Request failed',
+      message: 'An unknown error occurred.',
+      raw: rawInput,
+    }
+  }
+
+  const statusPrefix = raw.match(/^(\d{3})\s*:\s*([\s\S]+)$/)
+  const status = statusPrefix?.[1] ?? raw.match(/^(\d{3})\b/)?.[1] ?? null
+  const body = statusPrefix?.[2]?.trim() ?? raw
+
+  const jsonObject = tryParseJsonObject(body) ?? tryParseJsonObject(raw)
+  if (jsonObject) {
+    const code = stringField(jsonObject, 'code')
+    const type = stringField(jsonObject, 'type')
+    const nestedError =
+      jsonObject.error && typeof jsonObject.error === 'object' && !Array.isArray(jsonObject.error)
+        ? (jsonObject.error as Record<string, unknown>)
+        : null
+    const message =
+      stringField(jsonObject, 'message') ??
+      stringField(jsonObject, 'error') ??
+      (nestedError ? stringField(nestedError, 'message') : null) ??
+      raw
+    const requestId =
+      extractRequestId(message) ??
+      stringField(jsonObject, 'request_id') ??
+      stringField(jsonObject, 'requestId') ??
+      (nestedError ? stringField(nestedError, 'request_id') : null)
+    const cleanMessage = message.replace(/\s*\(request id:\s*[^)]+\)\s*/i, '').trim() || message
+    return {
+      title: titleFromError(code ?? stringField(nestedError ?? {}, 'code'), status),
+      message: cleanMessage,
+      status: status ?? undefined,
+      code: code ?? stringField(nestedError ?? {}, 'code') ?? undefined,
+      requestId: requestId ?? undefined,
+      type: type ?? stringField(nestedError ?? {}, 'type') ?? undefined,
+      raw,
+    }
+  }
+
+  const fields = parseApiErrorFields(body)
+  if (fields.message || fields.code) {
+    const cleanMessage =
+      fields.message?.replace(/\s*\(request id:\s*[^)]+\)\s*/i, '').trim() ||
+      fields.message ||
+      raw
+    return {
+      title: titleFromError(fields.code, status),
+      message: cleanMessage,
+      status: status ?? undefined,
+      code: fields.code ?? undefined,
+      requestId: fields.requestId ?? undefined,
+      type: fields.type ?? undefined,
+      raw,
+    }
+  }
+
+  const plainMessage = statusPrefix ? body : raw
+  const inferredCode =
+    /rate limit/i.test(plainMessage)
+      ? 'rate_limit_exceeded'
+      : /model not (found|available)|no available channel/i.test(plainMessage)
+        ? 'model_not_found'
+        : /context.*(length|too long)|maximum context/i.test(plainMessage)
+          ? 'context_length_exceeded'
+          : null
+
+  return {
+    title: titleFromError(inferredCode, status),
+    message: plainMessage.replace(/\s*\(request id:\s*[^)]+\)\s*/i, '').trim() || plainMessage,
+    status: status ?? undefined,
+    code: inferredCode ?? undefined,
+    requestId: extractRequestId(raw) ?? undefined,
+    raw,
+  }
+}
+
+function ChatErrorCallout({
+  content,
+  variant = 'standalone',
+  className,
+}: {
+  content: string
+  variant?: 'standalone' | 'embedded'
+  className?: string
+}) {
+  const parsed = useMemo(() => parseChatError(content), [content])
+  const [showDetails, setShowDetails] = useState(false)
+  const meta = [parsed.status, parsed.code, parsed.requestId ? `req ${parsed.requestId}` : null]
+    .filter(Boolean)
+    .join(' · ')
+  const detailsUseful =
+    parsed.raw.trim() !== parsed.message.trim() &&
+    parsed.raw.trim() !== `${parsed.title}\n${parsed.message}`.trim()
+
+  return (
+    <div
+      role="alert"
+      className={cn(
+        // Keep callout width locked to the message body column (same as 正文).
+        'box-border flex w-full max-w-full min-w-0 items-start gap-2.5 overflow-hidden text-destructive',
+        // Codex-style soft callout: structured title/message/meta, not a raw dump.
+        variant === 'embedded'
+          ? 'border-t border-destructive/25 bg-destructive/6 px-3.5 py-2.5'
+          : 'rounded-md border border-destructive/30 bg-destructive/6 px-3.5 py-2.5',
+        className,
+      )}
+    >
+      <AlertTriangle className="mt-0.5 size-3.5 shrink-0 opacity-90" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium leading-5 text-destructive">{parsed.title}</p>
+        {parsed.message ? (
+          <p className="mt-0.5 text-[12px] leading-relaxed text-destructive/85">{parsed.message}</p>
+        ) : null}
+        {meta ? (
+          <p className="mt-1.5 font-mono text-[10px] tracking-wide text-destructive/50">{meta}</p>
+        ) : null}
+        {detailsUseful ? (
+          <div className="mt-1.5">
+            <button
+              type="button"
+              onClick={() => setShowDetails((value) => !value)}
+              className="font-mono text-[10px] tracking-wide text-destructive/50 uppercase transition-colors hover:text-destructive"
+            >
+              {showDetails ? 'Hide details' : 'Show details'}
+            </button>
+            {showDetails ? (
+              <pre className="mt-1.5 max-h-40 overflow-auto font-mono text-[10px] leading-relaxed wrap-break-word whitespace-pre-wrap text-destructive/70">
+                {parsed.raw}
+              </pre>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function MessageActionIconButton({
+  label,
+  onClick,
+  children,
+}: {
+  label: string
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className="inline-flex size-6 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+    >
+      {children}
+    </button>
+  )
+}
+
+async function copyTextToClipboard(text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    showToast({
+      tone: 'error',
+      title: 'Copy failed',
+      message: 'Unable to access the clipboard.',
+    })
+    return false
+  }
+}
+
+function findUserTreeNodeByIndex(
+  tree: SessionTreeNode | null,
+  userIndex: number,
+): SessionTreeNode | null {
+  if (!tree || userIndex < 0) return null
+
+  const currentPathUsers: SessionTreeNode[] = []
+  const collectCurrentPath = (node: SessionTreeNode, trail: SessionTreeNode[]): boolean => {
+    const next = [...trail, node]
+    if (node.isCurrent) {
+      for (const item of next) {
+        if (item.role === 'user') currentPathUsers.push(item)
+      }
+      return true
+    }
+    for (const child of node.children) {
+      if (collectCurrentPath(child, next)) return true
+    }
+    return false
+  }
+  collectCurrentPath(tree, [])
+  if (currentPathUsers[userIndex]) return currentPathUsers[userIndex]
+
+  const allUsers: SessionTreeNode[] = []
+  const walk = (node: SessionTreeNode) => {
+    if (node.role === 'user') allUsers.push(node)
+    node.children.forEach(walk)
+  }
+  walk(tree)
+  return allUsers[userIndex] ?? null
+}
 
 function AssistantMessageMetrics({
   usage,
