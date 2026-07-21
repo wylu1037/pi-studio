@@ -7,6 +7,7 @@ import {
   listAgents,
   listProviders,
   listPrompts,
+  listScheduledTasks,
   listSessionMessages,
   listSessions,
   listSkills,
@@ -28,8 +29,14 @@ export default async function ChatPage({
   let sessions = activeAgent ? listSessions({ agentId: activeAgent.id }) : []
   const { hydrateSessionSummariesFromSdk, readSdkSessionContext, readSdkSessionTree } =
     await import('@/lib/chat/session-branches')
-  sessions = hydrateSessionSummariesFromSdk(sessions)
-  let activeSession = sessions.find((session) => session.id === requestedSession?.id) ?? sessions[0]
+  sessions = hydrateSessionSummariesFromSdk(sessions).toSorted(
+    (left, right) =>
+      left.updatedAt.localeCompare(right.updatedAt) ||
+      left.createdAt.localeCompare(right.createdAt) ||
+      left.id.localeCompare(right.id),
+  )
+  let activeSession =
+    sessions.find((session) => session.id === requestedSession?.id) ?? sessions.at(-1)
 
   if (activeAgent && !activeSession) {
     const created = createSession({
@@ -38,7 +45,7 @@ export default async function ChatPage({
       cwd: activeAgent.defaultCwd,
     })
     if (created) {
-      sessions = [created, ...sessions]
+      sessions = [...sessions, created]
       activeSession = created
     }
   }
@@ -51,6 +58,14 @@ export default async function ChatPage({
     tree = sdkTree?.roots[0] ?? tree
     messages = sdkContext?.messages ?? messages
   }
+
+  const scheduledTask = activeSession
+    ? listScheduledTasks()
+        .filter((task) => task.sessionId === activeSession.id)
+        .toSorted((left, right) =>
+          (right.lastRunAt ?? right.updatedAt).localeCompare(left.lastRunAt ?? left.updatedAt),
+        )[0]
+    : undefined
 
   return (
     <ChatView
@@ -65,6 +80,11 @@ export default async function ChatPage({
       extensions={listStudioExtensions()}
       skills={listSkills()}
       prompts={listPrompts()}
+      scheduledTaskModel={
+        scheduledTask?.providerId && scheduledTask.modelId
+          ? { providerId: scheduledTask.providerId, modelId: scheduledTask.modelId }
+          : undefined
+      }
     />
   )
 }

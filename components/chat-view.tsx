@@ -57,6 +57,7 @@ import { ChatAvatar } from '@/components/chat-avatar'
 import { ChatMessageOutline, type ChatMessageOutlineEntry } from '@/components/chat-message-outline'
 import { useProfileSettings } from '@/components/use-profile-settings'
 import { Bubble, BubbleContent } from '@/components/ui/bubble'
+import { Button } from '@/components/ui/button'
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker'
 import { Message, MessageAvatar, MessageContent, MessageFooter } from '@/components/ui/message'
 import {
@@ -145,6 +146,7 @@ export function ChatView({
   extensions,
   skills,
   prompts,
+  scheduledTaskModel,
 }: {
   agents: AgentProfile[]
   activeAgent?: AgentProfile
@@ -156,6 +158,7 @@ export function ChatView({
   extensions: StudioExtension[]
   skills: GlobalSkill[]
   prompts: GlobalPromptTemplate[]
+  scheduledTaskModel?: { providerId: string; modelId: string }
 }) {
   const router = useRouter()
   const { userAvatar } = useProfileSettings()
@@ -289,18 +292,23 @@ export function ChatView({
           .map((model) => ({ provider, model })),
       )
   }, [activeAgent?.selectedModelIds, activeAgent?.selectedProviderIds, providers])
-  const defaultModelOption =
+  const preferredModelOption =
+    availableModelOptions.find(
+      ({ provider, model }) =>
+        provider.id === scheduledTaskModel?.providerId && model.id === scheduledTaskModel.modelId,
+    ) ??
     availableModelOptions.find(
       ({ provider, model }) =>
         provider.id === activeAgent?.defaultProviderId && model.id === activeAgent?.defaultModelId,
-    ) ?? availableModelOptions[0]
+    ) ??
+    availableModelOptions[0]
 
   const form = useForm<ComposerValues>({
     resolver: zodResolver(ComposerSchema as never),
     defaultValues: {
       message: '',
-      providerId: defaultModelOption?.provider.id,
-      modelId: defaultModelOption?.model.id,
+      providerId: preferredModelOption?.provider.id,
+      modelId: preferredModelOption?.model.id,
       thinkingLevel: activeAgent?.defaultThinkingLevel ?? 'medium',
     },
   })
@@ -375,9 +383,9 @@ export function ChatView({
         provider.id === currentProviderId && candidate.id === currentModelId,
     )
     if (currentIsEnabled) return
-    form.setValue('providerId', defaultModelOption?.provider.id)
-    form.setValue('modelId', defaultModelOption?.model.id)
-  }, [availableModelOptions, defaultModelOption, form])
+    form.setValue('providerId', preferredModelOption?.provider.id)
+    form.setValue('modelId', preferredModelOption?.model.id)
+  }, [availableModelOptions, preferredModelOption, form])
 
   const skillNames = useMemo(() => {
     const selected = new Set(activeAgent?.selectedSkillIds ?? [])
@@ -2557,7 +2565,7 @@ function WaitingBubble({ agentAvatar }: { agentAvatar?: string }) {
       <MessageAvatar className="bg-transparent">
         <ChatAvatar preset={agentAvatar} role="assistant" />
       </MessageAvatar>
-      <MessageContent>
+      <MessageContent className="min-h-8 justify-center">
         <Marker
           role="status"
           aria-live="polite"
@@ -2677,7 +2685,12 @@ const AssistantTurn = memo(function AssistantTurn({
                 />
               )}
               {primaryAssistant ? (
-                <div className="w-full max-w-full min-w-0 px-3.5 pt-3 pb-2">
+                <div
+                  className={cn(
+                    'w-full max-w-full min-w-0 px-3.5 pb-2',
+                    detailMessages.length > 0 ? 'pt-3' : 'pt-1.25',
+                  )}
+                >
                   {streamingMarkdown ? (
                     <StreamingMarkdownContent
                       snapshot={streamingMarkdown}
@@ -2711,7 +2724,7 @@ const AssistantTurn = memo(function AssistantTurn({
           </Bubble>
         ) : null}
         {assistantMessages.length > 0 && (
-          <MessageFooter className="justify-end gap-1.5 px-0 opacity-100 transition-opacity md:opacity-0 md:group-hover/message:opacity-100 md:group-focus-within/message:opacity-100">
+          <MessageFooter className="justify-end gap-1.5 px-0 opacity-100 transition-opacity md:opacity-0 md:group-focus-within/message:opacity-100 md:group-hover/message:opacity-100">
             <AssistantMessageMetrics
               usage={usage}
               fallbackTokens={fallbackTokens}
@@ -2719,14 +2732,6 @@ const AssistantTurn = memo(function AssistantTurn({
               streamSeconds={streamSeconds}
               timestamp={latestTimestamp}
             />
-            {primaryAssistant?.content ? (
-              <MessageActionIconButton
-                label="Copy"
-                onClick={() => void copyTextToClipboard(primaryAssistant.content)}
-              >
-                <Copy className="size-3" />
-              </MessageActionIconButton>
-            ) : null}
           </MessageFooter>
         )}
       </MessageContent>
@@ -3534,9 +3539,6 @@ function ChatErrorCallout({
 }) {
   const parsed = useMemo(() => parseChatError(content), [content])
   const [showDetails, setShowDetails] = useState(false)
-  const meta = [parsed.status, parsed.code, parsed.requestId ? `req ${parsed.requestId}` : null]
-    .filter(Boolean)
-    .join(' · ')
   const detailsUseful =
     parsed.raw.trim() !== parsed.message.trim() &&
     parsed.raw.trim() !== `${parsed.title}\n${parsed.message}`.trim()
@@ -3547,7 +3549,7 @@ function ChatErrorCallout({
       className={cn(
         // Keep callout width locked to the message body column (same as 正文).
         'box-border flex w-full max-w-full min-w-0 items-start gap-2.5 overflow-hidden text-destructive',
-        // Codex-style soft callout: structured title/message/meta, not a raw dump.
+        // Keep the default state compact; diagnostics stay behind the disclosure control.
         variant === 'embedded'
           ? 'border-t border-destructive/25 bg-destructive/6 px-3.5 py-2.5'
           : 'rounded-md border border-destructive/30 bg-destructive/6 px-3.5 py-2.5',
@@ -3556,30 +3558,30 @@ function ChatErrorCallout({
     >
       <AlertTriangle className="mt-0.5 size-3.5 shrink-0 opacity-90" aria-hidden />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium leading-5 text-destructive">{parsed.title}</p>
-        {parsed.message ? (
-          <p className="mt-0.5 text-[12px] leading-relaxed text-destructive/85">{parsed.message}</p>
-        ) : null}
-        {meta ? (
-          <p className="mt-1.5 font-mono text-[10px] tracking-wide text-destructive/50">{meta}</p>
-        ) : null}
-        {detailsUseful ? (
-          <div className="mt-1.5">
-            <button
-              type="button"
-              onClick={() => setShowDetails((value) => !value)}
-              className="font-mono text-[10px] tracking-wide text-destructive/50 uppercase transition-colors hover:text-destructive"
-            >
-              {showDetails ? 'Hide details' : 'Show details'}
-            </button>
-            {showDetails ? (
-              <pre className="mt-1.5 max-h-40 overflow-auto font-mono text-[10px] leading-relaxed wrap-break-word whitespace-pre-wrap text-destructive/70">
-                {parsed.raw}
-              </pre>
-            ) : null}
-          </div>
+        <p className="text-[12px] leading-relaxed text-destructive/85">{parsed.message}</p>
+        {showDetails && detailsUseful ? (
+          <pre className="mt-2 max-h-40 overflow-auto font-mono text-[10px] leading-relaxed wrap-break-word whitespace-pre-wrap text-destructive/70">
+            {parsed.raw}
+          </pre>
         ) : null}
       </div>
+      {detailsUseful ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="-mt-0.5 -mr-1"
+          onClick={() => setShowDetails((value) => !value)}
+          aria-expanded={showDetails}
+          aria-label={showDetails ? 'Hide error details' : 'Show error details'}
+          title={showDetails ? 'Hide error details' : 'Show error details'}
+        >
+          <ChevronDown
+            className={cn('transition-transform', showDetails && 'rotate-180')}
+            aria-hidden
+          />
+        </Button>
+      ) : null}
     </div>
   )
 }
