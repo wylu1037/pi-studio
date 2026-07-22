@@ -340,12 +340,13 @@ export function ChatComposer({
               onFilesSelected(event.clipboardData.files)
             }}
             rows={1}
+            wrap="soft"
             placeholder={
               isRunningRun
                 ? 'Add guidance to the active run…'
                 : 'Ask anything, or paste / attach files…'
             }
-            className="block min-h-14 w-full resize-none overflow-y-auto bg-transparent px-3 py-3 font-mono text-[13px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/55"
+            className="block min-h-14 w-full resize-none overflow-y-auto bg-transparent px-3 py-3 font-mono text-[13px] leading-6 whitespace-pre-wrap text-foreground outline-none placeholder:text-muted-foreground/55"
           />
 
           <div className="flex min-w-0 items-center gap-1.5 px-2.5 pb-2.5">

@@ -196,6 +196,9 @@ export interface AgentSessionSummary {
   messageCount: number
   firstUserMessage?: string
   lastMessagePreview?: string
+  lastProviderId?: string
+  lastModelId?: string
+  lastThinkingLevel?: ThinkingLevel
   totalTokens?: number
   totalCost?: number
   branchCount: number

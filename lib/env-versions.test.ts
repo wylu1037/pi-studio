@@ -18,6 +18,7 @@ import {
   deleteEnvVersion,
   deleteEnvVersionHistory,
   getEnvVersionFile,
+  listManagedEnvFiles,
   saveEnvVersion,
 } from './env-versions.ts'
 
@@ -104,6 +105,29 @@ test('removes local version history without deleting the live env file', (contex
 
   assert.equal(readFileSync(path, 'utf8'), 'TOKEN=keep\n')
   assert.equal(readdirSync(root.store).length, 0)
+})
+
+test('restores the managed file list from persisted version manifests', (context) => {
+  const root = createTestRoot(context)
+  const firstPath = join(root.project, '.env')
+  const secondPath = join(root.project, '.env.local')
+  writeFileSync(firstPath, 'FIRST=1\n')
+  writeFileSync(secondPath, 'SECOND=2\nTHIRD=3\n')
+  const first = getEnvVersionFile(firstPath, undefined, { storeDir: root.store })
+  const second = getEnvVersionFile(secondPath, undefined, { storeDir: root.store })
+
+  const files = listManagedEnvFiles({ storeDir: root.store })
+
+  assert.equal(files.length, 2)
+  assert.deepEqual(
+    files
+      .map((file) => [file.path, file.variableCount, file.versionCount])
+      .toSorted(([leftPath], [rightPath]) => String(leftPath).localeCompare(String(rightPath))),
+    [
+      [first.path, 1, 1],
+      [second.path, 2, 1],
+    ].toSorted(([leftPath], [rightPath]) => String(leftPath).localeCompare(String(rightPath))),
+  )
 })
 
 test('deletes an inactive version without renumbering the remaining versions', (context) => {

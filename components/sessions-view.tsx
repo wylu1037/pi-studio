@@ -55,7 +55,7 @@ function agentName(agents: AgentProfile[], agentId: string) {
 
 function formatCost(cost?: number) {
   if (cost == null) return '—'
-  return `$${cost.toFixed(2)}`
+  return `$${cost.toFixed(cost < 0.01 ? 4 : 2)}`
 }
 
 function formatTokens(tokens?: number) {
@@ -586,7 +586,9 @@ export function SessionsView({
                   }}
                 >
                   <SelectTrigger className="w-full">
-                    <SelectValue />
+                    <SelectValue>
+                      {agents.find((agent) => agent.id === newAgentId)?.name ?? 'Select agent'}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent align="start">
                     {agents.map((agent) => (

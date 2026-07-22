@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { POST, PUT } from '../../app/api/[[...route]]/route'
+import { PATCH, POST, PUT } from '../../app/api/[[...route]]/route'
 import {
   appendMessage,
   appendRunEvent,
@@ -97,5 +97,43 @@ test('clears session messages without deleting the session', async () => {
   } finally {
     if (agent) deleteAgent(agent.id)
     await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('persists the last composer provider, model, and reasoning level per session', async () => {
+  const agent = createAgent({ name: `Composer config test ${Date.now()}` })
+  const session = agent ? createSession({ agentId: agent.id }) : null
+
+  try {
+    assert.ok(agent)
+    assert.ok(session)
+
+    const response = await PATCH(
+      new Request(`http://localhost/api/sessions/${encodeURIComponent(session!.id)}/composer`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          providerId: 'provider-test',
+          modelId: 'model-test',
+          thinkingLevel: 'high',
+        }),
+      }),
+    )
+
+    assert.equal(response.status, 200)
+    assert.deepEqual(
+      {
+        providerId: getSession(session!.id)?.lastProviderId,
+        modelId: getSession(session!.id)?.lastModelId,
+        thinkingLevel: getSession(session!.id)?.lastThinkingLevel,
+      },
+      {
+        providerId: 'provider-test',
+        modelId: 'model-test',
+        thinkingLevel: 'high',
+      },
+    )
+  } finally {
+    if (agent) deleteAgent(agent.id)
   }
 })

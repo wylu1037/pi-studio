@@ -1,6 +1,7 @@
 import { Fragment, memo, type ReactNode, useMemo } from 'react'
 import { AudioLines } from 'lucide-react'
 import { CodeBlock } from '@/components/code-block'
+import { DocumentPreviewLink } from '@/components/document-preview-link'
 import { MermaidDiagram } from '@/components/mermaid-diagram'
 import { MarkdownImage } from '@/components/markdown-image'
 import { parseMarkdown, type MarkdownBlock } from '@/lib/markdown/streaming-markdown'
@@ -217,6 +218,17 @@ function renderInlineToken(token: string, key: number, mediaSessionId?: string) 
         </span>
       )
     }
+    const documentKind = getDocumentKind(rawHref)
+    if (mediaSessionId && documentKind) {
+      return (
+        <DocumentPreviewLink
+          key={key}
+          href={mediaSrc(rawHref, mediaSessionId)}
+          label={link[1]}
+          kind={documentKind}
+        />
+      )
+    }
 
     const href = safeHref(rawHref)
     return (
@@ -241,6 +253,14 @@ function isMp3Href(href: string) {
 
 function isImageHref(href: string) {
   return /\.(?:avif|gif|jpe?g|png|webp)$/i.test(href.split(/[?#]/, 1)[0])
+}
+
+function getDocumentKind(href: string): 'pdf' | 'word' | 'excel' | null {
+  const path = href.split(/[?#]/, 1)[0].toLowerCase()
+  if (path.endsWith('.pdf')) return 'pdf'
+  if (/\.docx?$/.test(path)) return 'word'
+  if (/\.xlsx?$/.test(path)) return 'excel'
+  return null
 }
 
 function mediaSrc(href: string, sessionId: string) {

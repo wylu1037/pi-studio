@@ -514,6 +514,9 @@ export const SessionSchema = z.object({
   messageCount: z.number(),
   firstUserMessage: z.string().optional(),
   lastMessagePreview: z.string().optional(),
+  lastProviderId: z.string().optional(),
+  lastModelId: z.string().optional(),
+  lastThinkingLevel: ThinkingLevelSchema.optional(),
   totalTokens: z.number().optional(),
   totalCost: z.number().optional(),
   branchCount: z.number(),
@@ -529,6 +532,12 @@ export const CreateSessionSchema = z.object({
 export const UpdateSessionSchema = z.object({
   name: z.string().trim().min(1),
   cwd: z.string().trim().min(1),
+})
+
+export const UpdateSessionComposerSchema = z.object({
+  providerId: z.string().min(1),
+  modelId: z.string().min(1),
+  thinkingLevel: ThinkingLevelSchema,
 })
 
 export const ScheduledTaskSchema = z.object({

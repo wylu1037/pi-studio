@@ -51,6 +51,7 @@ import {
   updateAgentResources,
   updateScheduledTask,
   updateSession,
+  updateSessionComposerConfig,
   upsertSkill,
   upsertModel,
   upsertPrompt,
@@ -102,6 +103,7 @@ import {
   SessionSchema,
   SessionExtensionSnapshotSchema,
   UpdateSessionSchema,
+  UpdateSessionComposerSchema,
   SessionBranchContextSchema,
   SessionEntryActionSchema,
   SessionTreeNodeSchema,
@@ -696,6 +698,24 @@ api.openapi(
   (c) => {
     deleteAgent(c.req.valid('param').id)
     return c.json({ ok: true })
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/sessions/{id}/composer',
+    tags: ['Sessions'],
+    request: {
+      params: z.object({ id: z.string() }),
+      body: json(UpdateSessionComposerSchema),
+    },
+    responses: { 200: json(SessionSchema), 404: json(ErrorSchema) },
+  }),
+  (c) => {
+    const session = updateSessionComposerConfig(c.req.valid('param').id, c.req.valid('json'))
+    if (!session) return c.json({ error: 'Session not found' }, 404)
+    return c.json(session)
   },
 )
 

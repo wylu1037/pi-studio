@@ -181,13 +181,51 @@ export function hydrateSessionSummariesFromSdk(sessions: AgentSessionSummary[]) 
     if (!context) return session
     const firstUser = context.messages.find((message) => message.type === 'user')
     const lastMessage = context.messages.at(-1)
+    const usage = summarizeSessionUsage(context.messages)
     return {
       ...session,
       messageCount: context.messages.length,
       firstUserMessage: firstUser?.content,
       lastMessagePreview: lastMessage?.content,
+      totalTokens: usage.totalTokens ?? session.totalTokens,
+      totalCost: usage.totalCost ?? session.totalCost,
     }
   })
+}
+
+export function summarizeSessionUsage(messages: ChatMessage[]) {
+  let hasTokens = false
+  let hasCost = false
+  let totalTokens = 0
+  let totalCost = 0
+
+  for (const message of messages) {
+    if (message.tokens != null) {
+      hasTokens = true
+      totalTokens += message.tokens
+    } else if (message.usage) {
+      hasTokens = true
+      totalTokens += message.usage.input + message.usage.output
+    }
+
+    const cost = message.usage?.cost
+    if (!cost) continue
+    if (cost.total != null) {
+      hasCost = true
+      totalCost += cost.total
+      continue
+    }
+    const components = [cost.input, cost.output, cost.cacheRead, cost.cacheWrite]
+    if (components.some((value) => value != null)) {
+      hasCost = true
+      totalCost += components.reduce<number>((sum, value) => sum + (value ?? 0), 0)
+    }
+  }
+
+  return {
+    totalTokens: hasTokens ? totalTokens : undefined,
+    totalCost: hasCost ? totalCost : undefined,
+  }
 }
 
 export function forkSdkSessionFile(filePath: string, entryId: string) {

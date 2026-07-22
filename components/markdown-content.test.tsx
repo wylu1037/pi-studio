@@ -16,13 +16,28 @@ test('renders a local MP3 markdown link as a playable audio control', () => {
   assert.match(markup, />answer\.mp3</)
 })
 
-test('leaves non-audio markdown links unchanged', () => {
+test('renders local PDF links as previewable document cards', () => {
   const markup = renderToStaticMarkup(
     <MarkdownContent content="[notes](/notes.pdf)" mediaSessionId="session-1" />,
   )
 
-  assert.doesNotMatch(markup, /<audio/)
-  assert.match(markup, /<a[^>]+href="\/notes.pdf"/)
+  assert.match(markup, /aria-label="Preview notes"/)
+  assert.match(markup, /PDF DOCUMENT/)
+  assert.match(markup, /aria-label="Download notes"/)
+})
+
+test('renders Word and Excel links with preview actions and download fallbacks', () => {
+  const markup = renderToStaticMarkup(
+    <MarkdownContent
+      content={'[report.docx](/out/report.docx)\n\n[data.xlsx](/out/data.xlsx)'}
+      mediaSessionId="session-1"
+    />,
+  )
+
+  assert.match(markup, /WORD DOCUMENT/)
+  assert.match(markup, /EXCEL DOCUMENT/)
+  assert.match(markup, /aria-label="Download report.docx"/)
+  assert.match(markup, /aria-label="Download data.xlsx"/)
 })
 
 test('plays remote MP3 links directly', () => {

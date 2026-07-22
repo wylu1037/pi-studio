@@ -1073,6 +1073,9 @@ export function listSessions(filter?: { agentId?: string }): AgentSessionSummary
       messageCount: messages.length,
       firstUserMessage: firstUser?.content,
       lastMessagePreview: last?.content,
+      lastProviderId: session.lastProviderId ?? undefined,
+      lastModelId: session.lastModelId ?? undefined,
+      lastThinkingLevel: (session.lastThinkingLevel ?? undefined) as ThinkingLevel | undefined,
       totalTokens: session.totalTokens ?? undefined,
       totalCost: session.totalCost ?? undefined,
       branchCount: count('session_tree_nodes', 'session_id', session.id),
@@ -1119,6 +1122,23 @@ export function updateSession(id: string, input: { name: string; cwd: string }) 
   return getSession(id)
 }
 
+export function updateSessionComposerConfig(
+  id: string,
+  input: { providerId: string; modelId: string; thinkingLevel: ThinkingLevel },
+) {
+  const existing = db.select({ id: sessions.id }).from(sessions).where(eq(sessions.id, id)).get()
+  if (!existing) return null
+  db.update(sessions)
+    .set({
+      lastProviderId: input.providerId,
+      lastModelId: input.modelId,
+      lastThinkingLevel: input.thinkingLevel,
+    })
+    .where(eq(sessions.id, id))
+    .run()
+  return getSession(id)
+}
+
 export function createForkedSessionRecord(input: { sourceSessionId: string; filePath: string }) {
   const source = db.select().from(sessions).where(eq(sessions.id, input.sourceSessionId)).get()
   if (!source) return null
@@ -1131,6 +1151,9 @@ export function createForkedSessionRecord(input: { sourceSessionId: string; file
       name: `${source.name ?? 'Untitled session'} · Fork`,
       filePath: input.filePath,
       cwd: source.cwd,
+      lastProviderId: source.lastProviderId,
+      lastModelId: source.lastModelId,
+      lastThinkingLevel: source.lastThinkingLevel,
       createdAt: at,
       updatedAt: at,
     })
@@ -1438,6 +1461,13 @@ export function duplicateSession(id: string) {
     cwd: source.cwd,
   })
   if (!copy) return null
+  if (source.lastProviderId && source.lastModelId && source.lastThinkingLevel) {
+    updateSessionComposerConfig(copy.id, {
+      providerId: source.lastProviderId,
+      modelId: source.lastModelId,
+      thinkingLevel: source.lastThinkingLevel as ThinkingLevel,
+    })
+  }
   const sourceMessages = listSessionMessages(id)
   for (const message of sourceMessages) {
     appendMessage({

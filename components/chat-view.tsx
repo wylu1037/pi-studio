@@ -182,6 +182,11 @@ export function ChatView({
   const [showSessionTree, setShowSessionTree] = useState(false)
   const [showActiveContext, setShowActiveContext] = useState(false)
   const [activeContextCollapsed, setActiveContextCollapsed] = useState(false)
+  const lastPersistedComposerConfigRef = useRef(
+    activeSession?.lastProviderId && activeSession.lastModelId && activeSession.lastThinkingLevel
+      ? `${activeSession.lastProviderId}::${activeSession.lastModelId}::${activeSession.lastThinkingLevel}`
+      : null,
+  )
   const messageViewportRef = useRef<HTMLDivElement>(null)
   const composerContainerRef = useRef<HTMLDivElement>(null)
   const shouldFollowMessagesRef = useRef(true)
@@ -300,6 +305,10 @@ export function ChatView({
   const preferredModelOption =
     availableModelOptions.find(
       ({ provider, model }) =>
+        provider.id === activeSession?.lastProviderId && model.id === activeSession.lastModelId,
+    ) ??
+    availableModelOptions.find(
+      ({ provider, model }) =>
         provider.id === scheduledTaskModel?.providerId && model.id === scheduledTaskModel.modelId,
     ) ??
     availableModelOptions.find(
@@ -314,7 +323,8 @@ export function ChatView({
       message: '',
       providerId: preferredModelOption?.provider.id,
       modelId: preferredModelOption?.model.id,
-      thinkingLevel: activeAgent?.defaultThinkingLevel ?? 'medium',
+      thinkingLevel:
+        activeSession?.lastThinkingLevel ?? activeAgent?.defaultThinkingLevel ?? 'medium',
     },
   })
   const applyExtensionEditorText = useCallback(
@@ -391,6 +401,37 @@ export function ChatView({
     form.setValue('providerId', preferredModelOption?.provider.id)
     form.setValue('modelId', preferredModelOption?.model.id)
   }, [availableModelOptions, preferredModelOption, form])
+
+  useEffect(() => {
+    if (!activeSession || !composerValues.providerId || !composerValues.modelId) return
+    const configKey = `${composerValues.providerId}::${composerValues.modelId}::${composerValues.thinkingLevel}`
+    if (lastPersistedComposerConfigRef.current === configKey) return
+
+    const timer = window.setTimeout(() => {
+      void fetch(`/api/sessions/${encodeURIComponent(activeSession.id)}/composer`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          providerId: composerValues.providerId,
+          modelId: composerValues.modelId,
+          thinkingLevel: composerValues.thinkingLevel,
+        }),
+      })
+        .then((response) => {
+          if (response.ok) lastPersistedComposerConfigRef.current = configKey
+        })
+        .catch(() => {
+          // Keep the current in-memory selection; a later change will retry persistence.
+        })
+    }, 150)
+
+    return () => window.clearTimeout(timer)
+  }, [
+    activeSession,
+    composerValues.modelId,
+    composerValues.providerId,
+    composerValues.thinkingLevel,
+  ])
 
   const skillNames = useMemo(() => {
     const selected = new Set(activeAgent?.selectedSkillIds ?? [])
@@ -3383,7 +3424,7 @@ function UserMessage({
           <>
             {message.content && (
               <Bubble variant="secondary" align="end" className="max-w-[85%]">
-                <BubbleContent className="px-3.5 py-2.5 text-foreground">
+                <BubbleContent className="px-3.5 py-2.5 whitespace-pre-wrap text-foreground">
                   {message.content}
                 </BubbleContent>
               </Bubble>

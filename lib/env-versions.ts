@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   renameSync,
   rmSync,
   unlinkSync,
@@ -51,6 +52,17 @@ export type EnvVersionFilePayload = {
   selectedVersion: EnvVersionSummary & { content: string }
 }
 
+export type ManagedEnvFileSummary = {
+  path: string
+  exists: boolean
+  byteSize: number
+  updatedAt: string | null
+  variableCount: number
+  versionCount: number
+  activeVersionLabel: string
+  inSync: boolean
+}
+
 type EnvVersionStoreOptions = {
   baseDir?: string
   storeDir?: string
@@ -58,6 +70,42 @@ type EnvVersionStoreOptions = {
 
 export function envVersionStoreDir() {
   return join(piStudioDataDir(), 'environment-versions')
+}
+
+export function listManagedEnvFiles(options: EnvVersionStoreOptions = {}): ManagedEnvFileSummary[] {
+  const storeDir = options.storeDir ?? envVersionStoreDir()
+  if (!existsSync(storeDir)) return []
+
+  return readdirSync(storeDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .flatMap((entry) => {
+      try {
+        const raw = JSON.parse(
+          readFileSync(join(storeDir, entry.name, 'manifest.json'), 'utf8'),
+        ) as {
+          path?: unknown
+        }
+        if (typeof raw.path !== 'string' || !raw.path) return []
+        const payload = getEnvVersionFile(raw.path, undefined, { ...options, storeDir })
+        const activeVersion = payload.versions.find((version) => version.active)
+        if (!activeVersion) return []
+        return [
+          {
+            path: payload.path,
+            exists: payload.exists,
+            byteSize: activeVersion.byteSize,
+            updatedAt: payload.diskUpdatedAt,
+            variableCount: activeVersion.variableCount,
+            versionCount: payload.versions.length,
+            activeVersionLabel: activeVersion.label,
+            inSync: payload.inSync,
+          },
+        ]
+      } catch {
+        return []
+      }
+    })
+    .sort((left, right) => (right.updatedAt ?? '').localeCompare(left.updatedAt ?? ''))
 }
 
 export function getEnvVersionFile(

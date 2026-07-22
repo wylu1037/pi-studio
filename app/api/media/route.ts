@@ -14,7 +14,12 @@ const contentTypes: Record<string, string> = {
   '.jpeg': 'image/jpeg',
   '.jpg': 'image/jpeg',
   '.mp3': 'audio/mpeg',
+  '.pdf': 'application/pdf',
   '.png': 'image/png',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   '.webp': 'image/webp',
 }
 

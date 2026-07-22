@@ -41,8 +41,6 @@ import {
 } from '@/components/ui/empty'
 import { ScrollArea } from '@/components/ui/scroll-area'
 
-const MANAGED_FILES_KEY = 'pi-studio:environment:managed-files'
-
 type EnvVersionSummary = {
   id: string
   number: number
@@ -106,19 +104,35 @@ export function EnvView() {
   const [removing, setRemoving] = useState(false)
 
   useEffect(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem(MANAGED_FILES_KEY) ?? '[]') as unknown
-      if (Array.isArray(stored)) {
+    let active = true
+    void fetch('/api/env-file/managed', { cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Unable to load managed environment files.')
+        return (await response.json()) as unknown
+      })
+      .then((stored) => {
+        if (!active || !Array.isArray(stored)) return
         setFiles(
           stored
             .map(normalizeManagedEnvFile)
             .filter((file): file is ManagedEnvFile => file !== null),
         )
-      }
-    } catch {
-      setFiles([])
-    } finally {
-      setHydrated(true)
+      })
+      .catch((loadError) => {
+        if (!active) return
+        setFiles([])
+        showToast({
+          tone: 'error',
+          title: 'Unable to load environment files',
+          message:
+            loadError instanceof Error ? loadError.message : 'Environment file loading failed.',
+        })
+      })
+      .finally(() => {
+        if (active) setHydrated(true)
+      })
+    return () => {
+      active = false
     }
   }, [])
 
@@ -129,14 +143,8 @@ export function EnvView() {
     file.path.toLowerCase().includes(query.trim().toLowerCase()),
   )
 
-  const persistFiles = (next: ManagedEnvFile[]) => {
-    setFiles(next)
-    localStorage.setItem(MANAGED_FILES_KEY, JSON.stringify(next))
-  }
-
   const upsertFile = (file: ManagedEnvFile) => {
-    const next = [file, ...files.filter((item) => item.path !== file.path)]
-    persistFiles(next)
+    setFiles((current) => [file, ...current.filter((item) => item.path !== file.path)])
   }
 
   const openAddDialog = () => {
@@ -386,7 +394,7 @@ export function EnvView() {
       if (!response.ok || !body.deleted) {
         throw new Error(body.error ?? 'Unable to remove version history.')
       }
-      persistFiles(files.filter((file) => file.path !== removeTarget.path))
+      setFiles((current) => current.filter((file) => file.path !== removeTarget.path))
       setRemoveTarget(null)
     } catch (removeError) {
       showToast({

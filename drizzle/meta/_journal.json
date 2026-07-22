@@ -71,6 +71,13 @@
       "when": 1784304000000,
       "tag": "0009_scheduled_task_run_config",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1784736000000,
+      "tag": "0010_session_composer_config",
+      "breakpoints": true
     }
   ]
 }

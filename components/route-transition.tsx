@@ -15,10 +15,10 @@ export function RouteTransition({ children }: { children: ReactNode }) {
       <motion.div
         key={pathname}
         className="h-full"
-        initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
-        transition={{ duration: 0.2, ease: easeOut }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: reduceMotion ? 0 : 0.2, ease: easeOut }}
       >
         {children}
       </motion.div>
