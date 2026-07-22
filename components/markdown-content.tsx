@@ -1,7 +1,7 @@
 import { Fragment, memo, type ReactNode, useMemo } from 'react'
 import { AudioLines } from 'lucide-react'
 import { CodeBlock } from '@/components/code-block'
-import { DocumentPreviewLink } from '@/components/document-preview-link'
+import { FilePreviewCard, type PreviewFileKind } from '@/components/file-preview-card'
 import { MermaidDiagram } from '@/components/mermaid-diagram'
 import { MarkdownImage } from '@/components/markdown-image'
 import { parseMarkdown, type MarkdownBlock } from '@/lib/markdown/streaming-markdown'
@@ -134,8 +134,19 @@ const MarkdownBlockView = memo(function MarkdownBlockView({
       )
     case 'hr':
       return <div className="h-px bg-border" />
-    case 'paragraph':
-      return <p>{renderInlineWithBreaks(block.content, mediaSessionId)}</p>
+    case 'paragraph': {
+      const href = mediaSessionId ? standalonePreviewHref(block.content.trim()) : null
+      if (mediaSessionId && href) {
+        return (
+          <FilePreviewCard
+            href={mediaSrc(href, mediaSessionId)}
+            label={fileLabel(href)}
+            kind={getPreviewFileKind(href)!}
+          />
+        )
+      }
+      return <div>{renderInlineWithBreaks(block.content, mediaSessionId)}</div>
+    }
   }
 })
 
@@ -168,6 +179,18 @@ function renderInline(content: string, mediaSessionId?: string): ReactNode[] {
 
 function renderInlineToken(token: string, key: number, mediaSessionId?: string) {
   if (token.startsWith('`')) {
+    const value = token.slice(1, -1).trim()
+    const fileKind = getPreviewFileKind(value)
+    if (mediaSessionId && fileKind) {
+      return (
+        <FilePreviewCard
+          key={key}
+          href={mediaSrc(value, mediaSessionId)}
+          label={fileLabel(value)}
+          kind={fileKind}
+        />
+      )
+    }
     return (
       <code
         key={key}
@@ -186,7 +209,7 @@ function renderInlineToken(token: string, key: number, mediaSessionId?: string) 
 
   const link = token.match(/^!?\[([^\]]+)\]\(([^)]+)\)$/)
   if (link) {
-    const rawHref = link[2].trim()
+    const rawHref = markdownLinkHref(link[2])
     if (mediaSessionId && isImageHref(rawHref)) {
       return (
         <MarkdownImage
@@ -218,14 +241,14 @@ function renderInlineToken(token: string, key: number, mediaSessionId?: string) 
         </span>
       )
     }
-    const documentKind = getDocumentKind(rawHref)
-    if (mediaSessionId && documentKind) {
+    const fileKind = getPreviewFileKind(rawHref) ?? getPreviewFileKind(link[1])
+    if (mediaSessionId && fileKind) {
       return (
-        <DocumentPreviewLink
+        <FilePreviewCard
           key={key}
           href={mediaSrc(rawHref, mediaSessionId)}
           label={link[1]}
-          kind={documentKind}
+          kind={fileKind}
         />
       )
     }
@@ -248,19 +271,82 @@ function renderInlineToken(token: string, key: number, mediaSessionId?: string) 
 }
 
 function isMp3Href(href: string) {
-  return href.split(/[?#]/, 1)[0].toLowerCase().endsWith('.mp3')
+  return decodeFileReference(href).split(/[?#]/, 1)[0].toLowerCase().endsWith('.mp3')
 }
 
 function isImageHref(href: string) {
-  return /\.(?:avif|gif|jpe?g|png|webp)$/i.test(href.split(/[?#]/, 1)[0])
+  return /\.(?:avif|gif|jpe?g|png|webp)$/i.test(decodeFileReference(href).split(/[?#]/, 1)[0])
 }
 
-function getDocumentKind(href: string): 'pdf' | 'word' | 'excel' | null {
-  const path = href.split(/[?#]/, 1)[0].toLowerCase()
+function getPreviewFileKind(href: string): PreviewFileKind | null {
+  const path = decodeFileReference(href).split(/[?#]/, 1)[0].toLowerCase()
   if (path.endsWith('.pdf')) return 'pdf'
   if (/\.docx?$/.test(path)) return 'word'
   if (/\.xlsx?$/.test(path)) return 'excel'
+  if (/\.(?:js|mjs|cjs)$/.test(path)) return 'javascript'
+  if (path.endsWith('.jsx')) return 'jsx'
+  if (path.endsWith('.ts')) return 'typescript'
+  if (path.endsWith('.tsx')) return 'tsx'
+  if (path.endsWith('.py')) return 'python'
+  if (/\.(?:sh|bash|zsh|fish|ps1)$/.test(path)) return 'shell'
+  if (/\.html?$/.test(path)) return 'html'
+  if (/\.(?:css|scss|sass|less)$/.test(path)) return 'css'
+  if (path.endsWith('.go')) return 'go'
+  if (path.endsWith('.rs')) return 'rust'
+  if (/\.(?:c|h)$/.test(path)) return 'c'
+  if (/\.(?:cpp|cc|cxx|hpp|hxx)$/.test(path)) return 'cpp'
+  if (path.endsWith('.sql')) return 'sql'
+  if (path.endsWith('.vue')) return 'vue'
+  if (path.endsWith('.java')) return 'java'
+  if (path.endsWith('.cs')) return 'csharp'
+  if (path.endsWith('.php')) return 'php'
+  if (path.endsWith('.rb')) return 'ruby'
+  if (path.endsWith('.swift')) return 'swift'
+  if (/\.kts?$/.test(path)) return 'kotlin'
+  if (/\.(?:lua|pl|pm|r|scala|groovy)$/.test(path)) return 'script'
   return null
+}
+
+function markdownLinkHref(value: string) {
+  const trimmed = value.trim()
+  if (trimmed.startsWith('<')) {
+    const closingBracket = trimmed.indexOf('>')
+    if (closingBracket > 0) return trimmed.slice(1, closingBracket).trim()
+  }
+
+  const titledLink = trimmed.match(/^(.+?)\s+(?:"[^"]*"|'[^']*'|\([^)]*\))$/)
+  return (titledLink?.[1] ?? trimmed).trim()
+}
+
+function decodeFileReference(value: string) {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+function standalonePreviewHref(value: string) {
+  const href = markdownLinkHref(value)
+  if (!getPreviewFileKind(href)) return null
+  if (
+    /^(?:(?:https?|file):\/\/|sandbox:\/|\.{0,2}[\\/]|[A-Za-z]:[\\/])/.test(href) ||
+    /[\\/]/.test(href) ||
+    !/\s/.test(href)
+  ) {
+    return href
+  }
+  return null
+}
+
+function fileLabel(href: string) {
+  const path = href.split(/[?#]/, 1)[0].replace(/\\/g, '/')
+  const name = path.split('/').filter(Boolean).at(-1) ?? href
+  try {
+    return decodeURIComponent(name)
+  } catch {
+    return name
+  }
 }
 
 function mediaSrc(href: string, sessionId: string) {

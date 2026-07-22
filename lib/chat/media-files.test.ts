@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import test from 'node:test'
 import { parseMediaRange, resolveSessionMediaPath } from './media-files'
 
@@ -43,6 +44,39 @@ test('maps public and localhost-wrapped media links to workspace files', (contex
     realpathSync(localPath),
   )
   assert.equal(resolveSessionMediaPath(root, 'https://example.com/cover.png'), null)
+})
+
+test('maps root-relative output links to the session workspace', (context) => {
+  const root = mkdtempSync(join(tmpdir(), 'pi-studio-root-relative-media-'))
+  context.after(() => rmSync(root, { recursive: true, force: true }))
+  mkdirSync(join(root, 'output'), { recursive: true })
+  const outputPath = join(root, 'output', 'guide.pdf')
+  writeFileSync(outputPath, '%PDF-1.4')
+
+  assert.equal(
+    resolveSessionMediaPath(root, '/output/guide.pdf', ['.pdf']),
+    realpathSync(outputPath),
+  )
+})
+
+test('resolves document and source files when the caller explicitly allows them', (context) => {
+  const root = mkdtempSync(join(tmpdir(), 'pi-studio-document-media-'))
+  context.after(() => rmSync(root, { recursive: true, force: true }))
+  const pdfPath = join(root, 'guide.pdf')
+  const sourcePath = join(root, 'tool.ts')
+  writeFileSync(pdfPath, '%PDF-1.4')
+  writeFileSync(sourcePath, 'export const answer = 42')
+
+  assert.equal(resolveSessionMediaPath(root, 'guide.pdf', ['.pdf', '.ts']), realpathSync(pdfPath))
+  assert.equal(resolveSessionMediaPath(root, 'tool.ts', ['.pdf', '.ts']), realpathSync(sourcePath))
+  assert.equal(
+    resolveSessionMediaPath(root, pathToFileURL(pdfPath).href, ['.pdf', '.ts']),
+    realpathSync(pdfPath),
+  )
+  assert.equal(
+    resolveSessionMediaPath(root, `sandbox:${pdfPath}`, ['.pdf', '.ts']),
+    realpathSync(pdfPath),
+  )
 })
 
 test('parses browser byte ranges', () => {

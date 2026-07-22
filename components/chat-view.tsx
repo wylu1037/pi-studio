@@ -176,6 +176,7 @@ export function ChatView({
   const [runId, setRunId] = useState<string | null>(null)
   const [sdkActiveRunId, setSdkActiveRunId] = useState<string | null>(null)
   const [sdkSessionRunning, setSdkSessionRunning] = useState(false)
+  const [sdkSessionQueueReady, setSdkSessionQueueReady] = useState(false)
   const [abortingRun, setAbortingRun] = useState(false)
   const [streamError, setStreamError] = useState<string | null>(null)
   const [queueingMessage, setQueueingMessage] = useState<'steer' | 'follow-up' | null>(null)
@@ -570,6 +571,7 @@ export function ChatView({
       setRunId(null)
       setSdkActiveRunId(null)
       setSdkSessionRunning(false)
+      setSdkSessionQueueReady(false)
       setAbortingRun(false)
       setStreamError(null)
       setQueueingMessage(null)
@@ -792,6 +794,7 @@ export function ChatView({
     ignoreSdkRunningUntilIdleRef.current = false
     setSdkSessionRunning(false)
     setSdkActiveRunId(null)
+    setSdkSessionQueueReady(false)
 
     const poll = async () => {
       if (!activeSessionId) return
@@ -807,6 +810,7 @@ export function ChatView({
           sdkSessionWasRunningRef.current = false
           setSdkActiveRunId(null)
           setSdkSessionRunning(false)
+          setSdkSessionQueueReady(false)
           if (active) timer = window.setTimeout(poll, RUN_RECONCILE_POLL_MS)
           return
         }
@@ -814,6 +818,7 @@ export function ChatView({
         sdkSessionWasRunningRef.current = state.running
         setSdkActiveRunId(state.activeRunId ?? null)
         setSdkSessionRunning(state.running)
+        setSdkSessionQueueReady(state.active && state.running)
         if (wasRunning && !state.running) {
           if (!activeRunIdRef.current) {
             setStreamPhase('idle')
@@ -951,6 +956,7 @@ export function ChatView({
 
   const isStartingRun = streamPhase === 'starting' && !runId
   const isRunningRun = Boolean(runId) || sdkSessionRunning
+  const canQueueMessage = isRunningRun && sdkSessionQueueReady && !abortingRun
   const isWaiting =
     !streamError &&
     !hasPersistedRun &&
@@ -975,6 +981,7 @@ export function ChatView({
     setRunId(null)
     setSdkActiveRunId(null)
     setSdkSessionRunning(false)
+    setSdkSessionQueueReady(false)
     setAbortingRun(false)
     setStreamPhase('idle')
     setStreamDone(true)
@@ -990,6 +997,7 @@ export function ChatView({
     if (eventSourceRef.current === source) eventSourceRef.current = null
     activeRunIdRef.current = null
     setRunId(null)
+    setSdkSessionQueueReady(false)
     setAbortingRun(false)
     setStreamPhase('idle')
     setStreamDone(false)
@@ -1216,6 +1224,7 @@ export function ChatView({
       if (eventSourceRef.current === source) eventSourceRef.current = null
       sdkSessionWasRunningRef.current = false
       setSdkSessionRunning(false)
+      setSdkSessionQueueReady(false)
       setStreamPhase('idle')
       setStreamDone(true)
       router.refresh()
@@ -1303,6 +1312,7 @@ export function ChatView({
       if (state.running) {
         sdkSessionWasRunningRef.current = true
         setSdkSessionRunning(true)
+        setSdkSessionQueueReady(state.active)
         showToast({
           tone: 'warning',
           title: 'Agent is processing',
@@ -1325,6 +1335,7 @@ export function ChatView({
     activeRunIdRef.current = null
     ignoreSdkRunningUntilIdleRef.current = false
     setSdkActiveRunId(null)
+    setSdkSessionQueueReady(false)
     setStreamMessages([])
     resetStreamingMarkdown()
     setStreamStartedAt(Date.now())
@@ -1513,6 +1524,7 @@ export function ChatView({
       if (/already processing|streamingBehavior/i.test(message)) {
         sdkSessionWasRunningRef.current = true
         setSdkSessionRunning(true)
+        setSdkSessionQueueReady(true)
         setStreamError(null)
         showToast({
           tone: 'warning',
@@ -1539,6 +1551,7 @@ export function ChatView({
       finishAllStreamingMarkdown()
       setRunId(null)
       setSdkActiveRunId(null)
+      setSdkSessionQueueReady(false)
       setStreamPhase('idle')
       setStreamStartedAt(null)
       router.refresh()
@@ -1552,7 +1565,13 @@ export function ChatView({
 
   const queueMessage = async (behavior: 'steer' | 'follow-up') => {
     const content = form.getValues('message').trim()
-    if (!activeSession || (!content && attachments.length === 0) || queueingMessage) return
+    if (
+      !activeSession ||
+      !canQueueMessage ||
+      (!content && attachments.length === 0) ||
+      queueingMessage
+    )
+      return
     setQueueingMessage(behavior)
     setStreamError(null)
     try {
@@ -1566,10 +1585,22 @@ export function ChatView({
       }
       form.setValue('message', '')
       clearAttachments()
+      showToast({
+        tone: 'success',
+        title: behavior === 'steer' ? 'Steer queued' : 'Follow-up queued',
+        message:
+          behavior === 'steer'
+            ? 'The agent will apply this guidance after its current tool call.'
+            : 'The agent will process this message after the current task finishes.',
+      })
     } catch (error) {
-      setStreamError(
-        error instanceof Error ? error.message : `Unable to queue ${behavior} message.`,
-      )
+      const message = errorMessage(error, `Unable to queue ${behavior} message.`)
+      setStreamError(message)
+      showToast({
+        tone: 'error',
+        title: behavior === 'steer' ? 'Unable to steer run' : 'Unable to queue follow-up',
+        message,
+      })
     } finally {
       setQueueingMessage(null)
     }
@@ -2025,6 +2056,7 @@ export function ChatView({
             onAbort={() => void abort()}
             onQueueMessage={(behavior) => void queueMessage(behavior)}
             isRunningRun={isRunningRun}
+            canQueueMessage={canQueueMessage}
             canAbortRun={canAbortRun}
             isStartingRun={isStartingRun}
             abortingRun={abortingRun}

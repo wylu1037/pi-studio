@@ -1,5 +1,6 @@
 import { realpathSync, statSync } from 'node:fs'
 import { extname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 export const audioExtensions = ['.mp3'] as const
 export const imageExtensions = ['.avif', '.gif', '.jpeg', '.jpg', '.png', '.webp'] as const
@@ -23,7 +24,16 @@ export function resolveSessionMediaPath(
   }
 
   const candidates = isAbsolute(requestedPath)
-    ? [requestedPath, resolve(root, 'public', `.${requestedPath}`)]
+    ? [
+        // Absolute paths emitted by an agent can be either real filesystem
+        // paths or root-relative workspace paths such as `/output/report.pdf`.
+        // Try the real path first, then resolve the root-relative form inside
+        // the session workspace (and its public directory) before rejecting it
+        // at the realpath boundary check below.
+        requestedPath,
+        resolve(root, `.${requestedPath}`),
+        resolve(root, 'public', `.${requestedPath}`),
+      ]
     : [resolve(root, requestedPath)]
 
   for (const candidate of candidates) {
@@ -74,6 +84,16 @@ export function parseMediaRange(range: string, size: number) {
 
 function localPathFromHref(href: string) {
   const cleanHref = href.split(/[?#]/, 1)[0]
+  if (/^file:\/\//i.test(cleanHref)) {
+    try {
+      return fileURLToPath(cleanHref)
+    } catch {
+      return null
+    }
+  }
+  if (/^sandbox:\//i.test(cleanHref)) {
+    return decodePath(cleanHref.slice('sandbox:'.length))
+  }
   if (/^https?:\/\//i.test(cleanHref)) {
     try {
       const url = new URL(cleanHref)

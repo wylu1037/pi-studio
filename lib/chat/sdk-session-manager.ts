@@ -483,14 +483,14 @@ export async function executeSdkExtensionCommand(
 
 export async function steerSdkSession(studioSessionId: string, message: string) {
   const session = getSdkSession(studioSessionId)
-  if (!session) return false
+  if (!session || (session.inner.isIdle && !session.inner.isStreaming)) return false
   await session.inner.steer(message)
   return true
 }
 
 export async function followUpSdkSession(studioSessionId: string, message: string) {
   const session = getSdkSession(studioSessionId)
-  if (!session) return false
+  if (!session || (session.inner.isIdle && !session.inner.isStreaming)) return false
   await session.inner.followUp(message)
   return true
 }

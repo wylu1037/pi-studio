@@ -605,7 +605,7 @@ for (const behavior of ['steer', 'follow-up'] as const) {
         behavior === 'steer'
           ? await steerSdkSession(id, message)
           : await followUpSdkSession(id, message)
-      if (!ok) return c.json({ error: 'Agent session is not active.' }, 409)
+      if (!ok) return c.json({ error: 'Agent session is not active or has already finished.' }, 409)
       return c.json({ ok: true })
     },
   )

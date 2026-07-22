@@ -39,6 +39,7 @@ import {
   AttachmentMedia,
   AttachmentTitle,
 } from '@/components/ui/attachment'
+import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -115,6 +116,7 @@ export function ChatComposer({
   onAbort,
   onQueueMessage,
   isRunningRun,
+  canQueueMessage,
   canAbortRun,
   isStartingRun,
   abortingRun,
@@ -144,6 +146,7 @@ export function ChatComposer({
   onAbort: () => void
   onQueueMessage: (behavior: 'steer' | 'follow-up') => void
   isRunningRun: boolean
+  canQueueMessage: boolean
   canAbortRun: boolean
   isStartingRun: boolean
   abortingRun: boolean
@@ -157,6 +160,9 @@ export function ChatComposer({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isDraggingFiles, setIsDraggingFiles] = useState(false)
   const messageRegistration = form.register('message')
+  const hasQueueableContent = message.trim().length > 0 || attachments.length > 0
+  const queueActionsDisabled =
+    !canQueueMessage || !hasQueueableContent || queueingMessage !== null || abortingRun
 
   useEffect(() => {
     resizeTextarea(textareaRef.current)
@@ -169,7 +175,7 @@ export function ChatComposer({
   }
 
   const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (slashCommandOptions.length > 0) {
+    if (slashCommandOptions.length > 0 && !isRunningRun) {
       if (event.key === 'ArrowDown') {
         event.preventDefault()
         onSlashSelectionChange((value) => (value + 1) % slashCommandOptions.length)
@@ -184,7 +190,7 @@ export function ChatComposer({
       }
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault()
-        if (isRunningRun || creatingSession || clearingSession) return
+        if (creatingSession || clearingSession) return
         onExecuteSlashCommand(slashCommandOptions[slashSelection] ?? slashCommandOptions[0])
         return
       }
@@ -201,14 +207,13 @@ export function ChatComposer({
       event.keyCode !== 229
     ) {
       event.preventDefault()
-      if (
-        canSend &&
-        !isStartingRun &&
-        !isRunningRun &&
-        !abortingRun &&
-        !creatingSession &&
-        !clearingSession
-      ) {
+      if (isRunningRun) {
+        if (!queueActionsDisabled) {
+          onQueueMessage(event.altKey ? 'follow-up' : 'steer')
+        }
+        return
+      }
+      if (canSend && !isStartingRun && !abortingRun && !creatingSession && !clearingSession) {
         onSubmit()
       }
     }
@@ -221,7 +226,7 @@ export function ChatComposer({
     >
       <div className="pointer-events-auto relative mx-auto w-full max-w-3xl bg-background/95 pt-2 shadow-[0_-16px_32px_-28px_rgba(24,28,36,0.45)]">
         {extensionUi}
-        {slashCommandOptions.length > 0 && (
+        {slashCommandOptions.length > 0 && !isRunningRun && (
           <SlashCommandMenu
             options={slashCommandOptions}
             selectedIndex={slashSelection}
@@ -362,15 +367,53 @@ export function ChatComposer({
             <input type="hidden" {...form.register('providerId')} />
             <input type="hidden" {...form.register('modelId')} />
             <input type="hidden" {...form.register('thinkingLevel')} />
-            <div className="ml-auto min-w-0">
-              <ModelConfigurationMenu
-                form={form}
-                options={availableModelOptions}
-                selected={selectedModelOption}
-                thinking={thinking}
-                disabled={availableModelOptions.length === 0 || isRunningRun}
-              />
-            </div>
+            {isRunningRun ? (
+              <div className="ml-auto flex min-w-0 items-center gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={queueActionsDisabled}
+                  onClick={() => onQueueMessage('follow-up')}
+                  className="h-8 font-mono text-[10px] uppercase"
+                  aria-label="Queue a follow-up after the active run"
+                  aria-keyshortcuts="Alt+Enter"
+                  title={
+                    canQueueMessage
+                      ? 'Run after the current task finishes (Option/Alt + Enter)'
+                      : 'Available once the agent session starts'
+                  }
+                >
+                  {queueingMessage === 'follow-up' ? 'Queueing…' : 'Follow up'}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={queueActionsDisabled}
+                  onClick={() => onQueueMessage('steer')}
+                  className="h-8 border-accent bg-accent font-mono text-[10px] text-accent-foreground uppercase hover:bg-accent/90"
+                  aria-label="Steer the active run now"
+                  aria-keyshortcuts="Enter"
+                  title={
+                    canQueueMessage
+                      ? 'Adjust the active run after its current tool call (Enter)'
+                      : 'Available once the agent session starts'
+                  }
+                >
+                  {queueingMessage === 'steer' ? 'Queueing…' : 'Steer now'}
+                </Button>
+              </div>
+            ) : (
+              <div className="ml-auto min-w-0">
+                <ModelConfigurationMenu
+                  form={form}
+                  options={availableModelOptions}
+                  selected={selectedModelOption}
+                  thinking={thinking}
+                  disabled={availableModelOptions.length === 0}
+                />
+              </div>
+            )}
             <button
               type={isRunningRun ? 'button' : 'submit'}
               onClick={canAbortRun ? onAbort : undefined}
@@ -427,27 +470,6 @@ export function ChatComposer({
             {activeSessionCwd}
           </span>
         </div>
-
-        {isRunningRun && (
-          <div className="mt-2 flex justify-end gap-2">
-            <button
-              type="button"
-              disabled={(!message.trim() && attachments.length === 0) || queueingMessage !== null}
-              onClick={() => onQueueMessage('steer')}
-              className="border border-border-strong px-2.5 py-1 font-mono text-[10px] text-muted-foreground uppercase hover:border-accent hover:text-foreground disabled:opacity-50"
-            >
-              {queueingMessage === 'steer' ? 'Queueing…' : 'Steer now'}
-            </button>
-            <button
-              type="button"
-              disabled={(!message.trim() && attachments.length === 0) || queueingMessage !== null}
-              onClick={() => onQueueMessage('follow-up')}
-              className="border border-border-strong px-2.5 py-1 font-mono text-[10px] text-muted-foreground uppercase hover:border-accent hover:text-foreground disabled:opacity-50"
-            >
-              {queueingMessage === 'follow-up' ? 'Queueing…' : 'Follow up'}
-            </button>
-          </div>
-        )}
       </div>
     </div>
   )

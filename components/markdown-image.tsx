@@ -1,44 +1,17 @@
 'use client'
 
-import { useLayoutEffect, useState } from 'react'
+import { useState } from 'react'
 import { Dialog } from '@base-ui/react/dialog'
 import { Download, ImageOff, Maximize2, RotateCcw, X, ZoomIn, ZoomOut } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { useSidebarOffset } from '@/hooks/use-sidebar-offset'
 import { cn } from '@/lib/utils'
 
 const MIN_ZOOM = 0.5
 const MAX_ZOOM = 3
 const ZOOM_STEP = 0.25
-
-function useSidebarOffset(active: boolean) {
-  const [offset, setOffset] = useState(0)
-
-  useLayoutEffect(() => {
-    if (!active) {
-      setOffset(0)
-      return
-    }
-
-    const sidebarGap = document.querySelector<HTMLElement>('[data-slot="sidebar-gap"]')
-    if (!sidebarGap) return
-
-    const updateOffset = () => setOffset(sidebarGap.getBoundingClientRect().width)
-    updateOffset()
-
-    const resizeObserver = new ResizeObserver(updateOffset)
-    resizeObserver.observe(sidebarGap)
-    window.addEventListener('resize', updateOffset)
-
-    return () => {
-      resizeObserver.disconnect()
-      window.removeEventListener('resize', updateOffset)
-    }
-  }, [active])
-
-  return offset
-}
 
 export function MarkdownImage({
   src,
