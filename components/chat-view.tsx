@@ -37,6 +37,8 @@ import {
   Pencil,
   Copy,
   Check,
+  MessageSquare,
+  type LucideIcon,
 } from 'lucide-react'
 import { ActionButton, Label, Tag, BracketButton, Panel, PanelHeader } from '@/components/pi-ui'
 import {
@@ -1755,7 +1757,7 @@ export function ChatView({
                 <PanelLeftOpen className="size-4" />
               )}
             </button>
-            <div className="flex min-w-0 items-center gap-1.5">
+            <div className="flex min-w-0 items-center gap-1">
               <Select
                 value={activeAgent.id}
                 onValueChange={(value) => {
@@ -1772,7 +1774,7 @@ export function ChatView({
                   aria-label="Switch agent"
                   size="sm"
                   variant="ghost"
-                  className="h-7 max-w-[30vw] px-2 text-xs text-foreground"
+                  className="h-7 max-w-[30vw] px-2 font-mono text-xs tracking-wide text-foreground/85 hover:text-foreground sm:max-w-56"
                 >
                   <SelectValue>{activeAgent.name}</SelectValue>
                 </SelectTrigger>
@@ -1788,6 +1790,9 @@ export function ChatView({
                   ))}
                 </SelectContent>
               </Select>
+              <span className="font-mono text-[10px] text-muted-foreground/40" aria-hidden>
+                /
+              </span>
               <Select
                 value={activeSession.id}
                 onValueChange={(value) => {
@@ -1804,7 +1809,7 @@ export function ChatView({
                   aria-label="Switch session"
                   size="sm"
                   variant="ghost"
-                  className="h-7 max-w-[40vw] px-2 text-[11px] text-muted-foreground hover:text-foreground sm:max-w-80"
+                  className="h-7 max-w-[40vw] px-2 font-mono text-xs tracking-wide text-foreground/85 hover:text-foreground sm:max-w-80"
                 >
                   <SelectValue>
                     {activeSession.name ?? activeSession.firstUserMessage ?? 'New conversation'}
@@ -1825,16 +1830,27 @@ export function ChatView({
             </div>
           </div>
           <div className="flex items-center gap-1.5">
-            <Tag tone="outline">
+            <span
+              className="inline-flex items-center gap-1.5 font-mono text-[10px] tracking-wider text-muted-foreground uppercase"
+              title={isRunningRun ? 'Running' : 'Ready'}
+              aria-label={isRunningRun ? 'Running' : 'Ready'}
+            >
               <Circle
                 className={cn(
-                  'size-2',
+                  'size-2.5',
                   isRunningRun ? 'fill-success text-success' : 'text-muted-foreground',
                 )}
               />
               {isRunningRun ? 'running' : 'ready'}
-            </Tag>
-            <Tag tone="outline">{activeSession.messageCount} msgs</Tag>
+            </span>
+            <span
+              className="inline-flex items-center gap-1 font-mono text-[10px] text-muted-foreground"
+              title={`${activeSession.messageCount} messages`}
+              aria-label={`${activeSession.messageCount} messages`}
+            >
+              <MessageSquare className="size-3" aria-hidden />
+              {activeSession.messageCount}
+            </span>
             <button
               type="button"
               onClick={() => setShowActiveContext((value) => !value)}
@@ -1932,14 +1948,14 @@ export function ChatView({
               <div
                 aria-hidden="true"
                 className="shrink-0"
-                style={{ height: composerOverlayHeight + 16 }}
+                style={{ height: composerOverlayHeight }}
               />
             </div>
           </ScrollArea>
           <ChatMessageOutline
             entries={messageOutlineEntries}
             viewportRef={messageViewportRef}
-            bottomOffset={composerOverlayHeight + 16}
+            bottomOffset={composerOverlayHeight}
           />
           {/* composer */}
           <ChatComposer
@@ -2766,7 +2782,7 @@ function ProcessDetailsGroup({
   mediaSessionId?: string
 }) {
   const [open, setOpen] = useState(Boolean(isStreaming))
-  const { activities, summary, toolCount, bashOutputCount } = useMemo(() => {
+  const { activities, items, toolCount, bashOutputCount } = useMemo(() => {
     const activities = buildRunActivities(messages)
     return {
       activities,
@@ -2798,8 +2814,24 @@ function ProcessDetailsGroup({
         >
           {isStreaming ? 'Working' : 'Activity'}
         </span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground/60">
-          {summary || `${activities.length} steps`}
+        <span className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden font-mono text-[10px] text-muted-foreground/60">
+          {items.length > 0 ? (
+            items.map((item) => {
+              const Icon = item.icon
+              return (
+                <span
+                  key={item.key}
+                  className="inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap"
+                  title={`${item.count} ${item.label}`}
+                >
+                  <Icon className="size-3 text-muted-foreground/70" aria-hidden />
+                  <span>{item.count}</span>
+                </span>
+              )
+            })
+          ) : (
+            <span className="truncate">{activities.length} steps</span>
+          )}
         </span>
         <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-open/run:rotate-90" />
       </summary>
@@ -2833,10 +2865,17 @@ type RunActivity =
       result?: ChatMessage
     }
 
+type RunActivitySummaryItem = {
+  key: string
+  count: number
+  label: string
+  icon: LucideIcon
+}
+
 type RunActivitySummary = {
   toolCount: number
   bashOutputCount: number
-  summary: string
+  items: RunActivitySummaryItem[]
 }
 
 function summarizeRunActivities(activities: RunActivity[]): RunActivitySummary {
@@ -2864,16 +2903,42 @@ function summarizeRunActivities(activities: RunActivity[]): RunActivitySummary {
     }
   }
 
-  const summary = [
-    updateCount ? `${updateCount} ${updateCount === 1 ? 'update' : 'updates'}` : null,
-    thoughtCount ? `${thoughtCount} ${thoughtCount === 1 ? 'thought' : 'thoughts'}` : null,
-    toolCount ? `${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}` : null,
-    bashOutputCount ? `${bashOutputCount} ${bashOutputCount === 1 ? 'output' : 'outputs'}` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ')
+  const items: RunActivitySummaryItem[] = [
+    updateCount
+      ? {
+          key: 'updates',
+          count: updateCount,
+          label: updateCount === 1 ? 'update' : 'updates',
+          icon: Bot,
+        }
+      : null,
+    thoughtCount
+      ? {
+          key: 'thoughts',
+          count: thoughtCount,
+          label: thoughtCount === 1 ? 'thought' : 'thoughts',
+          icon: Brain,
+        }
+      : null,
+    toolCount
+      ? {
+          key: 'tools',
+          count: toolCount,
+          label: toolCount === 1 ? 'tool' : 'tools',
+          icon: Wrench,
+        }
+      : null,
+    bashOutputCount
+      ? {
+          key: 'outputs',
+          count: bashOutputCount,
+          label: bashOutputCount === 1 ? 'output' : 'outputs',
+          icon: Terminal,
+        }
+      : null,
+  ].filter((item): item is RunActivitySummaryItem => item !== null)
 
-  return { toolCount, bashOutputCount, summary }
+  return { toolCount, bashOutputCount, items }
 }
 
 function buildRunActivities(messages: ChatMessage[]): RunActivity[] {

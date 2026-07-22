@@ -215,8 +215,11 @@ export function ChatComposer({
   }
 
   return (
-    <div ref={containerRef} className="pointer-events-none absolute inset-x-0 bottom-0 px-5 pb-4">
-      <div className="pointer-events-auto relative mx-auto max-w-3xl bg-background/95 px-2 pt-2 shadow-[0_-16px_32px_-28px_rgba(24,28,36,0.45)]">
+    <div
+      ref={containerRef}
+      className="pointer-events-none absolute inset-x-0 bottom-0 px-5 xl:pr-14"
+    >
+      <div className="pointer-events-auto relative mx-auto w-full max-w-3xl bg-background/95 pt-2 shadow-[0_-16px_32px_-28px_rgba(24,28,36,0.45)]">
         {extensionUi}
         {slashCommandOptions.length > 0 && (
           <SlashCommandMenu

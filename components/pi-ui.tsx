@@ -97,11 +97,12 @@ export function Tag({
   children,
   tone = 'default',
   className,
+  ...props
 }: {
   children: React.ReactNode
   tone?: 'default' | 'accent' | 'success' | 'warning' | 'danger' | 'outline'
   className?: string
-}) {
+} & React.ComponentPropsWithoutRef<'span'>) {
   return (
     <span
       className={cn(
@@ -114,6 +115,7 @@ export function Tag({
         tone === 'outline' && 'border border-border-strong text-muted-foreground',
         className,
       )}
+      {...props}
     >
       {children}
     </span>
