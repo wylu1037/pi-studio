@@ -15,6 +15,22 @@ import { clearApplicationLogs, readApplicationLogs } from '@/lib/runtime/log-fil
 import { logger } from '@/lib/runtime/logger'
 import { piStudioDataDir } from '@/lib/runtime/paths'
 import {
+  METRICS_DETAIL_LEVELS,
+  METRICS_INTERVAL_SECONDS,
+  METRICS_RETENTION_DAYS,
+  METRIC_CATALOG,
+  METRIC_DEFINITIONS,
+  METRIC_IDS,
+  METRIC_RANGES,
+  isMetricId,
+} from '@/lib/metrics/catalog'
+import {
+  clearMetricHistory,
+  notifyMetricsSettingsChanged,
+  recordApiMetric,
+} from '@/lib/metrics/service'
+import { getMetricSeries, getMetricsSummary } from '@/lib/metrics/summary'
+import {
   createAgent,
   createForkedSessionRecord,
   createRun,
@@ -126,6 +142,26 @@ const json = <T extends z.ZodTypeAny>(schema: T) => ({
 })
 
 export const api = new OpenAPIHono().basePath('/api')
+
+api.use('*', async (c, next) => {
+  const path = c.req.path
+  const shouldRecord =
+    !path.startsWith('/api/metrics') &&
+    !path.startsWith('/api/settings/metrics') &&
+    path !== '/api/health'
+  if (!shouldRecord) return next()
+
+  const startedAt = performance.now()
+  let failed = false
+  try {
+    await next()
+  } catch (error) {
+    failed = true
+    throw error
+  } finally {
+    recordApiMetric(performance.now() - startedAt, failed ? 500 : c.res.status)
+  }
+})
 
 async function runtimePackageCollection(cwd: string) {
   const { listRuntimePackages } = await import('@/lib/packages/package-service')
@@ -462,6 +498,205 @@ api.openapi(
     responses: { 200: json(LoggingSettingsSchema) },
   }),
   (c) => c.json({ level: getAppSettings().logLevel, logDirectory: piStudioDataDir() }),
+)
+
+const MetricIdSchema = z.enum(METRIC_IDS)
+const MetricRangeSchema = z.enum(METRIC_RANGES)
+const MetricsDetailLevelSchema = z.enum(METRICS_DETAIL_LEVELS)
+const MetricsIntervalSchema = z.union(METRICS_INTERVAL_SECONDS.map((value) => z.literal(value)))
+const MetricsRetentionSchema = z.union(METRICS_RETENTION_DAYS.map((value) => z.literal(value)))
+
+const MetricsSettingsSchema = z
+  .object({
+    enabled: z.boolean(),
+    detailLevel: MetricsDetailLevelSchema,
+    intervalSeconds: MetricsIntervalSchema,
+    retentionDays: MetricsRetentionSchema,
+    enabledMetricIds: z
+      .array(MetricIdSchema)
+      .max(METRIC_IDS.length)
+      .refine((items) => new Set(items).size === items.length, 'Metric IDs must be unique.'),
+    intervalOverrides: z.record(z.string(), MetricsIntervalSchema),
+    diagnosticUntil: z.string().datetime().nullable(),
+  })
+  .strict()
+  .superRefine((settings, context) => {
+    for (const [metricId, interval] of Object.entries(settings.intervalOverrides)) {
+      if (!isMetricId(metricId)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['intervalOverrides', metricId],
+          message: 'Unknown metric ID.',
+        })
+        continue
+      }
+      const definition = METRIC_DEFINITIONS.get(metricId)
+      if (definition?.kind !== 'gauge' && definition?.kind !== 'snapshot') {
+        context.addIssue({
+          code: 'custom',
+          path: ['intervalOverrides', metricId],
+          message: 'Only gauges and snapshots support sampling overrides.',
+        })
+        continue
+      }
+      const minimum = definition.minimumIntervalSeconds
+      if (minimum && interval < minimum) {
+        context.addIssue({
+          code: 'custom',
+          path: ['intervalOverrides', metricId],
+          message: `This metric cannot be sampled faster than every ${minimum} seconds.`,
+        })
+      }
+    }
+    if (settings.detailLevel === 'diagnostic' && !settings.diagnosticUntil) {
+      context.addIssue({
+        code: 'custom',
+        path: ['diagnosticUntil'],
+        message: 'Diagnostic collection requires an expiration time.',
+      })
+    }
+  })
+
+const MetricDefinitionSchema = z.object({
+  id: MetricIdSchema,
+  label: z.string(),
+  description: z.string(),
+  group: z.enum(['resources', 'api', 'runs', 'usage', 'scheduler', 'storage']),
+  kind: z.enum(['gauge', 'event', 'snapshot', 'derived']),
+  unit: z.enum(['percent', 'bytes', 'milliseconds', 'seconds', 'count', 'tokens', 'currency']),
+  minimumDetailLevel: z.enum(['essential', 'standard', 'diagnostic']),
+  minimumIntervalSeconds: MetricsIntervalSchema.optional(),
+  supportsSeries: z.boolean(),
+})
+
+const MetricWarningSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  detail: z.string(),
+  severity: z.enum(['warning', 'critical']),
+})
+
+const NullableNumberSchema = z.number().nullable()
+
+const MetricsSummarySchema = z.object({
+  generatedAt: z.string(),
+  range: MetricRangeSchema,
+  health: z.enum(['healthy', 'degraded', 'critical', 'disabled', 'warming']),
+  lastSampleAt: z.string().nullable(),
+  sampleCount: z.number(),
+  runtime: z.object({
+    uptimeSeconds: z.number(),
+    cpuPercent: NullableNumberSchema,
+    rssBytes: NullableNumberSchema,
+    heapBytes: NullableNumberSchema,
+    eventLoopLagMs: NullableNumberSchema,
+  }),
+  api: z.object({
+    requests: z.number(),
+    errorRate: NullableNumberSchema,
+    p95LatencyMs: NullableNumberSchema,
+  }),
+  runs: z.object({
+    queued: z.number(),
+    active: z.number(),
+    completed: z.number(),
+    failed: z.number(),
+    aborted: z.number(),
+    successRate: NullableNumberSchema,
+    averageDurationMs: NullableNumberSchema,
+    p95DurationMs: NullableNumberSchema,
+    p95TimeToFirstResponseMs: NullableNumberSchema,
+  }),
+  usage: z.object({
+    inputTokens: z.number(),
+    outputTokens: z.number(),
+    cacheReadTokens: z.number(),
+    cacheWriteTokens: z.number(),
+    totalTokens: z.number(),
+    cost: z.number(),
+    cacheHitRate: NullableNumberSchema,
+  }),
+  scheduler: z.object({ total: z.number(), failed: z.number() }),
+  warnings: z.array(MetricWarningSchema),
+})
+
+const MetricSeriesSchema = z.object({
+  metricId: MetricIdSchema,
+  range: MetricRangeSchema,
+  points: z.array(z.object({ timestamp: z.string(), value: z.number() })),
+})
+
+api.openapi(
+  createRoute({
+    method: 'get',
+    path: '/settings/metrics',
+    tags: ['System'],
+    responses: {
+      200: json(
+        z.object({ settings: MetricsSettingsSchema, catalog: z.array(MetricDefinitionSchema) }),
+      ),
+    },
+  }),
+  (c) => c.json({ settings: getAppSettings().metrics, catalog: METRIC_CATALOG }),
+)
+
+api.openapi(
+  createRoute({
+    method: 'put',
+    path: '/settings/metrics',
+    tags: ['System'],
+    request: { body: json(MetricsSettingsSchema) },
+    responses: {
+      200: json(
+        z.object({ settings: MetricsSettingsSchema, catalog: z.array(MetricDefinitionSchema) }),
+      ),
+    },
+  }),
+  (c) => {
+    const settings = updateAppSettings({ metrics: c.req.valid('json') }).metrics
+    notifyMetricsSettingsChanged()
+    logger.info(
+      `Metrics collection changed to ${settings.enabled ? settings.detailLevel : 'disabled'}.`,
+    )
+    return c.json({ settings, catalog: METRIC_CATALOG })
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'get',
+    path: '/metrics/summary',
+    tags: ['System'],
+    request: { query: z.object({ range: MetricRangeSchema.default('24h') }) },
+    responses: { 200: json(MetricsSummarySchema) },
+  }),
+  (c) => c.json(getMetricsSummary(c.req.valid('query').range)),
+)
+
+api.openapi(
+  createRoute({
+    method: 'get',
+    path: '/metrics/series',
+    tags: ['System'],
+    request: {
+      query: z.object({ metricId: MetricIdSchema, range: MetricRangeSchema.default('24h') }),
+    },
+    responses: { 200: json(MetricSeriesSchema) },
+  }),
+  (c) => {
+    const query = c.req.valid('query')
+    return c.json(getMetricSeries(query.metricId, query.range))
+  },
+)
+
+api.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/metrics/history',
+    tags: ['System'],
+    responses: { 200: json(z.object({ cleared: z.number() })) },
+  }),
+  (c) => c.json({ cleared: clearMetricHistory() }),
 )
 
 api.openapi(

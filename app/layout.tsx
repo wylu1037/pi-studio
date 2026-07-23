@@ -9,6 +9,7 @@ import { ToastHost } from '@/components/toast-host'
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { getPiVersionLabel } from '@/lib/pi-version'
+import { ensureMetricsService } from '@/lib/metrics/service'
 import { ensureTaskScheduler } from '@/lib/scheduler/task-scheduler'
 import './globals.css'
 
@@ -30,6 +31,7 @@ export default async function RootLayout({
   children: React.ReactNode
 }>) {
   ensureTaskScheduler()
+  ensureMetricsService()
   const piVersion = getPiVersionLabel()
   const sidebarOpen = (await cookies()).get('sidebar_state')?.value !== 'false'
 

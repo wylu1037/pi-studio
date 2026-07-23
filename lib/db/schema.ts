@@ -417,6 +417,22 @@ export const scheduledTasks = sqliteTable(
   ],
 )
 
+export const metricSamples = sqliteTable(
+  'metric_samples',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    metricId: text('metric_id').notNull(),
+    value: real('value').notNull(),
+    capturedAt: text('captured_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index('metric_samples_metric_time_idx').on(table.metricId, table.capturedAt),
+    index('metric_samples_time_idx').on(table.capturedAt),
+  ],
+)
+
 export const agentsRelations = relations(agents, ({ many }) => ({
   tags: many(agentTags),
   extensions: many(agentExtensions),
