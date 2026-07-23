@@ -53,6 +53,31 @@ export type GetApiSessionsIdMessages200 = {
     */
     tokens?: number;
     /**
+     * @type array | undefined
+    */
+    attachments?: {
+        /**
+         * @type string
+        */
+        id: string;
+        /**
+         * @type string
+        */
+        name: string;
+        /**
+         * @type string
+        */
+        path: string;
+        /**
+         * @type number
+        */
+        size: number;
+        /**
+         * @type string
+        */
+        type: string;
+    }[];
+    /**
      * @type object | undefined
     */
     usage?: {

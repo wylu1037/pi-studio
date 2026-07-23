@@ -133,4 +133,30 @@
     background-color: var(--border-strong);
     border-radius: 4px;
   }
+  /* Loading micro-glow: a highlight sweeps across the text. The gradient's
+     edge colors extend past its stops (no-repeat), so glyphs always keep a
+     color and never blank out as the background scrolls. */
+  .shimmer {
+    background: linear-gradient(
+      100deg,
+      var(--muted-foreground) 40%,
+      var(--foreground) 50%,
+      var(--muted-foreground) 60%
+    );
+    background-size: 200% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    animation: shimmer 1.6s linear infinite;
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
 }

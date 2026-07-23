@@ -19,6 +19,13 @@ export const getApiSessionsIdMessages200Schema = z.array(z.object({
 "title": z.optional(z.string()),
 "timestamp": z.string(),
 "tokens": z.optional(z.number()),
+"attachments": z.optional(z.array(z.object({
+    "id": z.string(),
+"name": z.string(),
+"path": z.string(),
+"size": z.number(),
+"type": z.string()
+    }))),
 "usage": z.optional(z.object({
     "input": z.number(),
 "output": z.number(),

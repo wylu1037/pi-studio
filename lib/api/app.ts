@@ -4,9 +4,11 @@ import { mkdirSync, rmSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
 import { streamSSE } from 'hono/streaming'
-import { abortRun as abortRegisteredRun, prepareRun } from '@/lib/chat/run-registry'
-import { getRunCoordinator, RUN_TERMINAL_EVENT } from '@/lib/chat/run-coordinator'
-import { startRunExecution } from '@/lib/chat/run-execution'
+import { startSessionPrompt } from '@/lib/chat/run-session-prompt'
+import {
+  getSessionRunController,
+  peekSessionRunController,
+} from '@/lib/chat/session-run-controller'
 import { runNpx } from '@/lib/npx'
 import { loadPiPackageCatalog } from '@/lib/packages/pi-dev-gallery'
 import { materializeInstalledSkill, removeStoredSkill, studioRootDir } from '@/lib/skills/store'
@@ -33,7 +35,6 @@ import { getMetricSeries, getMetricsSummary } from '@/lib/metrics/summary'
 import {
   createAgent,
   createForkedSessionRecord,
-  createRun,
   createScheduledTask,
   createSession,
   clearSessionMessages,
@@ -45,10 +46,8 @@ import {
   duplicateAgent,
   duplicateSession,
   getAgent,
-  getActiveRunForSession,
   getModelCapabilities,
   getProvider,
-  getRun,
   getSession,
   getSessionTree,
   getPackageCatalogItem,
@@ -59,7 +58,6 @@ import {
   listSessionMessages,
   listSessions,
   listSkills,
-  markRun,
   resolveAgentRunConfig,
   setDefaultProvider,
   testProviderConnection,
@@ -78,7 +76,6 @@ import {
 import {
   AssignToAgentSchema,
   AgentQueueMessageSchema,
-  AgentSessionStateSchema,
   AgentInputSchema,
   AgentResourcesSchema,
   AgentSchema,
@@ -113,7 +110,6 @@ import {
   ProviderTestResultSchema,
   ProjectTrustInputSchema,
   ProjectTrustStateSchema,
-  RunSchema,
   ScheduledTaskInputSchema,
   ScheduledTaskSchema,
   SessionSchema,
@@ -128,6 +124,7 @@ import {
   SkillInputSchema,
   SkillSchema,
   StartRunSchema,
+  StartRunResultSchema,
   ToggleExtensionSchema,
 } from './schemas'
 import { executeScheduledTask, nextRunAt } from '@/lib/scheduler/task-scheduler'
@@ -318,10 +315,16 @@ async function fetchSkillsShRegistry(query: string) {
   }
 }
 
-async function installSkillsShPackage(pkg: string) {
+async function installSkillPackage(pkg: string, options: { skill?: string } = {}) {
   mkdirSync(studioRootDir(), { recursive: true })
+  const args = ['skills', 'add', pkg.trim()]
+  // `--skill` selects a specific skill inside a multi-skill repo (e.g. a GitHub
+  // URL such as https://github.com/owner/repo --skill my-skill). skills.sh
+  // package specs already point at a single skill, so the selector is optional.
+  if (options.skill) args.push('--skill', options.skill)
+  args.push('-y', '--copy')
   try {
-    await runNpx(['skills', 'add', pkg.trim(), '-y', '--copy'], {
+    await runNpx(args, {
       timeout: 60_000,
       cwd: studioRootDir(),
       env: { ...process.env, FORCE_COLOR: '0' },
@@ -730,88 +733,84 @@ function scheduledTaskRunConfigError(input: {
   return null
 }
 
-api.openapi(
-  createRoute({
-    method: 'get',
-    path: '/sessions/{id}/agent-state',
-    tags: ['Chat'],
-    request: { params: z.object({ id: z.string() }) },
-    responses: { 200: json(AgentSessionStateSchema) },
-  }),
-  async (c) => {
-    const { getSdkSessionState } = await import('@/lib/chat/sdk-session-manager')
-    const sessionId = c.req.valid('param').id
-    const state = getSdkSessionState(sessionId)
-    const storedActiveRun = getActiveRunForSession(sessionId)
-    const activeRunSnapshot = storedActiveRun
-      ? getRunCoordinator().getSnapshot(storedActiveRun.id)
-      : null
-    const activeRunId =
-      activeRunSnapshot && !activeRunSnapshot.terminal ? (storedActiveRun?.id ?? null) : null
-    return c.json(
-      state
-        ? {
-            active: true,
-            ...state,
-            activeRunId,
-            sdkSessionId: state.sessionId,
-          }
-        : {
-            active: false,
-            running: Boolean(activeRunId),
-            activeRunId,
-            isStreaming: false,
-            isCompacting: false,
-            model: null,
-            thinkingLevel: null,
-            sessionFile: null,
-            sdkSessionId: null,
-          },
-    )
-  },
-)
-
-api.get('/sessions/:id/live-events', async (c) => {
-  const { getSdkSession } = await import('@/lib/chat/sdk-session-manager')
-  const session = getSdkSession(c.req.param('id'))
-  if (!session) return c.json({ error: 'Agent session is not active.' }, 404)
+// Unified session event stream. One connection per session carries the running
+// state (first frame + activity_start/activity_end) and the forwarded SDK
+// events. The controller lives in a session-scoped registry independent of the
+// SDK session lifecycle, so this endpoint works even before the first prompt
+// creates an AgentSession. `Last-Event-ID` replays buffered frames after a
+// same-process reconnect.
+api.get('/sessions/:id/events', async (c) => {
+  const sessionId = c.req.param('id')
+  const controller = getSessionRunController(sessionId)
+  const afterSequence = parseLastEventId(c.req.header('Last-Event-ID'))
 
   return streamSSE(c, async (stream) => {
-    const queue: import('@/lib/chat/pi-events').PiRunEvent[] = []
+    const queue: import('@/lib/chat/session-run-controller').SequencedFrame[] = []
     let aborted = false
     let wake: (() => void) | null = null
+    let lastSent = afterSequence
     const notify = () => {
       wake?.()
       wake = null
     }
-    const unsubscribe = session.subscribePiEvents((event) => {
-      queue.push(event)
+
+    const writeFrame = async (
+      entry: import('@/lib/chat/session-run-controller').SequencedFrame,
+    ) => {
+      // De-dupe: replay and live delivery can overlap around subscribe time.
+      if (entry.sequence <= lastSent) return
+      lastSent = entry.sequence
+      await stream.writeSSE({
+        id: String(entry.sequence),
+        event: 'frame',
+        data: JSON.stringify(entry.frame),
+      })
+    }
+
+    // Subscribe first so no frame emitted during replay is lost; the queue and
+    // the replay both flow through writeFrame's sequence de-dupe.
+    const unsubscribe = controller.subscribe((entry) => {
+      queue.push(entry)
       notify()
     })
+
+    // Replay buffered frames the client missed (same-process reconnect).
+    for (const entry of controller.bufferedFrames(afterSequence)) {
+      await writeFrame(entry)
+    }
+
+    // A state frame so a fresh client (or one whose buffer was pruned)
+    // immediately knows idle vs running, regardless of replay contents.
+    await stream.writeSSE({
+      event: 'state',
+      data: JSON.stringify(controller.stateFrame()),
+    })
+
     stream.onAbort(() => {
       aborted = true
       notify()
     })
+    const heartbeat = setInterval(() => {
+      void stream.write(`: heartbeat ${Date.now()}\n\n`)
+    }, 30000)
 
     try {
-      while (!aborted && (!session.inner.isIdle || queue.length > 0)) {
-        if (queue.length === 0) {
-          await new Promise<void>((resolve) => {
-            const timeout = setTimeout(resolve, 1000)
-            wake = () => {
-              clearTimeout(timeout)
-              resolve()
-            }
-          })
-        }
+      while (!aborted) {
         while (!aborted && queue.length > 0) {
-          const event = queue.shift()
-          if (event) await stream.writeSSE({ event: event.type, data: JSON.stringify(event) })
+          const entry = queue.shift()
+          if (entry) await writeFrame(entry)
         }
+        if (aborted) break
+        await new Promise<void>((resolve) => {
+          wake = resolve
+          if (aborted || queue.length > 0) {
+            wake = null
+            resolve()
+          }
+        })
       }
-      if (!aborted)
-        await stream.writeSSE({ event: 'done', data: JSON.stringify({ recovered: true }) })
     } finally {
+      clearInterval(heartbeat)
       unsubscribe()
     }
   })
@@ -845,6 +844,27 @@ for (const behavior of ['steer', 'follow-up'] as const) {
     },
   )
 }
+
+api.openapi(
+  createRoute({
+    method: 'post',
+    path: '/sessions/{id}/abort',
+    tags: ['Chat'],
+    request: { params: z.object({ id: z.string() }) },
+    responses: {
+      200: json(z.object({ ok: z.boolean() })),
+      409: json(ErrorSchema),
+    },
+  }),
+  async (c) => {
+    const { abortSdkSession } = await import('@/lib/chat/sdk-session-manager')
+    const id = c.req.valid('param').id
+    // The controller owns the running truth: aborting stops the live SDK activity
+    // and marks the chatRuns row aborted. Idempotent when nothing is running.
+    await abortSdkSession(id)
+    return c.json({ ok: true })
+  },
+)
 
 api.openapi(
   createRoute({
@@ -1007,16 +1027,21 @@ api.openapi(
   }),
   async (c) => {
     const input = c.req.valid('json')
-    const skillInput = { ...input }
-    if (!input.id && input.source === 'skills.sh') {
+    // `skill` is an install-time selector (CLI `--skill`), not a stored column.
+    const { skill: skillSelector, ...skillInput } = input
+    // skills.sh and git/GitHub sources are both fetched via the `skills` CLI;
+    // git sources may additionally target one skill inside a multi-skill repo.
+    if (!input.id && (input.source === 'skills.sh' || input.source === 'git')) {
       let installError: unknown = null
       try {
-        await installSkillsShPackage(input.path)
+        await installSkillPackage(input.path, { skill: skillSelector })
       } catch (error) {
         installError = error
       }
       try {
-        skillInput.path = materializeInstalledSkill(input.name)
+        // The CLI writes the installed dir under the skill's own name; with a
+        // `--skill` selector that's the selector, otherwise fall back to name.
+        skillInput.path = materializeInstalledSkill(skillSelector || input.name)
       } catch (materializeError) {
         return c.json(
           {
@@ -1025,7 +1050,7 @@ api.openapi(
                 ? installError.message
                 : materializeError instanceof Error
                   ? materializeError.message
-                  : 'Unable to install skills.sh package',
+                  : `Unable to install ${input.source} package`,
           },
           400,
         )
@@ -2033,7 +2058,7 @@ api.openapi(
     tags: ['Scheduled tasks'],
     request: { params: z.object({ id: z.string() }) },
     responses: {
-      200: json(z.object({ runId: z.string(), sessionId: z.string() })),
+      200: json(z.object({ sessionId: z.string() })),
       404: json(ErrorSchema),
       409: json(ErrorSchema),
     },
@@ -2095,19 +2120,12 @@ api.openapi(
     const session = getSession(id)
     if (!session) return c.json({ error: 'Session not found' }, 404)
 
-    const hasActiveRun = () => {
-      const activeRun = getActiveRunForSession(id)
-      const snapshot = activeRun ? getRunCoordinator().getSnapshot(activeRun.id) : null
-      return Boolean(snapshot && !snapshot.terminal)
-    }
-    if (hasActiveRun()) {
+    const controller = peekSessionRunController(id)
+    if (controller?.getSnapshot().running) {
       return c.json({ error: 'Stop the active run before clearing this session.' }, 409)
     }
 
     const { disposeSdkSession } = await import('@/lib/chat/sdk-session-manager')
-    if (hasActiveRun()) {
-      return c.json({ error: 'Stop the active run before clearing this session.' }, 409)
-    }
     const disposed = disposeSdkSession(id)
     if (disposed.status === 'running') {
       return c.json({ error: 'Stop the active run before clearing this session.' }, 409)
@@ -2266,141 +2284,24 @@ api.openapi(
       params: z.object({ id: z.string() }),
       body: json(StartRunSchema),
     },
-    responses: { 200: json(RunSchema), 404: json(ErrorSchema) },
+    responses: { 200: json(StartRunResultSchema) },
   }),
-  (c) => {
-    const session = getSession(c.req.valid('param').id)
-    if (!session) return c.json({ error: 'Session not found' }, 404)
+  async (c) => {
     const body = c.req.valid('json')
-    const run = createRun({
-      sessionId: session.id,
-      agentId: session.agentId,
+    const result = await startSessionPrompt({
+      sessionId: c.req.valid('param').id,
       prompt: body.message,
       providerId: body.providerId,
       modelId: body.modelId,
       thinkingLevel: body.thinkingLevel,
-      cwd: session.cwd,
     })
-    if (!run) return c.json({ error: 'Unable to start run' }, 404)
-    prepareRun(run.id)
-    startRunExecution(run.id)
-    return c.json(run)
+    // Always 200 with a discriminated status so the client can branch on the
+    // outcome. The unified event stream carries the run's frames; the activityId
+    // is the identifier that stream uses.
+    if (result.status !== 'started') return c.json({ status: result.status })
+    return c.json({ status: 'started', activityId: result.activityId, runId: result.runId })
   },
 )
-
-api.openapi(
-  createRoute({
-    method: 'get',
-    path: '/runs/{id}',
-    tags: ['Chat'],
-    request: { params: z.object({ id: z.string() }) },
-    responses: { 200: json(RunSchema), 404: json(ErrorSchema) },
-  }),
-  (c) => {
-    const run = getRun(c.req.valid('param').id)
-    if (!run) return c.json({ error: 'Run not found' }, 404)
-    return c.json(run)
-  },
-)
-
-api.openapi(
-  createRoute({
-    method: 'post',
-    path: '/runs/{id}/abort',
-    tags: ['Chat'],
-    request: { params: z.object({ id: z.string() }) },
-    responses: { 200: json(z.object({ ok: z.boolean() })) },
-  }),
-  (c) => {
-    const id = c.req.valid('param').id
-    getRunCoordinator().requestAbort(id)
-    abortRegisteredRun(id)
-    markRun(id, 'aborted')
-    return c.json({ ok: true })
-  },
-)
-
-api.get('/runs/:id/events', (c) => {
-  const runId = c.req.param('id')
-  const run = getRun(runId)
-  if (!run) return c.json({ error: 'Run not found' }, 404)
-  const coordinator = getRunCoordinator()
-  const afterSequence = parseLastEventId(c.req.header('Last-Event-ID'))
-
-  return streamSSE(c, async (stream) => {
-    const snapshot = coordinator.getSnapshot(runId)
-    if (!snapshot) {
-      await stream.writeSSE({ event: 'connected', data: JSON.stringify({ runId }) })
-      const unavailable = run.status === 'queued' || run.status === 'running'
-      const status = unavailable ? 'failed' : run.status
-      const message = unavailable
-        ? 'The run stream is no longer available after the server restarted.'
-        : run.error
-      if (unavailable) markRun(runId, 'failed', message)
-      if (status === 'failed') {
-        await stream.writeSSE({
-          event: 'error',
-          data: JSON.stringify({ message: message ?? 'Run failed.' }),
-        })
-      }
-      await stream.writeSSE({
-        event: 'done',
-        data: JSON.stringify({ runId, status }),
-      })
-      return
-    }
-
-    const queue = []
-    let aborted = false
-    let wake = null
-    const notify = () => {
-      wake?.()
-      wake = null
-    }
-    const subscription = coordinator.subscribe(runId, {
-      afterSequence,
-      onEvent: (event) => {
-        queue.push(event)
-        notify()
-      },
-    })
-    stream.onAbort(() => {
-      aborted = true
-      notify()
-    })
-    const heartbeat = setInterval(() => {
-      void stream.write(`: heartbeat ${Date.now()}\n\n`)
-    }, 30000)
-
-    try {
-      await subscription.drained()
-      while (!aborted) {
-        while (!aborted && queue.length > 0) {
-          const event = queue.shift()
-          if (!event || event.type === RUN_TERMINAL_EVENT) continue
-          await stream.writeSSE({
-            id: String(event.sequence),
-            event: event.type,
-            data: JSON.stringify(withEventSequence(event.payload, event.sequence)),
-          })
-        }
-        if (subscription.terminal && queue.length === 0) break
-        if (queue.length === 0) {
-          await new Promise((resolve) => {
-            wake = resolve
-            if (aborted || queue.length > 0 || subscription.terminal) {
-              wake = null
-              resolve()
-            }
-          })
-        }
-      }
-    } finally {
-      clearInterval(heartbeat)
-      subscription.unsubscribe()
-    }
-  })
-})
 
 function parseLastEventId(value?: string) {
   const sequence = Number(value ?? 0)

@@ -8,7 +8,6 @@ import {
   agentSkills,
   agentTags,
   chatMessages,
-  chatRunEvents,
   chatRuns,
   globalPrompts,
   globalSkills,
@@ -25,7 +24,6 @@ import {
 } from './schema'
 
 sqlite.transaction(() => {
-  db.delete(chatRunEvents).run()
   db.delete(chatRuns).run()
   db.delete(chatMessages).run()
   db.delete(sessionTreeNodes).run()

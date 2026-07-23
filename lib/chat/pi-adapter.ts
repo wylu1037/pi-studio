@@ -2,13 +2,9 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { piAgentDir, syncPiSkillLinks } from '@/lib/skills/store'
-import { updateSessionFilePath } from '@/lib/db/repository'
 import { resolvePiProviderConnection } from '@/lib/models/provider-connection'
 import { piStudioDataDir } from '@/lib/runtime/paths'
 import type { GlobalModelProvider } from '@/lib/types'
-import type { PiRunEvent } from './pi-events'
-import { isRunAbortRequested, registerRun, unregisterRun } from './run-registry'
-
 export type { PiUsage } from './pi-events'
 
 interface PiModelProviderConfig {
@@ -58,96 +54,6 @@ export interface PiRunInput {
   prompts: string[]
   packagePaths: string[]
   mcpConfigs?: PiMcpConfig[]
-}
-
-export async function* runPiCli(input: PiRunInput): AsyncGenerator<PiRunEvent> {
-  const { getOrCreateSdkSession } = await import('./sdk-session-manager')
-  mkdirSync(input.sessionDir, { recursive: true })
-  const agentDir = syncAgentRuntime(input)
-  const provider = input.providerConfig
-    ? studioProviderName(input.providerConfig.id)
-    : input.provider
-  const modelRuntimeSignature = createModelRuntimeSignature(input.providerConfigs ?? [])
-  const session = await getOrCreateSdkSession({
-    studioSessionId: input.sessionId,
-    sessionFile: input.sessionFile,
-    sessionDir: input.sessionDir,
-    cwd: existsSync(input.cwd) ? input.cwd : process.cwd(),
-    agentDir,
-    modelProvider: provider,
-    modelId: input.model,
-    modelRuntimeSignature,
-    thinkingLevel: input.thinkingLevel,
-    extensionPaths: input.extensions.map((extension) => extension.path),
-    promptPaths: input.prompts,
-  })
-  if (session.inner.sessionFile) {
-    updateSessionFilePath(input.sessionId, session.inner.sessionFile)
-  }
-
-  if (provider && input.model) {
-    const model = session.inner.modelRegistry.find(provider, input.model)
-    if (!model) {
-      throw new Error(`Configured model not found in SDK registry: ${provider} / ${input.model}`)
-    }
-    if (session.inner.model?.provider !== model.provider || session.inner.model?.id !== model.id) {
-      await session.inner.setModel(model)
-    }
-  }
-  if (input.thinkingLevel && input.thinkingLevel !== 'auto') {
-    session.inner.setThinkingLevel(input.thinkingLevel as never)
-  }
-
-  const queue: PiRunEvent[] = []
-  let done = false
-  let wake: (() => void) | null = null
-  const notify = () => {
-    wake?.()
-    wake = null
-  }
-  const push = (event: PiRunEvent) => {
-    queue.push(event)
-    notify()
-  }
-
-  const unsubscribe = session.subscribePiEvents(push)
-  registerRun(input.runId, () => session.inner.abort())
-
-  if (isRunAbortRequested(input.runId)) {
-    unregisterRun(input.runId)
-    unsubscribe()
-    yield { type: 'done', exitCode: null }
-    return
-  }
-
-  void session.inner
-    .prompt(input.prompt, { source: 'rpc' })
-    .then(() => push({ type: 'done', exitCode: 0 }))
-    .catch((error: unknown) => {
-      push({
-        type: 'error',
-        message: error instanceof Error ? error.message : String(error),
-      })
-      push({ type: 'done', exitCode: 1 })
-    })
-    .finally(() => {
-      done = true
-      unregisterRun(input.runId)
-      unsubscribe()
-      notify()
-    })
-
-  while (!done || queue.length > 0) {
-    if (queue.length === 0) {
-      await new Promise<void>((resolve) => {
-        wake = resolve
-      })
-    }
-    while (queue.length > 0) {
-      const event = queue.shift()
-      if (event) yield event
-    }
-  }
 }
 
 export function createModelRuntimeSignature(providerConfigs: PiModelProviderConfig[]) {

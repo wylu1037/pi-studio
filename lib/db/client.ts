@@ -22,6 +22,21 @@ withMigrationLock(() => {
     migrationsFolder: process.env.PI_STUDIO_MIGRATIONS_DIR ?? join(process.cwd(), 'drizzle'),
   })
 })
+
+// Reap orphaned runs on every boot. In-memory run state (the SessionRunController
+// and its SDK session) does not survive a process restart, so any run still marked
+// queued/running in the DB is a crash/restart leftover with no live owner. Mark
+// them failed once at startup so metrics and the clear-session guard stay honest.
+sqlite
+  .prepare(
+    `UPDATE chat_runs
+     SET status = 'failed',
+         error = COALESCE(error, 'Interrupted by a server restart.'),
+         completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP)
+     WHERE status IN ('queued', 'running')`,
+  )
+  .run()
+
 export { sqlite }
 
 function withMigrationLock(run: () => void) {

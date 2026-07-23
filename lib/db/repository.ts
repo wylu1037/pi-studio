@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { and, asc, desc, eq, inArray, isNotNull, lte, notInArray } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, notInArray } from 'drizzle-orm'
 import type {
   AgentProfile,
   AgentSessionSummary,
@@ -31,7 +31,6 @@ import {
   agentSkills,
   agentTags,
   chatMessages,
-  chatRunEvents,
   chatRuns,
   globalPrompts,
   globalSkills,
@@ -1274,15 +1273,11 @@ export function markRun(
     .run()
 }
 
-export function appendRunEvent(runId: string, type: string, payload: unknown) {
-  db.insert(chatRunEvents)
-    .values({
-      id: randomUUID(),
-      runId,
-      type,
-      payloadJson: JSON.stringify(payload),
-      createdAt: now(),
-    })
+/** Records the moment the first assistant event arrived, for time-to-first-response metrics. */
+export function markRunFirstAssistant(id: string) {
+  db.update(chatRuns)
+    .set({ firstAssistantAt: now() })
+    .where(and(eq(chatRuns.id, id), isNull(chatRuns.firstAssistantAt)))
     .run()
 }
 

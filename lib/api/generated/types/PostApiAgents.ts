@@ -138,6 +138,10 @@ export type PostApiAgentsMutationRequest = {
     */
     description?: string;
     /**
+     * @type string | undefined
+    */
+    icon?: string;
+    /**
      * @type array | undefined
     */
     tags?: string[];

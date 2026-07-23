@@ -38,6 +38,7 @@ export const postApiSkillsMutationRequestSchema = z.object({
 "description": z.optional(z.string().default("")),
 "source": z.optional(z.enum(["skills.sh", "local", "git", "manual"]).default("manual")),
 "path": z.string().min(1),
+"skill": z.optional(z.string()),
 "version": z.optional(z.string()),
 "author": z.optional(z.string()),
 "tags": z.optional(z.array(z.string()))

@@ -6,7 +6,6 @@ import test from 'node:test'
 import { PATCH, POST, PUT } from '../../app/api/[[...route]]/route'
 import {
   appendMessage,
-  appendRunEvent,
   createAgent,
   createRun,
   createSession,
@@ -78,7 +77,6 @@ test('clears session messages without deleting the session', async () => {
       cwd: root,
     })
     assert.ok(run)
-    appendRunEvent(run!.id, 'test', { remove: true })
 
     const response = await POST(
       new Request(`http://localhost/api/sessions/${encodeURIComponent(session!.id)}/clear`, {

@@ -283,12 +283,10 @@ function runDurationRows(cutoff: string): TimestampValue[] {
 function runTimeToFirstResponse(cutoff: string) {
   const rows = sqlite
     .prepare(
-      `SELECT r.started_at AS startedAt, MIN(e.created_at) AS firstAt
-       FROM chat_runs r
-       JOIN chat_run_events e ON e.run_id = r.id
-       WHERE r.started_at >= ?
-         AND e.type IN ('assistant_message_start', 'message_delta', 'thinking_delta', 'tool_call_delta')
-       GROUP BY r.id`,
+      `SELECT started_at AS startedAt, first_assistant_at AS firstAt
+       FROM chat_runs
+       WHERE started_at >= ?
+         AND first_assistant_at IS NOT NULL`,
     )
     .all(cutoff) as Array<{ startedAt: string; firstAt: string }>
   return rows

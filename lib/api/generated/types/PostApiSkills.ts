@@ -113,6 +113,10 @@ export type PostApiSkillsMutationRequest = {
     /**
      * @type string | undefined
     */
+    skill?: string;
+    /**
+     * @type string | undefined
+    */
     version?: string;
     /**
      * @type string | undefined

@@ -4,7 +4,7 @@
 */
 
 import fetch from "@kubb/plugin-client/clients/axios";
-import type { PostApiSessionsIdRunsMutationRequest, PostApiSessionsIdRunsMutationResponse, PostApiSessionsIdRunsPathParams, PostApiSessionsIdRuns404 } from "../types/PostApiSessionsIdRuns.ts";
+import type { PostApiSessionsIdRunsMutationRequest, PostApiSessionsIdRunsMutationResponse, PostApiSessionsIdRunsPathParams } from "../types/PostApiSessionsIdRuns.ts";
 import type { Client, RequestConfig, ResponseErrorConfig } from "@kubb/plugin-client/clients/axios";
 
 function getPostApiSessionsIdRunsUrl(id: PostApiSessionsIdRunsPathParams["id"]) {
@@ -20,6 +20,6 @@ export async function postApiSessionsIdRuns(id: PostApiSessionsIdRunsPathParams[
 
   const requestData = data
 
-  const res = await request<PostApiSessionsIdRunsMutationResponse, ResponseErrorConfig<PostApiSessionsIdRuns404>, PostApiSessionsIdRunsMutationRequest>({ method : "POST", url : getPostApiSessionsIdRunsUrl(id).url.toString(), data : requestData, ... requestConfig })
+  const res = await request<PostApiSessionsIdRunsMutationResponse, ResponseErrorConfig<Error>, PostApiSessionsIdRunsMutationRequest>({ method : "POST", url : getPostApiSessionsIdRunsUrl(id).url.toString(), data : requestData, ... requestConfig })
   return res.data
 }

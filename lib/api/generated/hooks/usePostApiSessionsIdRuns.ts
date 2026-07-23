@@ -3,7 +3,7 @@
 * Do not edit manually.
 */
 
-import type { PostApiSessionsIdRunsMutationRequest, PostApiSessionsIdRunsMutationResponse, PostApiSessionsIdRunsPathParams, PostApiSessionsIdRuns404 } from "../types/PostApiSessionsIdRuns.ts";
+import type { PostApiSessionsIdRunsMutationRequest, PostApiSessionsIdRunsMutationResponse, PostApiSessionsIdRunsPathParams } from "../types/PostApiSessionsIdRuns.ts";
 import type { Client, RequestConfig, ResponseErrorConfig } from "@kubb/plugin-client/clients/axios";
 import type { UseMutationOptions, UseMutationResult, QueryClient } from "@tanstack/react-query";
 import { postApiSessionsIdRuns } from "../clients/postApiSessionsIdRuns.ts";
@@ -16,7 +16,7 @@ export type PostApiSessionsIdRunsMutationKey = ReturnType<typeof postApiSessions
 export function postApiSessionsIdRunsMutationOptions<TContext = unknown>(config: Partial<RequestConfig<PostApiSessionsIdRunsMutationRequest>> & { client?: Client } = {}) {
 
         const mutationKey = postApiSessionsIdRunsMutationKey()
-        return mutationOptions<PostApiSessionsIdRunsMutationResponse, ResponseErrorConfig<PostApiSessionsIdRuns404>, {id: PostApiSessionsIdRunsPathParams["id"], data: PostApiSessionsIdRunsMutationRequest}, TContext>({
+        return mutationOptions<PostApiSessionsIdRunsMutationResponse, ResponseErrorConfig<Error>, {id: PostApiSessionsIdRunsPathParams["id"], data: PostApiSessionsIdRunsMutationRequest}, TContext>({
           mutationKey,
           mutationFn: async({ id, data }) => {
             return postApiSessionsIdRuns(id, data, config)
@@ -30,7 +30,7 @@ export function postApiSessionsIdRunsMutationOptions<TContext = unknown>(config:
  */
 export function usePostApiSessionsIdRuns<TContext>(options: 
 {
-  mutation?: UseMutationOptions<PostApiSessionsIdRunsMutationResponse, ResponseErrorConfig<PostApiSessionsIdRuns404>, {id: PostApiSessionsIdRunsPathParams["id"], data: PostApiSessionsIdRunsMutationRequest}, TContext> & { client?: QueryClient },
+  mutation?: UseMutationOptions<PostApiSessionsIdRunsMutationResponse, ResponseErrorConfig<Error>, {id: PostApiSessionsIdRunsPathParams["id"], data: PostApiSessionsIdRunsMutationRequest}, TContext> & { client?: QueryClient },
   client?: Partial<RequestConfig<PostApiSessionsIdRunsMutationRequest>> & { client?: Client },
 }
  = {}) {
@@ -39,13 +39,13 @@ export function usePostApiSessionsIdRuns<TContext>(options:
           const { client: queryClient, ...mutationOptions } = mutation;
           const mutationKey = mutationOptions.mutationKey ?? postApiSessionsIdRunsMutationKey()
 
-          const baseOptions = postApiSessionsIdRunsMutationOptions(config) as UseMutationOptions<PostApiSessionsIdRunsMutationResponse, ResponseErrorConfig<PostApiSessionsIdRuns404>, {id: PostApiSessionsIdRunsPathParams["id"], data: PostApiSessionsIdRunsMutationRequest}, TContext>
+          const baseOptions = postApiSessionsIdRunsMutationOptions(config) as UseMutationOptions<PostApiSessionsIdRunsMutationResponse, ResponseErrorConfig<Error>, {id: PostApiSessionsIdRunsPathParams["id"], data: PostApiSessionsIdRunsMutationRequest}, TContext>
           
 
-          return useMutation<PostApiSessionsIdRunsMutationResponse, ResponseErrorConfig<PostApiSessionsIdRuns404>, {id: PostApiSessionsIdRunsPathParams["id"], data: PostApiSessionsIdRunsMutationRequest}, TContext>({
+          return useMutation<PostApiSessionsIdRunsMutationResponse, ResponseErrorConfig<Error>, {id: PostApiSessionsIdRunsPathParams["id"], data: PostApiSessionsIdRunsMutationRequest}, TContext>({
             ...baseOptions,
             mutationKey,
             ...mutationOptions,
-          }, queryClient) as UseMutationResult<PostApiSessionsIdRunsMutationResponse, ResponseErrorConfig<PostApiSessionsIdRuns404>, {id: PostApiSessionsIdRunsPathParams["id"], data: PostApiSessionsIdRunsMutationRequest}, TContext>
+          }, queryClient) as UseMutationResult<PostApiSessionsIdRunsMutationResponse, ResponseErrorConfig<Error>, {id: PostApiSessionsIdRunsPathParams["id"], data: PostApiSessionsIdRunsMutationRequest}, TContext>
       
 }

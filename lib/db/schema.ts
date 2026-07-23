@@ -360,28 +360,13 @@ export const chatRuns = sqliteTable(
     prompt: text('prompt').notNull(),
     error: text('error'),
     startedAt: text('started_at'),
+    firstAssistantAt: text('first_assistant_at'),
     completedAt: text('completed_at'),
     createdAt: text('created_at')
       .notNull()
       .default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [index('chat_runs_session_idx').on(table.sessionId)],
-)
-
-export const chatRunEvents = sqliteTable(
-  'chat_run_events',
-  {
-    id: text('id').primaryKey(),
-    runId: text('run_id')
-      .notNull()
-      .references(() => chatRuns.id, { onDelete: 'cascade' }),
-    type: text('type').notNull(),
-    payloadJson: text('payload_json').notNull().default('{}'),
-    createdAt: text('created_at')
-      .notNull()
-      .default(sql`CURRENT_TIMESTAMP`),
-  },
-  (table) => [index('chat_run_events_run_idx').on(table.runId)],
 )
 
 export const scheduledTasks = sqliteTable(

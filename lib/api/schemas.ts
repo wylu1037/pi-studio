@@ -82,6 +82,10 @@ export const SkillInputSchema = z.object({
   description: z.string().default(''),
   source: z.enum(['skills.sh', 'local', 'git', 'manual']).default('manual'),
   path: z.string().min(1),
+  // Selects a specific skill inside a multi-skill repo when installing from a
+  // git/GitHub source, mapping to the CLI's `--skill` flag. Optional because
+  // skills.sh package specs already resolve to a single skill.
+  skill: z.string().optional(),
   version: z.string().optional(),
   author: z.string().optional(),
   tags: z.array(z.string()).default([]),
@@ -735,18 +739,11 @@ export const RunSchema = z.object({
   createdAt: z.string(),
 })
 
-export const AgentSessionStateSchema = z.object({
-  active: z.boolean(),
-  running: z.boolean(),
-  activeRunId: z.string().nullable(),
-  isStreaming: z.boolean(),
-  isCompacting: z.boolean(),
-  model: z.object({ provider: z.string(), modelId: z.string() }).nullable(),
-  thinkingLevel: z.string().nullable(),
-  sessionFile: z.string().nullable(),
-  sdkSessionId: z.string().nullable(),
+export const StartRunResultSchema = z.object({
+  status: z.enum(['started', 'session-not-found', 'agent-not-found', 'already-running']),
+  activityId: z.string().nullable().optional(),
+  runId: z.string().nullable().optional(),
 })
-
 export const AgentQueueMessageSchema = z.object({
   message: z.string().min(1),
 })

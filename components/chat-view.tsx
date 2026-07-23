@@ -2,6 +2,7 @@
 
 import { memo, type SyntheticEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { motion, useReducedMotion } from 'motion/react'
 import { useRouter } from 'next/navigation'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
@@ -14,7 +15,6 @@ import {
   DatabaseIcon as CacheMetricIcon,
 } from '@phosphor-icons/react'
 import {
-  LoaderCircle,
   GitBranch,
   Terminal,
   Brain,
@@ -86,9 +86,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { getApiRunsId } from '@/lib/api/generated/clients/getApiRunsId'
-import { getApiSessionsIdAgentState } from '@/lib/api/generated/clients/getApiSessionsIdAgentState'
-import { postApiRunsIdAbort } from '@/lib/api/generated/clients/postApiRunsIdAbort'
+import { postApiSessionsIdAbort } from '@/lib/api/generated/clients/postApiSessionsIdAbort'
 import { postApiSessions } from '@/lib/api/generated/clients/postApiSessions'
 import { postApiSessionsIdFollowUp } from '@/lib/api/generated/clients/postApiSessionsIdFollowUp'
 import { postApiSessionsIdSteer } from '@/lib/api/generated/clients/postApiSessionsIdSteer'
@@ -117,13 +115,10 @@ import {
   hasPersistedUserMessage,
 } from '@/lib/chat/stream-lifecycle'
 
-const EVENT_STREAM_CONNECT_TIMEOUT_MS = 5000
-const RUN_RECONCILE_INITIAL_DELAY_MS = 1000
-const RUN_RECONCILE_POLL_MS = 1200
-const RUN_RECONCILE_MAX_MS = 20000
 const SESSION_TREE_RECENT_NODE_LIMIT = 80
 const INITIAL_VISIBLE_MESSAGE_LIMIT = 120
 const MESSAGE_LIMIT_INCREMENT = 100
+const STREAM_ERROR_TIMEOUT_MS = 8000
 
 type StreamPhase = 'idle' | 'starting' | 'connecting' | 'thinking' | 'streaming'
 
@@ -137,6 +132,32 @@ type StreamUsage = {
     total?: number
   }
 }
+
+type PiUsage = StreamUsage
+
+type PiRunEvent =
+  | { type: 'assistant_message_start'; messageId?: string; responseId?: string }
+  | { type: 'assistant_message_end'; messageId?: string; responseId?: string; stopReason?: string }
+  | { type: 'assistant_text_end'; messageId: string; contentIndex: number; content?: string }
+  | { type: 'message_delta'; content: string; usage?: PiUsage; messageId?: string; contentIndex?: number }
+  | { type: 'thinking_delta'; content: string }
+  | { type: 'tool_call_delta'; content: string; title?: string }
+  | { type: 'tool_result_delta'; content: string; title?: string; isError?: boolean }
+  | { type: 'bash_output'; stream: 'stdout' | 'stderr'; content: string }
+  | { type: 'usage'; usage: PiUsage; messageId?: string }
+  | { type: 'error'; message: string }
+  | { type: 'done'; exitCode: number | null }
+
+type RunStreamFrame =
+  | { kind: 'state'; running: boolean; activityId: string | null; startedAt: string | null }
+  | {
+      kind: 'activity_start'
+      activityId: string
+      activityKind: 'prompt' | 'steer' | 'follow-up' | 'command'
+      startedAt: string
+    }
+  | { kind: 'activity_end'; activityId: string; status: 'completed' | 'failed' | 'aborted'; error?: string }
+  | { kind: 'pi'; event: PiRunEvent }
 
 const ComposerSchema = postApiSessionsIdRunsMutationRequestSchema.extend({ message: z.string() })
 
@@ -173,8 +194,7 @@ export function ChatView({
   const [streamDone, setStreamDone] = useState(false)
   const [streamPhase, setStreamPhase] = useState<StreamPhase>('idle')
   const [optimisticMessage, setOptimisticMessage] = useState<ChatMessage | null>(null)
-  const [runId, setRunId] = useState<string | null>(null)
-  const [sdkActiveRunId, setSdkActiveRunId] = useState<string | null>(null)
+  const [activityId, setActivityId] = useState<string | null>(null)
   const [sdkSessionRunning, setSdkSessionRunning] = useState(false)
   const [sdkSessionQueueReady, setSdkSessionQueueReady] = useState(false)
   const [abortingRun, setAbortingRun] = useState(false)
@@ -206,15 +226,11 @@ export function ChatView({
     Array<{ name: string; description?: string }>
   >([])
   const eventSourceRef = useRef<EventSource | null>(null)
-  const activeRunIdRef = useRef<string | null>(null)
-  const reconcileTimerRef = useRef<number | null>(null)
   const currentStreamingAssistantIdRef = useRef<string | null>(null)
   const latestStreamingAssistantIdRef = useRef<string | null>(null)
   const streamMessageSequenceRef = useRef(0)
   const sourceMessageCountAtRunStartRef = useRef(messages.length)
   const pendingSourceCountRef = useRef<number | null>(null)
-  const sdkSessionWasRunningRef = useRef(false)
-  const ignoreSdkRunningUntilIdleRef = useRef(false)
 
   const applyStreamingContentBatch = useCallback((batch: StreamingContentBatch) => {
     if (batch.length === 0) return
@@ -491,7 +507,7 @@ export function ChatView({
 
   const createNewSession = async () => {
     if (!activeAgent || creatingSession || clearingSession) return
-    if (runId || sdkSessionRunning) {
+    if (activityId || sdkSessionRunning) {
       showToast({
         tone: 'error',
         title: 'Run in progress',
@@ -528,7 +544,7 @@ export function ChatView({
 
   const clearCurrentSession = async () => {
     if (!activeSession || clearingSession || creatingSession) return
-    if (runId || sdkSessionRunning) {
+    if (activityId || sdkSessionRunning) {
       showToast({
         tone: 'error',
         title: 'Run in progress',
@@ -549,27 +565,19 @@ export function ChatView({
 
       eventSourceRef.current?.close()
       eventSourceRef.current = null
-      if (reconcileTimerRef.current) {
-        window.clearTimeout(reconcileTimerRef.current)
-        reconcileTimerRef.current = null
-      }
       finishAllStreamingMarkdown()
       resetStreamingMarkdown()
-      activeRunIdRef.current = null
       currentStreamingAssistantIdRef.current = null
       latestStreamingAssistantIdRef.current = null
       streamMessageSequenceRef.current = 0
       sourceMessageCountAtRunStartRef.current = 0
-      sdkSessionWasRunningRef.current = false
-      ignoreSdkRunningUntilIdleRef.current = false
       shouldFollowMessagesRef.current = true
       setStreamMessages([])
       setStreamStartedAt(null)
       setStreamDone(false)
       setStreamPhase('idle')
       setOptimisticMessage(null)
-      setRunId(null)
-      setSdkActiveRunId(null)
+      setActivityId(null)
       setSdkSessionRunning(false)
       setSdkSessionQueueReady(false)
       setAbortingRun(false)
@@ -780,64 +788,8 @@ export function ChatView({
   useEffect(() => {
     return () => {
       eventSourceRef.current?.close()
-      if (reconcileTimerRef.current) {
-        window.clearTimeout(reconcileTimerRef.current)
-      }
     }
   }, [])
-
-  useEffect(() => {
-    let active = true
-    let timer: number | undefined
-    const activeSessionId = activeSession?.id
-    sdkSessionWasRunningRef.current = false
-    ignoreSdkRunningUntilIdleRef.current = false
-    setSdkSessionRunning(false)
-    setSdkActiveRunId(null)
-    setSdkSessionQueueReady(false)
-
-    const poll = async () => {
-      if (!activeSessionId) return
-      try {
-        const state = (await getApiSessionsIdAgentState(activeSessionId, {
-          headers: { 'cache-control': 'no-cache' },
-        })) as Awaited<ReturnType<typeof getApiSessionsIdAgentState>> & {
-          activeRunId?: string | null
-        }
-        if (!active) return
-        if (ignoreSdkRunningUntilIdleRef.current) {
-          if (!state.running) ignoreSdkRunningUntilIdleRef.current = false
-          sdkSessionWasRunningRef.current = false
-          setSdkActiveRunId(null)
-          setSdkSessionRunning(false)
-          setSdkSessionQueueReady(false)
-          if (active) timer = window.setTimeout(poll, RUN_RECONCILE_POLL_MS)
-          return
-        }
-        const wasRunning = sdkSessionWasRunningRef.current
-        sdkSessionWasRunningRef.current = state.running
-        setSdkActiveRunId(state.activeRunId ?? null)
-        setSdkSessionRunning(state.running)
-        setSdkSessionQueueReady(state.active && state.running)
-        if (wasRunning && !state.running) {
-          if (!activeRunIdRef.current) {
-            setStreamPhase('idle')
-            setStreamDone(true)
-          }
-          router.refresh()
-        }
-      } catch {
-        // Keep the last known state during transient polling failures.
-      }
-      if (active) timer = window.setTimeout(poll, RUN_RECONCILE_POLL_MS)
-    }
-
-    void poll()
-    return () => {
-      active = false
-      if (timer) window.clearTimeout(timer)
-    }
-  }, [activeSession?.id, router])
 
   useEffect(() => {
     setSelectedNodeId(findCurrentTreeNodeId(tree))
@@ -954,84 +906,22 @@ export function ChatView({
     viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'auto' })
   }, [displayMessages.length, streamMessages])
 
-  const isStartingRun = streamPhase === 'starting' && !runId
-  const isRunningRun = Boolean(runId) || sdkSessionRunning
+  // Error blocks are transient status, not persistent content: auto-dismiss so
+  // a stale failure notice doesn't linger over a subsequent successful run.
+  useEffect(() => {
+    if (!streamError) return
+    const timer = window.setTimeout(() => setStreamError(null), STREAM_ERROR_TIMEOUT_MS)
+    return () => window.clearTimeout(timer)
+  }, [streamError])
+
+  const isStartingRun = streamPhase === 'starting' && !activityId
+  const isRunningRun = Boolean(activityId) || sdkSessionRunning
   const canQueueMessage = isRunningRun && sdkSessionQueueReady && !abortingRun
   const isWaiting =
     !streamError &&
     !hasPersistedRun &&
     (streamPhase !== 'idle' || sdkSessionRunning) &&
     streamMessages.length === 0
-
-  const clearReconciliation = () => {
-    if (!reconcileTimerRef.current) return
-    window.clearTimeout(reconcileTimerRef.current)
-    reconcileTimerRef.current = null
-  }
-
-  const finishActiveStream = (currentRunId: string, source?: EventSource | null) => {
-    if (activeRunIdRef.current !== currentRunId) return false
-    finishAllStreamingMarkdown()
-    clearReconciliation()
-    source?.close()
-    if (eventSourceRef.current === source) eventSourceRef.current = null
-    activeRunIdRef.current = null
-    ignoreSdkRunningUntilIdleRef.current = true
-    sdkSessionWasRunningRef.current = false
-    setRunId(null)
-    setSdkActiveRunId(null)
-    setSdkSessionRunning(false)
-    setSdkSessionQueueReady(false)
-    setAbortingRun(false)
-    setStreamPhase('idle')
-    setStreamDone(true)
-    setBranchMessages(null)
-    return true
-  }
-
-  const failActiveStream = (currentRunId: string, message: string, source?: EventSource | null) => {
-    if (activeRunIdRef.current !== currentRunId) return false
-    finishAllStreamingMarkdown()
-    clearReconciliation()
-    source?.close()
-    if (eventSourceRef.current === source) eventSourceRef.current = null
-    activeRunIdRef.current = null
-    setRunId(null)
-    setSdkSessionQueueReady(false)
-    setAbortingRun(false)
-    setStreamPhase('idle')
-    setStreamDone(false)
-    setStreamError(message)
-    router.refresh()
-    return true
-  }
-
-  const scheduleRunReconciliation = (currentRunId: string, source: EventSource) => {
-    const startedAt = Date.now()
-    const poll = async () => {
-      if (activeRunIdRef.current !== currentRunId) return
-      if (Date.now() - startedAt > RUN_RECONCILE_MAX_MS) return
-      try {
-        const run = await getApiRunsId(currentRunId)
-        if (run.status === 'completed') {
-          finishActiveStream(currentRunId, source)
-          return
-        }
-        if (run.status === 'failed' || run.status === 'aborted') {
-          failActiveStream(
-            currentRunId,
-            run.error ?? (run.status === 'aborted' ? 'pi run was aborted.' : 'pi run failed.'),
-            source,
-          )
-          return
-        }
-      } catch {
-        // SSE is still the primary path; polling only recovers missed endings.
-      }
-      reconcileTimerRef.current = window.setTimeout(poll, RUN_RECONCILE_POLL_MS)
-    }
-    reconcileTimerRef.current = window.setTimeout(poll, RUN_RECONCILE_INITIAL_DELAY_MS)
-  }
 
   const startStreamingAssistant = useCallback(
     (messageId?: string) => {
@@ -1109,140 +999,186 @@ export function ChatView({
     [flushStreamingMarkdown],
   )
 
+  // Single session-scoped event stream. It stays connected for the lifetime of
+  // the active session (not a single run) and drives every run-state and
+  // streaming update through the unified `frame`/`state` messages.
   useEffect(() => {
-    if (!activeSession || !sdkSessionRunning || runId || ignoreSdkRunningUntilIdleRef.current)
-      return
+    const activeSessionId = activeSession?.id
+    if (!activeSessionId) return
 
-    setStreamStartedAt(Date.now())
-    setStreamDone(false)
-    setStreamError(null)
-    setStreamPhase('thinking')
-    currentStreamingAssistantIdRef.current = null
-    latestStreamingAssistantIdRef.current = null
-    resetStreamingMarkdown()
+    const handlePiEvent = (event: PiRunEvent) => {
+      switch (event.type) {
+        case 'assistant_message_start': {
+          startStreamingAssistant(event.messageId)
+          break
+        }
+        case 'assistant_message_end': {
+          endStreamingAssistant(event.messageId)
+          break
+        }
+        case 'assistant_text_end': {
+          const messageId = event.messageId ?? currentStreamingAssistantIdRef.current
+          if (!messageId) return
+          sealStreamingMarkdownSegment(messageId, event.contentIndex ?? 0, event.content)
+          break
+        }
+        case 'message_delta': {
+          const content = event.content ?? ''
+          if (!content) return
+          setStreamPhase('streaming')
+          appendStreamingAssistantDelta(content, event.messageId, event.contentIndex ?? 0)
+          break
+        }
+        case 'thinking_delta': {
+          setStreamPhase('thinking')
+          appendStreamProcessMessage('thinking', event.content ?? '', 'Thinking')
+          break
+        }
+        case 'tool_call_delta': {
+          setStreamPhase('thinking')
+          appendStreamProcessMessage('tool_call', event.content ?? '', event.title ?? 'Tool call')
+          break
+        }
+        case 'tool_result_delta': {
+          setStreamPhase('thinking')
+          appendStreamProcessMessage(
+            'tool_result',
+            event.content ?? '',
+            event.title ?? 'Tool result',
+          )
+          break
+        }
+        case 'bash_output': {
+          setStreamPhase('thinking')
+          appendStreamProcessMessage('bash', event.content ?? '', event.stream ?? 'stderr')
+          break
+        }
+        case 'usage': {
+          const assistantId = event.messageId ?? latestStreamingAssistantIdRef.current
+          if (!assistantId || !event.usage) return
+          const usage = {
+            input: event.usage.input ?? 0,
+            output: event.usage.output ?? 0,
+            cacheRead: event.usage.cacheRead ?? 0,
+            cacheWrite: event.usage.cacheWrite ?? 0,
+            cost: event.usage.cost,
+          }
+          setStreamMessages((current) =>
+            current.map((message) =>
+              message.id === assistantId
+                ? { ...message, tokens: event.usage.totalTokens, usage }
+                : message,
+            ),
+          )
+          break
+        }
+        case 'error': {
+          // `activity_end` remains the authoritative signal for a failed run;
+          // surface the SDK error message eagerly so the user sees it sooner.
+          finishAllStreamingMarkdown()
+          setStreamError(event.message ?? 'pi run failed.')
+          break
+        }
+        case 'done': {
+          // Ignore SDK `done`; the run truly ends on the `activity_end` frame.
+          break
+        }
+      }
+    }
 
-    const source = new EventSource(
-      `/api/sessions/${encodeURIComponent(activeSession.id)}/live-events`,
-    )
-    eventSourceRef.current = source
-    source.addEventListener('assistant_message_start', (event) => {
-      const payload = JSON.parse((event as MessageEvent).data) as { messageId?: string }
-      startStreamingAssistant(payload.messageId)
-    })
-    source.addEventListener('assistant_message_end', (event) => {
-      const payload = JSON.parse((event as MessageEvent).data) as { messageId?: string }
-      endStreamingAssistant(payload.messageId)
-    })
-    source.addEventListener('assistant_text_end', (event) => {
-      const payload = JSON.parse((event as MessageEvent).data) as {
-        messageId?: string
-        contentIndex?: number
-        content?: string
-      }
-      const messageId = payload.messageId ?? currentStreamingAssistantIdRef.current
-      if (!messageId) return
-      sealStreamingMarkdownSegment(messageId, payload.contentIndex ?? 0, payload.content)
-    })
-    source.addEventListener('message_delta', (event) => {
-      const payload = JSON.parse((event as MessageEvent).data) as {
-        content?: string
-        messageId?: string
-        contentIndex?: number
-      }
-      setStreamPhase('streaming')
-      appendStreamingAssistantDelta(
-        payload.content ?? '',
-        payload.messageId,
-        payload.contentIndex ?? 0,
-      )
-    })
-    source.addEventListener('thinking_delta', (event) => {
-      const payload = JSON.parse((event as MessageEvent).data) as { content?: string }
+    const beginActivity = (nextActivityId: string) => {
+      setStreamMessages([])
+      resetStreamingMarkdown()
+      currentStreamingAssistantIdRef.current = null
+      latestStreamingAssistantIdRef.current = null
+      setStreamStartedAt(Date.now())
+      setStreamDone(false)
+      setStreamError(null)
       setStreamPhase('thinking')
-      appendStreamProcessMessage('thinking', payload.content ?? '', 'Thinking')
-    })
-    source.addEventListener('tool_call_delta', (event) => {
-      const payload = JSON.parse((event as MessageEvent).data) as {
-        content?: string
-        title?: string
-      }
-      setStreamPhase('thinking')
-      appendStreamProcessMessage('tool_call', payload.content ?? '', payload.title ?? 'Tool call')
-    })
-    source.addEventListener('tool_result_delta', (event) => {
-      const payload = JSON.parse((event as MessageEvent).data) as {
-        content?: string
-        title?: string
-      }
-      setStreamPhase('thinking')
-      appendStreamProcessMessage(
-        'tool_result',
-        payload.content ?? '',
-        payload.title ?? 'Tool result',
-      )
-    })
-    source.addEventListener('bash_output', (event) => {
-      const payload = JSON.parse((event as MessageEvent).data) as {
-        content?: string
-        stream?: 'stdout' | 'stderr'
-      }
-      setStreamPhase('thinking')
-      appendStreamProcessMessage('bash', payload.content ?? '', payload.stream ?? 'stderr')
-    })
-    source.addEventListener('usage', (event) => {
-      const payload = JSON.parse((event as MessageEvent).data) as {
-        usage?: StreamUsage
-        messageId?: string
-      }
-      const assistantId = payload.messageId ?? latestStreamingAssistantIdRef.current
-      if (!assistantId || !payload.usage) return
-      const usage = {
-        input: payload.usage.input ?? 0,
-        output: payload.usage.output ?? 0,
-        cacheRead: payload.usage.cacheRead ?? 0,
-        cacheWrite: payload.usage.cacheWrite ?? 0,
-        cost: payload.usage.cost,
-      }
-      setStreamMessages((current) =>
-        current.map((message) =>
-          message.id === assistantId
-            ? { ...message, tokens: payload.usage?.totalTokens, usage }
-            : message,
-        ),
-      )
-    })
-    source.addEventListener('error', (event) => {
-      const data = (event as MessageEvent).data
-      if (typeof data !== 'string' || !data) return
-      const payload = JSON.parse(data) as { message?: string }
+      setActivityId(nextActivityId)
+      setSdkSessionRunning(true)
+      setSdkSessionQueueReady(true)
+    }
+
+    const finishActivity = (error?: string) => {
       finishAllStreamingMarkdown()
-      setStreamError(payload.message ?? 'pi run failed.')
-    })
-    source.addEventListener('done', () => {
-      finishAllStreamingMarkdown()
-      source.close()
-      if (eventSourceRef.current === source) eventSourceRef.current = null
-      sdkSessionWasRunningRef.current = false
+      setActivityId(null)
       setSdkSessionRunning(false)
       setSdkSessionQueueReady(false)
-      setStreamPhase('idle')
-      setStreamDone(true)
+      setAbortingRun(false)
+      if (error) {
+        setStreamError(error)
+        setStreamPhase('idle')
+        setStreamDone(false)
+      } else {
+        setStreamPhase('idle')
+        setStreamDone(true)
+      }
       router.refresh()
-    })
+    }
+
+    const handleFrame = (frame: RunStreamFrame) => {
+      switch (frame.kind) {
+        case 'state': {
+          if (frame.running) {
+            setSdkSessionRunning(true)
+            setSdkSessionQueueReady(true)
+            if (frame.activityId) setActivityId(frame.activityId)
+            setStreamPhase((phase) => (phase === 'idle' ? 'thinking' : phase))
+          } else {
+            setSdkSessionRunning(false)
+            setSdkSessionQueueReady(false)
+            setActivityId(null)
+            setStreamPhase('idle')
+          }
+          break
+        }
+        case 'activity_start': {
+          beginActivity(frame.activityId)
+          break
+        }
+        case 'activity_end': {
+          finishActivity(frame.status === 'failed' ? (frame.error ?? 'pi run failed.') : undefined)
+          break
+        }
+        case 'pi': {
+          handlePiEvent(frame.event)
+          break
+        }
+      }
+    }
+
+    const source = new EventSource(
+      `/api/sessions/${encodeURIComponent(activeSessionId)}/events`,
+    )
+    eventSourceRef.current = source
+
+    const onFrameMessage = (event: Event) => {
+      const data = (event as MessageEvent).data
+      if (typeof data !== 'string' || !data) return
+      try {
+        handleFrame(JSON.parse(data) as RunStreamFrame)
+      } catch {
+        // Ignore malformed frames; the stream stays open for the next message.
+      }
+    }
+
+    source.addEventListener('frame', onFrameMessage)
+    source.addEventListener('state', onFrameMessage)
 
     return () => {
+      source.removeEventListener('frame', onFrameMessage)
+      source.removeEventListener('state', onFrameMessage)
       source.close()
       if (eventSourceRef.current === source) eventSourceRef.current = null
     }
   }, [
-    activeSession,
+    activeSession?.id,
     appendStreamProcessMessage,
     appendStreamingAssistantDelta,
     endStreamingAssistant,
     finishAllStreamingMarkdown,
     router,
-    runId,
-    sdkSessionRunning,
     sealStreamingMarkdownSegment,
     startStreamingAssistant,
     resetStreamingMarkdown,
@@ -1305,24 +1241,9 @@ export function ChatView({
     }
     const trimmedMessage = values.message.trim()
     if (!trimmedMessage && attachments.length === 0) return
-    try {
-      const state = await getApiSessionsIdAgentState(activeSession.id, {
-        headers: { 'cache-control': 'no-cache' },
-      })
-      if (state.running) {
-        sdkSessionWasRunningRef.current = true
-        setSdkSessionRunning(true)
-        setSdkSessionQueueReady(state.active)
-        showToast({
-          tone: 'warning',
-          title: 'Agent is processing',
-          message: 'Use Steer now or Follow up to queue this message.',
-        })
-        return
-      }
-    } catch {
-      // Starting the run remains the source of truth if the preflight check is unavailable.
-    }
+    // No preflight running-check: the session event stream keeps `isRunningRun`
+    // live, and the backend returns `already-running` as the authoritative guard
+    // (handled below) if a race slips through.
     const uploadedAttachments = attachments.length > 0 ? await uploadAllAttachments() : []
     if (!uploadedAttachments) return
     const payload = {
@@ -1330,11 +1251,6 @@ export function ChatView({
       message: buildPromptWithAttachments(trimmedMessage, uploadedAttachments),
     }
     if (!postApiSessionsIdRunsMutationRequestSchema.safeParse(payload).success) return
-    eventSourceRef.current?.close()
-    clearReconciliation()
-    activeRunIdRef.current = null
-    ignoreSdkRunningUntilIdleRef.current = false
-    setSdkActiveRunId(null)
     setSdkSessionQueueReady(false)
     setStreamMessages([])
     resetStreamingMarkdown()
@@ -1357,10 +1273,42 @@ export function ChatView({
       timestamp: 'sending',
     })
     try {
-      const run = await postApiSessionsIdRuns(activeSession.id, payload)
-      activeRunIdRef.current = run.id
-      setRunId(run.id)
-      setStreamPhase('connecting')
+      // The session-level event stream is always connected, so the run's frames
+      // arrive through it. Starting a run only kicks off the activity; the
+      // activity_start/state frames advance the stream phase from here.
+      const run = (await postApiSessionsIdRuns(activeSession.id, payload)) as unknown as {
+        status: 'started' | 'session-not-found' | 'agent-not-found' | 'already-running'
+        activityId?: string | null
+        runId?: string | null
+      }
+      if (run.status !== 'started') {
+        setStreamPhase('idle')
+        setActivityId(null)
+        setAbortingRun(false)
+        setOptimisticMessage(null)
+        setStreamStartedAt(null)
+        if (run.status === 'already-running') {
+          setSdkSessionRunning(true)
+          setSdkSessionQueueReady(true)
+          setStreamError(null)
+          showToast({
+            tone: 'warning',
+            title: 'Agent is processing',
+            message: 'Use Steer now or Follow up to queue this message.',
+          })
+        } else {
+          setStreamError(
+            run.status === 'session-not-found'
+              ? 'This session is no longer available.'
+              : run.status === 'agent-not-found'
+                ? 'The agent for this session is no longer available.'
+                : 'Unable to start pi run.',
+          )
+        }
+        return
+      }
+      setActivityId(run.activityId ?? null)
+      setSdkSessionRunning(true)
       clearAttachments()
       form.reset({
         message: '',
@@ -1368,161 +1316,14 @@ export function ChatView({
         modelId: values.modelId,
         thinkingLevel: values.thinkingLevel,
       })
-
-      const eventSource = new EventSource(`/api/runs/${run.id}/events`)
-      eventSourceRef.current = eventSource
-      const currentRunId = run.id
-      const connectionTimeout = window.setTimeout(() => {
-        failActiveStream(
-          currentRunId,
-          'Timed out connecting to the pi event stream. Please try again.',
-          eventSource,
-        )
-      }, EVENT_STREAM_CONNECT_TIMEOUT_MS)
-
-      eventSource.addEventListener('connected', () => {
-        if (activeRunIdRef.current !== currentRunId) return
-        window.clearTimeout(connectionTimeout)
-        setStreamPhase('thinking')
-      })
-      eventSource.addEventListener('started', () => {
-        if (activeRunIdRef.current !== currentRunId) return
-        window.clearTimeout(connectionTimeout)
-        setStreamPhase('thinking')
-      })
-      eventSource.addEventListener('assistant_message_start', (event) => {
-        if (activeRunIdRef.current !== currentRunId) return
-        window.clearTimeout(connectionTimeout)
-        const payload = JSON.parse((event as MessageEvent).data) as { messageId?: string }
-        startStreamingAssistant(payload.messageId)
-      })
-      eventSource.addEventListener('assistant_message_end', (event) => {
-        if (activeRunIdRef.current !== currentRunId) return
-        const payload = JSON.parse((event as MessageEvent).data) as { messageId?: string }
-        endStreamingAssistant(payload.messageId)
-      })
-      eventSource.addEventListener('assistant_text_end', (event) => {
-        if (activeRunIdRef.current !== currentRunId) return
-        const payload = JSON.parse((event as MessageEvent).data) as {
-          messageId?: string
-          contentIndex?: number
-          content?: string
-        }
-        const messageId = payload.messageId ?? currentStreamingAssistantIdRef.current
-        if (!messageId) return
-        sealStreamingMarkdownSegment(messageId, payload.contentIndex ?? 0, payload.content)
-      })
-      eventSource.addEventListener('message_delta', (event) => {
-        if (activeRunIdRef.current !== currentRunId) return
-        window.clearTimeout(connectionTimeout)
-        const payload = JSON.parse((event as MessageEvent).data) as {
-          content?: string
-          usage?: StreamUsage
-          messageId?: string
-          contentIndex?: number
-        }
-        const content = payload.content ?? ''
-        if (!content) return
-        setStreamPhase('streaming')
-        appendStreamingAssistantDelta(content, payload.messageId, payload.contentIndex ?? 0)
-      })
-      eventSource.addEventListener('thinking_delta', (event) => {
-        if (activeRunIdRef.current !== currentRunId) return
-        window.clearTimeout(connectionTimeout)
-        const payload = JSON.parse((event as MessageEvent).data) as { content?: string }
-        setStreamPhase('thinking')
-        appendStreamProcessMessage('thinking', payload.content ?? '', 'Thinking')
-      })
-      eventSource.addEventListener('tool_call_delta', (event) => {
-        if (activeRunIdRef.current !== currentRunId) return
-        window.clearTimeout(connectionTimeout)
-        const payload = JSON.parse((event as MessageEvent).data) as {
-          content?: string
-          title?: string
-        }
-        setStreamPhase('thinking')
-        appendStreamProcessMessage('tool_call', payload.content ?? '', payload.title ?? 'Tool call')
-      })
-      eventSource.addEventListener('tool_result_delta', (event) => {
-        if (activeRunIdRef.current !== currentRunId) return
-        window.clearTimeout(connectionTimeout)
-        const payload = JSON.parse((event as MessageEvent).data) as {
-          content?: string
-          title?: string
-        }
-        setStreamPhase('thinking')
-        appendStreamProcessMessage(
-          'tool_result',
-          payload.content ?? '',
-          payload.title ?? 'Tool result',
-        )
-      })
-      eventSource.addEventListener('bash_output', (event) => {
-        if (activeRunIdRef.current !== currentRunId) return
-        window.clearTimeout(connectionTimeout)
-        const payload = JSON.parse((event as MessageEvent).data) as {
-          content?: string
-          stream?: 'stdout' | 'stderr'
-        }
-        setStreamPhase('thinking')
-        appendStreamProcessMessage('bash', payload.content ?? '', payload.stream ?? 'stderr')
-      })
-      eventSource.addEventListener('usage', (event) => {
-        if (activeRunIdRef.current !== currentRunId) return
-        const payload = JSON.parse((event as MessageEvent).data) as {
-          usage?: StreamUsage
-          messageId?: string
-        }
-        const assistantId = payload.messageId ?? latestStreamingAssistantIdRef.current
-        if (!assistantId || !payload.usage) return
-        const usage = {
-          input: payload.usage.input ?? 0,
-          output: payload.usage.output ?? 0,
-          cacheRead: payload.usage.cacheRead ?? 0,
-          cacheWrite: payload.usage.cacheWrite ?? 0,
-          cost: payload.usage.cost,
-        }
-        setStreamMessages((current) =>
-          current.map((message) =>
-            message.id === assistantId
-              ? {
-                  ...message,
-                  tokens: payload.usage?.totalTokens,
-                  usage,
-                }
-              : message,
-          ),
-        )
-      })
-      eventSource.addEventListener('error', (event) => {
-        if (activeRunIdRef.current !== currentRunId) return
-        const data = (event as MessageEvent).data
-        if (typeof data === 'string' && data) {
-          window.clearTimeout(connectionTimeout)
-          const payload = JSON.parse(data) as { message?: string }
-          failActiveStream(currentRunId, payload.message ?? 'pi run failed.', eventSource)
-          return
-        }
-        // Native EventSource errors can fire while the browser is still
-        // connecting. The connection timeout and run-status reconciliation
-        // decide whether this becomes a real failure.
-      })
-      eventSource.addEventListener('done', () => {
-        if (activeRunIdRef.current !== currentRunId) return
-        window.clearTimeout(connectionTimeout)
-        finishActiveStream(currentRunId, eventSource)
-      })
-      scheduleRunReconciliation(currentRunId, eventSource)
     } catch (error) {
       const message = errorMessage(error, 'Unable to start pi run.')
       setStreamPhase('idle')
-      setRunId(null)
+      setActivityId(null)
       setAbortingRun(false)
-      activeRunIdRef.current = null
       setOptimisticMessage(null)
       setStreamStartedAt(null)
       if (/already processing|streamingBehavior/i.test(message)) {
-        sdkSessionWasRunningRef.current = true
         setSdkSessionRunning(true)
         setSdkSessionQueueReady(true)
         setStreamError(null)
@@ -1539,27 +1340,17 @@ export function ChatView({
   })
 
   const abort = async () => {
-    const abortRunId = runId ?? sdkActiveRunId
-    if (!abortRunId || abortingRun) return
+    if (abortingRun) return
+    if (!isRunningRun || !activeSession) return
     setAbortingRun(true)
     try {
-      await postApiRunsIdAbort(abortRunId)
-      clearReconciliation()
-      eventSourceRef.current?.close()
-      eventSourceRef.current = null
-      activeRunIdRef.current = null
-      finishAllStreamingMarkdown()
-      setRunId(null)
-      setSdkActiveRunId(null)
-      setSdkSessionQueueReady(false)
-      setStreamPhase('idle')
-      setStreamStartedAt(null)
-      router.refresh()
+      // Aborting is session-scoped; the resulting activity_end frame on the
+      // session event stream drives the stream back to idle.
+      await postApiSessionsIdAbort(activeSession.id)
     } catch (error) {
       finishAllStreamingMarkdown()
-      setStreamError(error instanceof Error ? error.message : 'Unable to abort pi run.')
-    } finally {
       setAbortingRun(false)
+      setStreamError(error instanceof Error ? error.message : 'Unable to abort pi run.')
     }
   }
 
@@ -1728,15 +1519,15 @@ export function ChatView({
     return <EmptyState onOpenAgents={() => router.push('/')} />
   }
 
-  const canAbortRun = Boolean(runId ?? sdkActiveRunId)
+  // A running session can always be stopped: with a run handle we abort the run,
+  // otherwise we fall back to a session-level abort. So "running" implies "abortable".
+  const canAbortRun = isRunningRun
   const sendButtonLabel = abortingRun
     ? 'Stopping'
-    : isStartingRun && !canAbortRun
+    : isStartingRun && !isRunningRun
       ? 'Sending'
       : isRunningRun
-        ? canAbortRun
-          ? 'Stop'
-          : 'Working'
+        ? 'Stop'
         : creatingSession
           ? 'Creating'
           : clearingSession
@@ -2650,23 +2441,99 @@ function messageOutlineReferences(content: string) {
   return references
 }
 
+// Each glyph runs the same dim → bright → dim color cycle; adjacent glyphs are
+// offset by THINKING_CHAR_STAGGER seconds, so the bright peak travels across the
+// word left → right as a light ripple. Glyphs only change *color* (never
+// opacity), so the text stays fully painted the whole time — nothing vanishes.
+// The dim base is faded well toward the background and the bright peak is the
+// full foreground, so the sweeping highlight reads clearly.
+const THINKING_DIM_COLOR = 'color-mix(in oklch, var(--muted-foreground) 40%, var(--background))'
+const THINKING_BRIGHT_COLOR = 'var(--foreground)'
+const THINKING_SWEEP_SECONDS = 1.5
+const THINKING_CHAR_STAGGER = 0.11
+
+// A word whose glyphs are lit one after another by a bright peak sweeping
+// left → right. Reused by the "Thinking" waiting bubble and the "Working" /
+// activity-title labels so every in-progress state shares the same shimmer.
+function ShimmerText({ text, className }: { text: string; className?: string }) {
+  const reduceMotion = useReducedMotion()
+  const chars = text.split('')
+
+  if (reduceMotion) {
+    return <span className={className}>{text}</span>
+  }
+
+  return (
+    <span aria-label={text} className={cn('inline-flex', className)}>
+      {chars.map((char, index) => (
+        <motion.span
+          key={index}
+          aria-hidden="true"
+          className="whitespace-pre"
+          animate={{
+            color: [
+              THINKING_DIM_COLOR,
+              THINKING_BRIGHT_COLOR,
+              THINKING_DIM_COLOR,
+              THINKING_DIM_COLOR,
+            ],
+          }}
+          transition={{
+            duration: THINKING_SWEEP_SECONDS,
+            ease: 'easeInOut',
+            // Bright peak lands early then decays and holds dim: the highlight
+            // reads as a quick glint passing through rather than a slow fade,
+            // making the sweep more legible.
+            times: [0, 0.18, 0.5, 1],
+            repeat: Infinity,
+            // Negative delay starts each glyph part-way into the cycle, so the
+            // phase offset (and thus the ripple) is present from frame one
+            // instead of building up over the first sweep. Leftmost glyph is
+            // furthest ahead, so the bright peak travels left → right.
+            delay: -((chars.length - 1 - index) * THINKING_CHAR_STAGGER),
+          }}
+        >
+          {char}
+        </motion.span>
+      ))}
+    </span>
+  )
+}
+
 function WaitingBubble({ agentAvatar }: { agentAvatar?: string }) {
+  const reduceMotion = useReducedMotion()
+
   return (
     <Message>
       <MessageAvatar className="bg-transparent">
         <ChatAvatar preset={agentAvatar} role="assistant" />
       </MessageAvatar>
       <MessageContent className="min-h-8 justify-center">
-        <Marker
+        <div
           role="status"
           aria-live="polite"
-          className="ml-3.5 min-h-5 w-fit gap-1.5 font-mono text-xs"
+          className="ml-3.5 flex min-h-5 w-fit items-center gap-2 font-mono text-xs"
         >
-          <MarkerIcon className="flex size-3 items-center justify-center text-accent">
-            <LoaderCircle className="size-3 animate-spin" />
-          </MarkerIcon>
-          <MarkerContent>Thinking</MarkerContent>
-        </Marker>
+          <span aria-hidden="true" className="flex items-center gap-1">
+            {[0, 1, 2].map((index) => (
+              <motion.span
+                key={index}
+                className="size-1 rounded-full bg-accent"
+                animate={reduceMotion ? undefined : { y: [0, -4, 0] }}
+                transition={{
+                  duration: 0.9,
+                  // Solid dots bouncing in a relay: each dot springs up then
+                  // settles, staggered so the motion ripples left → right.
+                  ease: [0.45, 0, 0.55, 1],
+                  repeat: Infinity,
+                  repeatDelay: 0.25,
+                  delay: index * 0.15,
+                }}
+              />
+            ))}
+          </span>
+          <ShimmerText text="Thinking" className="text-muted-foreground" />
+        </div>
       </MessageContent>
     </Message>
   )
@@ -2879,14 +2746,11 @@ function ProcessDetailsGroup({
             <Brain className="size-3.5" />
           )}
         </span>
-        <span
-          className={cn(
-            'shrink-0 text-xs font-medium text-foreground/85',
-            isStreaming && 'shimmer',
-          )}
-        >
-          {isStreaming ? 'Working' : 'Activity'}
-        </span>
+        {isStreaming ? (
+          <ShimmerText text="Working" className="shrink-0 text-xs font-medium" />
+        ) : (
+          <span className="shrink-0 text-xs font-medium text-foreground/85">Activity</span>
+        )}
         <span className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden font-mono text-[10px] text-muted-foreground/60">
           {items.length > 0 ? (
             items.map((item) => {
@@ -3106,14 +2970,16 @@ function MessageActivityRow({
         >
           {meta.icon}
         </span>
-        <span
-          className={cn(
-            'max-w-[36%] shrink-0 truncate text-xs font-medium text-foreground/85',
-            streaming && 'shimmer',
-          )}
-        >
-          {title}
-        </span>
+        {streaming ? (
+          <ShimmerText
+            text={title}
+            className="max-w-[36%] shrink-0 overflow-hidden text-xs font-medium"
+          />
+        ) : (
+          <span className="max-w-[36%] shrink-0 truncate text-xs font-medium text-foreground/85">
+            {title}
+          </span>
+        )}
         <span
           className={cn(
             'min-w-0 flex-1 truncate text-xs text-muted-foreground',
@@ -3141,9 +3007,12 @@ function MessageActivityRow({
               {message.content}
             </pre>
           ) : (
-            <p className="border-l border-border pl-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground italic">
-              {message.content}
-            </p>
+            // Thinking (and other prose) is model-authored markdown; render it so
+            // bold/headings/lists show properly instead of leaking `**` syntax.
+            // Keep the muted, left-bordered "thinking" treatment on the wrapper.
+            <div className="border-l border-border pl-3 text-[13px] text-muted-foreground">
+              <MarkdownContent content={message.content} mediaSessionId={mediaSessionId} />
+            </div>
           )}
         </div>
       )}
@@ -3193,14 +3062,16 @@ function ToolActivityRow({ activity }: { activity: Extract<RunActivity, { kind: 
         <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">
           {preview}
         </span>
-        <span
-          className={cn(
-            'shrink-0 font-mono text-[9px] uppercase',
-            result ? 'text-success' : 'shimmer text-accent',
-          )}
-        >
-          {status}
-        </span>
+        {result ? (
+          <span className="shrink-0 font-mono text-[9px] text-success uppercase">
+            {status}
+          </span>
+        ) : (
+          <ShimmerText
+            className="shrink-0 font-mono text-[9px] text-accent uppercase"
+            text={status}
+          />
+        )}
         {!streaming && timestamp && (
           <span className="hidden shrink-0 font-mono text-[9px] text-muted-foreground/45 sm:inline">
             {timestamp}

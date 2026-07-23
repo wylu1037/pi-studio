@@ -13,6 +13,7 @@ import { registerPiStudioApiProviders } from '@/lib/models/pi-ai'
 import { isProjectTrusted } from '@/lib/extensions/project-trust'
 import { logger } from '@/lib/runtime/logger'
 import { createPiRunEventParser, type PiRunEvent } from './pi-events'
+import { getSessionRunController, type SessionRunController } from './session-run-controller'
 import {
   disposeExtensionUiBroker,
   getExtensionUiBroker,
@@ -41,6 +42,7 @@ class StudioAgentSession {
   private idleTimer: ReturnType<typeof setTimeout> | null = null
   private alive = true
   private diagnostics: SdkExtensionDiagnostic[] = []
+  readonly runController: SessionRunController
 
   constructor(
     readonly key: string,
@@ -56,10 +58,18 @@ class StudioAgentSession {
     this.resourceSignature = resourceSignature
     this.diagnostics = diagnostics.slice(-200)
     this.parsePiEvent = createPiRunEventParser({ runId: `session:${key}` })
+    // The controller lives in a session-scoped registry that outlives this SDK
+    // session; bind the live inner session to it for the session's lifetime.
+    this.runController = getSessionRunController(key)
+    this.runController.bind(inner)
     this.unsubscribe = inner.subscribe((event) => {
       this.touch()
       for (const listener of this.listeners) listener(event)
       for (const piEvent of this.parsePiEvent(event)) {
+        // Feed each parsed event through the controller: it keeps the running
+        // truth in step and forwards the event onto the unified frame stream
+        // that the session SSE endpoint subscribes to.
+        this.runController.ingest(piEvent)
         for (const listener of this.piEventListeners) listener(piEvent)
       }
     })
@@ -108,6 +118,7 @@ class StudioAgentSession {
     this.alive = false
     if (this.idleTimer) clearTimeout(this.idleTimer)
     this.unsubscribe?.()
+    this.runController.unbind()
     this.inner.dispose()
     disposeExtensionUiBroker(this.key)
     this.listeners.clear()
@@ -312,22 +323,6 @@ export function getSdkSession(studioSessionId: string) {
   return session?.isAlive() ? session : null
 }
 
-export function getSdkSessionState(studioSessionId: string) {
-  const session = getSdkSession(studioSessionId)
-  if (!session) return null
-  return {
-    running: session.inner.isStreaming || !session.inner.isIdle,
-    isStreaming: session.inner.isStreaming,
-    isCompacting: session.inner.isCompacting,
-    model: session.inner.model
-      ? { provider: session.inner.model.provider, modelId: session.inner.model.id }
-      : null,
-    thinkingLevel: session.inner.thinkingLevel,
-    sessionFile: session.inner.sessionFile ?? null,
-    sessionId: session.inner.sessionId,
-  }
-}
-
 export function disposeSdkSession(studioSessionId: string) {
   if (locks().has(studioSessionId)) return { status: 'running' as const }
 
@@ -483,16 +478,20 @@ export async function executeSdkExtensionCommand(
 
 export async function steerSdkSession(studioSessionId: string, message: string) {
   const session = getSdkSession(studioSessionId)
-  if (!session || (session.inner.isIdle && !session.inner.isStreaming)) return false
-  await session.inner.steer(message)
-  return true
+  if (!session) return false
+  return session.runController.steer(message)
 }
 
 export async function followUpSdkSession(studioSessionId: string, message: string) {
   const session = getSdkSession(studioSessionId)
-  if (!session || (session.inner.isIdle && !session.inner.isStreaming)) return false
-  await session.inner.followUp(message)
-  return true
+  if (!session) return false
+  return session.runController.followUp(message)
+}
+
+export async function abortSdkSession(studioSessionId: string) {
+  const session = getSdkSession(studioSessionId)
+  if (!session) return false
+  return session.runController.abort()
 }
 
 export function disposeAllSdkSessions() {

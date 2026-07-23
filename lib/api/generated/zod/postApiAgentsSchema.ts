@@ -44,6 +44,7 @@ export const postApiAgents400Schema = z.object({
 export const postApiAgentsMutationRequestSchema = z.object({
     "name": z.string().min(1),
 "description": z.optional(z.string()),
+"icon": z.optional(z.string()),
 "tags": z.optional(z.array(z.string())),
 "defaultCwd": z.optional(z.string()),
 "defaultProviderId": z.optional(z.string()),

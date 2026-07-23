@@ -11,6 +11,18 @@ export type PostApiSessionsIdDuplicatePathParams = {
     id: string;
 };
 
+export const postApiSessionsIdDuplicate200LastThinkingLevelEnum = {
+    off: "off",
+    minimal: "minimal",
+    low: "low",
+    medium: "medium",
+    high: "high",
+    xhigh: "xhigh",
+    max: "max"
+} as const;
+
+export type PostApiSessionsIdDuplicate200LastThinkingLevelEnumKey = (typeof postApiSessionsIdDuplicate200LastThinkingLevelEnum)[keyof typeof postApiSessionsIdDuplicate200LastThinkingLevelEnum];
+
 /**
  * @description OK
 */
@@ -55,6 +67,18 @@ export type PostApiSessionsIdDuplicate200 = {
      * @type string | undefined
     */
     lastMessagePreview?: string;
+    /**
+     * @type string | undefined
+    */
+    lastProviderId?: string;
+    /**
+     * @type string | undefined
+    */
+    lastModelId?: string;
+    /**
+     * @type string | undefined
+    */
+    lastThinkingLevel?: PostApiSessionsIdDuplicate200LastThinkingLevelEnumKey;
     /**
      * @type number | undefined
     */

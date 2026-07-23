@@ -11,6 +11,15 @@ export type PostApiSessionsIdRunsPathParams = {
     id: string;
 };
 
+export const postApiSessionsIdRuns200StatusEnum = {
+    started: "started",
+    "session-not-found": "session-not-found",
+    "agent-not-found": "agent-not-found",
+    "already-running": "already-running"
+} as const;
+
+export type PostApiSessionsIdRuns200StatusEnumKey = (typeof postApiSessionsIdRuns200StatusEnum)[keyof typeof postApiSessionsIdRuns200StatusEnum];
+
 /**
  * @description OK
 */
@@ -18,65 +27,15 @@ export type PostApiSessionsIdRuns200 = {
     /**
      * @type string
     */
-    id: string;
+    status: PostApiSessionsIdRuns200StatusEnumKey;
     /**
      * @type string
     */
-    sessionId: string;
+    activityId?: string | null;
     /**
      * @type string
     */
-    agentId: string;
-    /**
-     * @type string
-    */
-    status: string;
-    /**
-     * @type string
-    */
-    providerId: string | null;
-    /**
-     * @type string
-    */
-    modelId: string | null;
-    /**
-     * @type string
-    */
-    thinkingLevel: string;
-    /**
-     * @type string
-    */
-    cwd: string;
-    /**
-     * @type string
-    */
-    prompt: string;
-    /**
-     * @type string
-    */
-    error: string | null;
-    /**
-     * @type string
-    */
-    startedAt: string | null;
-    /**
-     * @type string
-    */
-    completedAt: string | null;
-    /**
-     * @type string
-    */
-    createdAt: string;
-};
-
-/**
- * @description OK
-*/
-export type PostApiSessionsIdRuns404 = {
-    /**
-     * @type string
-    */
-    error: string;
+    runId?: string | null;
 };
 
 export const postApiSessionsIdRunsMutationRequestThinkingLevelEnum = {
@@ -121,5 +80,5 @@ export type PostApiSessionsIdRunsMutation = {
     Response: PostApiSessionsIdRuns200;
     Request: PostApiSessionsIdRunsMutationRequest;
     PathParams: PostApiSessionsIdRunsPathParams;
-    Errors: PostApiSessionsIdRuns404;
+    Errors: any;
 };

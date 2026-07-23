@@ -11,6 +11,18 @@ export type GetApiSessionsQueryParams = {
     agentId?: string;
 };
 
+export const getApiSessions200LastThinkingLevelEnum = {
+    off: "off",
+    minimal: "minimal",
+    low: "low",
+    medium: "medium",
+    high: "high",
+    xhigh: "xhigh",
+    max: "max"
+} as const;
+
+export type GetApiSessions200LastThinkingLevelEnumKey = (typeof getApiSessions200LastThinkingLevelEnum)[keyof typeof getApiSessions200LastThinkingLevelEnum];
+
 /**
  * @description OK
 */
@@ -55,6 +67,18 @@ export type GetApiSessions200 = {
      * @type string | undefined
     */
     lastMessagePreview?: string;
+    /**
+     * @type string | undefined
+    */
+    lastProviderId?: string;
+    /**
+     * @type string | undefined
+    */
+    lastModelId?: string;
+    /**
+     * @type string | undefined
+    */
+    lastThinkingLevel?: GetApiSessions200LastThinkingLevelEnumKey;
     /**
      * @type number | undefined
     */

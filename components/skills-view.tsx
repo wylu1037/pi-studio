@@ -14,11 +14,13 @@ import {
   Eye,
   Pencil,
   Trash2,
+  Terminal,
   UserPlus,
   X,
   Check,
 } from 'lucide-react'
 import type { AgentProfile, GlobalSkill, SkillSource } from '@/lib/types'
+import { inferSkillName, parseSkillsAddCommand } from '@/lib/skills/parse-command'
 import { deleteApiSkillsId } from '@/lib/api/generated/clients/deleteApiSkillsId'
 import { getApiSkillsRegistrySearch } from '@/lib/api/generated/clients/getApiSkillsRegistrySearch'
 import { postApiAgentsIdAssign } from '@/lib/api/generated/clients/postApiAgentsIdAssign'
@@ -97,6 +99,7 @@ export function SkillsView({ agents, skills }: { agents: AgentProfile[]; skills:
   const [assigning, setAssigning] = useState<GlobalSkill | null>(null)
   const [editing, setEditing] = useState<GlobalSkill | null>(null)
   const [creating, setCreating] = useState(false)
+  const [addingFromCommand, setAddingFromCommand] = useState(false)
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [registryQuery, setRegistryQuery] = useState('')
   const [registry, setRegistry] = useState<RegistrySkill[]>([])
@@ -204,6 +207,10 @@ export function SkillsView({ agents, skills }: { agents: AgentProfile[]; skills:
         <ActionButton onClick={() => setShowBrowser(true)}>
           <Search className="size-3.5" />
           Browse skills.sh
+        </ActionButton>
+        <ActionButton onClick={() => setAddingFromCommand(true)}>
+          <Terminal className="size-3.5" />
+          Add from command
         </ActionButton>
         <ActionButton variant="accent" onClick={importManualSkill}>
           <Download className="size-3.5" />
@@ -439,6 +446,9 @@ export function SkillsView({ agents, skills }: { agents: AgentProfile[]; skills:
           }}
         />
       )}
+      {addingFromCommand && (
+        <CommandImportDialog onClose={() => setAddingFromCommand(false)} />
+      )}
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         title="Delete skill"
@@ -469,15 +479,26 @@ function SkillEditor({ skill, onClose }: { skill: GlobalSkill | null; onClose: (
       description: skill?.description ?? '',
       source: skill?.source ?? 'manual',
       path: skill?.path ?? '',
+      skill: '',
       version: skill?.version ?? '',
       author: skill?.author ?? '',
       tags: skill?.tags ?? [],
     },
   })
 
+  const currentSource = watch('source')
+
   const save = async (values: PostApiSkillsMutationRequest) => {
-    await postApiSkills(values)
-    refreshAfterMutation()
+    try {
+      await postApiSkills(values)
+      refreshAfterMutation()
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        title: 'Import failed',
+        message: errorMessage(error, 'Unable to import skill.'),
+      })
+    }
   }
 
   return (
@@ -521,9 +542,27 @@ function SkillEditor({ skill, onClose }: { skill: GlobalSkill | null; onClose: (
           <EditorField label="Path" error={errors.path?.message}>
             <input
               {...register('path')}
+              placeholder={
+                currentSource === 'git'
+                  ? 'https://github.com/owner/repo'
+                  : undefined
+              }
               className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
             />
           </EditorField>
+          {currentSource === 'git' && (
+            <EditorField label="Skill (optional)">
+              <input
+                {...register('skill')}
+                placeholder="lieflat-charts"
+                className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+              />
+              <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                Selects a single skill inside a multi-skill repo (maps to
+                --skill).
+              </p>
+            </EditorField>
+          )}
           <div className="grid gap-3 sm:grid-cols-2">
             <EditorField label="Source">
               <input type="hidden" {...register('source')} />
@@ -599,6 +638,137 @@ function EditorField({
       <Label className="mb-1.5 block">{label}</Label>
       {children}
       {error && <p className="mt-1 font-mono text-[11px] text-destructive">{error}</p>}
+    </div>
+  )
+}
+
+function CommandImportDialog({ onClose }: { onClose: () => void }) {
+  const [command, setCommand] = useState('')
+  const [description, setDescription] = useState('')
+  const [author, setAuthor] = useState('')
+  const [tags, setTags] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const parsed = parseSkillsAddCommand(command)
+  const skillName = parsed ? inferSkillName(parsed) : ''
+  const trimmed = command.trim()
+  const parseError = trimmed.length > 0 && !parsed
+
+  const install = async () => {
+    if (!parsed) return
+    setSubmitting(true)
+    try {
+      await postApiSkills({
+        name: skillName,
+        description,
+        source: 'git',
+        path: parsed.package,
+        skill: parsed.skill,
+        author: author || undefined,
+        tags: tags
+          .split(',')
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+      })
+      refreshAfterMutation(`${skillName} installed successfully.`)
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        title: 'Install failed',
+        message: errorMessage(error, 'Unable to install skill.'),
+      })
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className="absolute inset-0 bg-foreground/25"
+      />
+      <div className="relative w-full max-w-lg border border-border bg-card shadow-xl">
+        <div className="flex items-center justify-between border-b border-border bg-panel px-4 py-3">
+          <div>
+            <h2 className="font-serif text-lg text-foreground italic">Add from command</h2>
+            <Label>paste a skills add command</Label>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="space-y-4 p-4">
+          <EditorField
+            label="Command"
+            error={parseError ? 'Not a recognizable `skills add` command.' : undefined}
+          >
+            <textarea
+              value={command}
+              onChange={(event) => setCommand(event.target.value)}
+              rows={3}
+              placeholder="npx skills add https://github.com/owner/repo --skill my-skill"
+              className="w-full resize-none border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+            />
+          </EditorField>
+          {parsed && (
+            <Panel className="space-y-1.5 p-3">
+              <div className="flex items-center gap-2">
+                <Label>Resolved</Label>
+                <span className="font-mono text-[13px] text-foreground">{skillName}</span>
+              </div>
+              <p className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+                <Package className="size-3 shrink-0" />
+                <span className="truncate">{parsed.package}</span>
+              </p>
+              <p className="font-mono text-[11px] text-muted-foreground">
+                Installs to <code className="text-foreground">~/.pi-studio/skills</code>
+                {parsed.skill ? ` · --skill ${parsed.skill}` : ''}
+              </p>
+            </Panel>
+          )}
+          <EditorField label="Description">
+            <textarea
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              rows={2}
+              className="w-full resize-none border border-input bg-panel px-3 py-1.5 text-[13px] text-foreground outline-none focus:border-ring"
+            />
+          </EditorField>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <EditorField label="Author">
+              <input
+                value={author}
+                onChange={(event) => setAuthor(event.target.value)}
+                className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+              />
+            </EditorField>
+            <EditorField label="Tags (comma separated)">
+              <input
+                value={tags}
+                onChange={(event) => setTags(event.target.value)}
+                className="w-full border border-input bg-panel px-3 py-1.5 font-mono text-[13px] text-foreground outline-none focus:border-ring"
+              />
+            </EditorField>
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-border bg-panel px-4 py-3">
+          <ActionButton onClick={onClose}>Cancel</ActionButton>
+          <ActionButton
+            variant="accent"
+            onClick={install}
+            disabled={!parsed || submitting}
+          >
+            <Download className="size-3.5" />
+            {submitting ? 'Installing' : 'Install'}
+          </ActionButton>
+        </div>
+      </div>
     </div>
   )
 }

@@ -11,6 +11,18 @@ export type PatchApiSessionsIdPathParams = {
     id: string;
 };
 
+export const patchApiSessionsId200LastThinkingLevelEnum = {
+    off: "off",
+    minimal: "minimal",
+    low: "low",
+    medium: "medium",
+    high: "high",
+    xhigh: "xhigh",
+    max: "max"
+} as const;
+
+export type PatchApiSessionsId200LastThinkingLevelEnumKey = (typeof patchApiSessionsId200LastThinkingLevelEnum)[keyof typeof patchApiSessionsId200LastThinkingLevelEnum];
+
 /**
  * @description OK
 */
@@ -55,6 +67,18 @@ export type PatchApiSessionsId200 = {
      * @type string | undefined
     */
     lastMessagePreview?: string;
+    /**
+     * @type string | undefined
+    */
+    lastProviderId?: string;
+    /**
+     * @type string | undefined
+    */
+    lastModelId?: string;
+    /**
+     * @type string | undefined
+    */
+    lastThinkingLevel?: PatchApiSessionsId200LastThinkingLevelEnumKey;
     /**
      * @type number | undefined
     */

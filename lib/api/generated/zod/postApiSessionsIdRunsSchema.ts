@@ -13,26 +13,9 @@ export const postApiSessionsIdRunsPathParamsSchema = z.object({
  * @description OK
  */
 export const postApiSessionsIdRuns200Schema = z.object({
-    "id": z.string(),
-"sessionId": z.string(),
-"agentId": z.string(),
-"status": z.string(),
-"providerId": z.nullable(z.string()),
-"modelId": z.nullable(z.string()),
-"thinkingLevel": z.string(),
-"cwd": z.string(),
-"prompt": z.string(),
-"error": z.nullable(z.string()),
-"startedAt": z.nullable(z.string()),
-"completedAt": z.nullable(z.string()),
-"createdAt": z.string()
-    })
-
-/**
- * @description OK
- */
-export const postApiSessionsIdRuns404Schema = z.object({
-    "error": z.string()
+    "status": z.enum(["started", "session-not-found", "agent-not-found", "already-running"]),
+"activityId": z.string().nullish(),
+"runId": z.string().nullish()
     })
 
 /**

@@ -4,6 +4,18 @@
 */
 
 
+export const postApiSessions200LastThinkingLevelEnum = {
+    off: "off",
+    minimal: "minimal",
+    low: "low",
+    medium: "medium",
+    high: "high",
+    xhigh: "xhigh",
+    max: "max"
+} as const;
+
+export type PostApiSessions200LastThinkingLevelEnumKey = (typeof postApiSessions200LastThinkingLevelEnum)[keyof typeof postApiSessions200LastThinkingLevelEnum];
+
 /**
  * @description OK
 */
@@ -48,6 +60,18 @@ export type PostApiSessions200 = {
      * @type string | undefined
     */
     lastMessagePreview?: string;
+    /**
+     * @type string | undefined
+    */
+    lastProviderId?: string;
+    /**
+     * @type string | undefined
+    */
+    lastModelId?: string;
+    /**
+     * @type string | undefined
+    */
+    lastThinkingLevel?: PostApiSessions200LastThinkingLevelEnumKey;
     /**
      * @type number | undefined
     */

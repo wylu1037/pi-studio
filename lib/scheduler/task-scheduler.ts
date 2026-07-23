@@ -1,12 +1,9 @@
-import { prepareRun } from '@/lib/chat/run-registry'
-import { startRunExecution } from '@/lib/chat/run-execution'
+import { startSessionPrompt } from '@/lib/chat/run-session-prompt'
 import { nextCronRunAt } from '@/lib/scheduler/cron'
 import { isSupportedTimeZone } from '@/lib/scheduler/timezones'
 import {
   claimScheduledTaskExecution,
-  createRun,
   createSession,
-  getRun,
   getScheduledTask,
   getSession,
   listDueScheduledTasks,
@@ -150,28 +147,21 @@ export async function executeScheduledTask(
   }
 
   updateScheduledTaskExecution(task.id, { sessionId: session.id, lastRunStatus: 'running' })
-  const run = createRun({
-    sessionId: session.id,
-    agentId: claimedTask.agentId,
-    prompt: claimedTask.prompt,
-    providerId: runConfig.providerId,
-    modelId: runConfig.modelId,
-    thinkingLevel: runConfig.thinkingLevel,
-    cwd: session.cwd,
-  })
-  if (!run) {
-    finishScheduledTaskExecution(task.id, 'failed')
-    throw new Error('Unable to create the scheduled run.')
-  }
 
-  prepareRun(run.id)
-  const execution = startRunExecution(run.id)
-    .then(() => {
-      const finished = getRun(run.id)
-      finishScheduledTaskExecution(
-        task.id,
-        finished?.status === 'completed' ? 'completed' : 'failed',
-      )
+  const execution = startSessionPrompt({
+    sessionId: session.id,
+    prompt: claimedTask.prompt,
+    providerId: runConfig.providerId ?? undefined,
+    modelId: runConfig.modelId ?? undefined,
+    thinkingLevel: runConfig.thinkingLevel,
+  })
+    .then(async (result) => {
+      if (result.status !== 'started') {
+        finishScheduledTaskExecution(task.id, 'failed')
+        return
+      }
+      const status = await result.completion
+      finishScheduledTaskExecution(task.id, status === 'completed' ? 'completed' : 'failed')
     })
     .catch(() => finishScheduledTaskExecution(task.id, 'failed'))
     .finally(() => {
@@ -179,7 +169,7 @@ export async function executeScheduledTask(
       void tickScheduledTasks()
     })
   scheduledTaskRuns().set(task.id, execution)
-  return { runId: run.id, sessionId: session.id }
+  return { sessionId: session.id }
 }
 
 function scheduledTaskRuns() {
