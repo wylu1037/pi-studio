@@ -59,6 +59,58 @@ const inputTypeOptions = [
   { value: 'image', label: 'Image' },
 ] as const
 
+interface ModelPreset {
+  contextWindow: number
+  maxTokens: number
+  inputTypes: Array<'text' | 'image'>
+  reasoning: boolean
+}
+
+// Preset capabilities keyed by model ID. Lookup is exact-match first, then
+// longest-prefix so variants like `gpt-5.6-turbo` inherit the `gpt-5.6` preset.
+// Values follow each family's published specs and are editable after prefill.
+const MODEL_PRESETS: Record<string, ModelPreset> = {
+  // OpenAI
+  'gpt-5.6': { contextWindow: 400_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
+  'gpt-5.5': { contextWindow: 400_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
+  'gpt-5.4': { contextWindow: 272_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
+  'gpt-5': { contextWindow: 272_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
+  'gpt-4.1': { contextWindow: 1_047_576, maxTokens: 32_768, inputTypes: ['text', 'image'], reasoning: false },
+  'gpt-4o': { contextWindow: 128_000, maxTokens: 16_384, inputTypes: ['text', 'image'], reasoning: false },
+  // Anthropic
+  'claude-opus-4': { contextWindow: 200_000, maxTokens: 32_000, inputTypes: ['text', 'image'], reasoning: true },
+  'claude-sonnet-5': { contextWindow: 200_000, maxTokens: 64_000, inputTypes: ['text', 'image'], reasoning: true },
+  'claude-sonnet-4': { contextWindow: 200_000, maxTokens: 64_000, inputTypes: ['text', 'image'], reasoning: true },
+  'claude-haiku-4': { contextWindow: 200_000, maxTokens: 32_000, inputTypes: ['text', 'image'], reasoning: false },
+  // Google
+  'gemini-2.5-pro': { contextWindow: 1_048_576, maxTokens: 65_536, inputTypes: ['text', 'image'], reasoning: true },
+  'gemini-2.5-flash': { contextWindow: 1_048_576, maxTokens: 65_536, inputTypes: ['text', 'image'], reasoning: true },
+  // Zhipu GLM
+  'glm-5.2': { contextWindow: 200_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
+  'glm-5.1': { contextWindow: 200_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
+  'glm-4.6': { contextWindow: 200_000, maxTokens: 128_000, inputTypes: ['text'], reasoning: true },
+  // xAI Grok
+  'grok-4.5': { contextWindow: 256_000, maxTokens: 32_768, inputTypes: ['text', 'image'], reasoning: true },
+  'grok-4': { contextWindow: 256_000, maxTokens: 32_768, inputTypes: ['text', 'image'], reasoning: true },
+  // DeepSeek
+  'deepseek-v4-pro': { contextWindow: 128_000, maxTokens: 8_192, inputTypes: ['text'], reasoning: true },
+  'deepseek-v3': { contextWindow: 128_000, maxTokens: 8_192, inputTypes: ['text'], reasoning: false },
+  'deepseek-r1': { contextWindow: 128_000, maxTokens: 8_192, inputTypes: ['text'], reasoning: true },
+}
+
+function findModelPreset(modelId: string): ModelPreset | undefined {
+  const id = modelId.trim().toLowerCase()
+  if (!id) return undefined
+  if (MODEL_PRESETS[id]) return MODEL_PRESETS[id]
+  let bestKey: string | undefined
+  for (const key of Object.keys(MODEL_PRESETS)) {
+    if (id.startsWith(key) && (!bestKey || key.length > bestKey.length)) {
+      bestKey = key
+    }
+  }
+  return bestKey ? MODEL_PRESETS[bestKey] : undefined
+}
+
 const providerFormSchema = z.object({
   name: z.string().min(1),
   baseUrl: z.string().min(1),
@@ -383,7 +435,9 @@ function ProviderDetail({
   const {
     control,
     register,
+    getValues,
     handleSubmit,
+    setValue,
     formState: { isSubmitting, errors },
   } = useForm<ProviderForm>({
     resolver: zodResolver(providerFormSchema as never),
@@ -405,6 +459,25 @@ function ProviderDetail({
   const [showApiKey, setShowApiKey] = useState(true)
   const [availableModels, setAvailableModels] = useState<Array<{ id: string; name: string }>>([])
   const [loadingModels, setLoadingModels] = useState(false)
+
+  const updateUserAgent = (userAgent: string) => {
+    const headersText = getValues('headersText') ?? ''
+    let headers: Record<string, string> = {}
+
+    if (headersText.trim()) {
+      try {
+        const parsed = JSON.parse(headersText) as unknown
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return
+        headers = parsed as Record<string, string>
+      } catch {
+        return
+      }
+    }
+
+    setValue('headersText', JSON.stringify(withUserAgent(headers, userAgent), null, 2), {
+      shouldDirty: true,
+    })
+  }
 
   const saveProvider = async (values: ProviderForm) => {
     try {
@@ -667,15 +740,20 @@ function ProviderDetail({
                           name={field.name}
                           value={field.value ?? ''}
                           onBlur={field.onBlur}
-                          onChange={field.onChange}
+                          onChange={(event) => {
+                            field.onChange(event)
+                            updateUserAgent(event.target.value)
+                          }}
                           placeholder="Enter a custom User-Agent"
                           className="min-w-0 flex-1 rounded-none border-input bg-panel font-mono text-[12px]"
                         />
                         <Select
                           value={preset}
                           onValueChange={(value) => {
-                            if (value === CUSTOM_USER_AGENT) field.onChange('')
-                            else if (value !== null) field.onChange(value)
+                            if (value === null) return
+                            const userAgent = value === CUSTOM_USER_AGENT ? '' : value
+                            field.onChange(userAgent)
+                            updateUserAgent(userAgent)
                           }}
                         >
                           <SelectTrigger className="shrink-0">
@@ -704,10 +782,20 @@ function ProviderDetail({
                 />
               </Config>
               <Config label="Custom headers">
-                <textarea
-                  {...register('headersText')}
-                  rows={5}
-                  className="w-full resize-none border border-input bg-panel px-3 py-1.5 font-mono text-[12px] text-foreground outline-none focus:border-ring"
+                <Controller
+                  control={control}
+                  name="headersText"
+                  render={({ field }) => (
+                    <textarea
+                      ref={field.ref}
+                      name={field.name}
+                      value={field.value ?? ''}
+                      onBlur={field.onBlur}
+                      onChange={field.onChange}
+                      rows={5}
+                      className="w-full resize-none border border-input bg-panel px-3 py-1.5 font-mono text-[12px] text-foreground outline-none focus:border-ring"
+                    />
+                  )}
                 />
               </Config>
             </div>
@@ -886,10 +974,20 @@ function ModelDialog({
   })
   const modelId = useWatch({ control, name: 'id' })
   const displayNameEdited = useRef(mode === 'edit')
+  const appliedPresetId = useRef<string | null>(null)
 
   useEffect(() => {
-    if (mode === 'add' && !displayNameEdited.current && modelId) {
+    if (mode !== 'add') return
+    if (!displayNameEdited.current && modelId) {
       setValue('name', modelId)
+    }
+    const preset = findModelPreset(modelId)
+    if (preset && appliedPresetId.current !== modelId) {
+      appliedPresetId.current = modelId
+      setValue('contextWindow', String(preset.contextWindow))
+      setValue('maxTokens', String(preset.maxTokens))
+      setValue('inputTypes', preset.inputTypes)
+      setValue('reasoning', preset.reasoning)
     }
   }, [mode, modelId, setValue])
 

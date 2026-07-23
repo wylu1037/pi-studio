@@ -93,7 +93,7 @@ export function Sidebar({ piVersion }: { piVersion: string }) {
                       <motion.span
                         layoutId="sidebar-active-item"
                         aria-hidden="true"
-                        className="pointer-events-none absolute inset-0 border border-sidebar-border bg-card"
+                        className="pointer-events-none absolute inset-0 rounded-lg border border-sidebar-border bg-card"
                         transition={{ type: 'spring', stiffness: 420, damping: 36, mass: 0.75 }}
                       />
                     )}

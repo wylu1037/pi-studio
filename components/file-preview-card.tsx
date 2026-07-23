@@ -106,7 +106,7 @@ const fileKindConfig: Record<PreviewFileKind, FileKindConfig> = {
 }
 
 const SCRIPT_PREVIEW_BYTES = 1024 * 1024
-const FILE_CARD_ICON_CLASS_NAME = '!size-9 rounded-none bg-transparent ring-0'
+const FILE_CARD_ICON_CLASS_NAME = '!size-9 rounded-panel-inner bg-transparent ring-0'
 
 type ScriptPreviewState =
   | { status: 'idle' }
@@ -166,9 +166,9 @@ export function FilePreviewCard({
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <AttachmentGroup className="my-2 max-w-lg overflow-visible">
-        <Attachment size="sm" className="w-full max-w-lg bg-card">
+        <Attachment size="sm" className="w-full max-w-lg rounded-panel bg-card">
           <AttachmentMedia data-file-kind={kind} className={FILE_CARD_ICON_CLASS_NAME}>
-            <Icon className="!size-9" weight="duotone" />
+            <Icon className="size-9!" weight="duotone" />
           </AttachmentMedia>
           <AttachmentContent>
             <button

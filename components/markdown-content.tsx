@@ -194,7 +194,7 @@ function renderInlineToken(token: string, key: number, mediaSessionId?: string) 
     return (
       <code
         key={key}
-        className="border border-border bg-muted px-1 py-0.5 font-mono text-[0.92em] text-foreground"
+        className="rounded-panel-inner border border-border bg-muted px-1 py-0.5 font-mono text-[0.92em] text-foreground"
       >
         {token.slice(1, -1)}
       </code>

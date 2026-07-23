@@ -254,7 +254,7 @@ export function ChatComposer({
           }}
           onDrop={addDroppedFiles}
           className={cn(
-            'relative border border-border-strong bg-card transition-colors focus-within:border-ring',
+            'relative rounded-xl border border-border-strong bg-card transition-colors focus-within:border-ring',
             isDraggingFiles && 'border-accent bg-accent/5',
           )}
         >
@@ -277,7 +277,7 @@ export function ChatComposer({
                   key={attachment.id}
                   state={attachment.state}
                   size="xs"
-                  className="rounded-none"
+                  className="rounded-panel"
                 >
                   <AttachmentMedia
                     variant={
@@ -285,7 +285,7 @@ export function ChatComposer({
                         ? 'image'
                         : 'icon'
                     }
-                    className="rounded-none"
+                    className="rounded-panel-inner"
                   >
                     {isImageAttachment(attachment.file.name, attachment.file.type) ? (
                       <ImageAttachmentPreview
@@ -368,7 +368,7 @@ export function ChatComposer({
             <input type="hidden" {...form.register('modelId')} />
             <input type="hidden" {...form.register('thinkingLevel')} />
             {isRunningRun ? (
-              <div className="ml-auto flex min-w-0 items-center gap-1">
+              <div className="ml-auto flex min-w-0 items-center gap-1.5">
                 <Button
                   type="button"
                   variant="outline"
@@ -423,7 +423,7 @@ export function ChatComposer({
                   : isStartingRun || creatingSession || clearingSession || !canSend
               }
               className={cn(
-                'ml-1 flex h-8 shrink-0 items-center justify-center gap-1.5 border font-mono text-[10px] uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-60',
+                'flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-panel border font-mono text-[10px] uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-60',
                 canAbortRun
                   ? 'border-destructive/70 bg-destructive/10 px-2.5 text-destructive hover:bg-destructive hover:text-destructive-foreground'
                   : isRunningRun
@@ -456,7 +456,7 @@ export function ChatComposer({
           </div>
 
           {isDraggingFiles && (
-            <div className="pointer-events-none absolute inset-1 flex items-center justify-center border border-dashed border-accent bg-card/94 font-mono text-[11px] text-accent uppercase">
+            <div className="pointer-events-none absolute inset-1 flex items-center justify-center rounded-panel border border-dashed border-accent bg-card/94 font-mono text-[11px] text-accent uppercase">
               Drop files to attach
             </div>
           )}

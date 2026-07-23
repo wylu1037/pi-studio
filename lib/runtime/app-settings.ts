@@ -27,7 +27,7 @@ export type AppSettings = {
 }
 
 export const DEFAULT_METRICS_SETTINGS: MetricsSettings = {
-  enabled: true,
+  enabled: false,
   detailLevel: 'standard',
   intervalSeconds: 15,
   retentionDays: 7,

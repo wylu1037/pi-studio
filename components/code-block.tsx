@@ -188,7 +188,7 @@ export function CodeBlock({
   }
 
   return (
-    <div className="max-w-full overflow-hidden border border-border bg-card">
+    <div className="max-w-full overflow-hidden rounded-panel border border-border bg-card">
       <div className="flex h-7 items-center justify-between border-b border-border bg-panel px-3">
         <span className="truncate font-mono text-[10px] tracking-wide text-muted-foreground uppercase">
           {label}

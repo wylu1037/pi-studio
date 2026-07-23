@@ -42,7 +42,7 @@ export function MarkdownImage({
   return (
     <Dialog.Root open={previewOpen} onOpenChange={handlePreviewOpenChange}>
       <figure className="group/image my-2 block w-fit max-w-full">
-        <span className="relative block max-w-full overflow-hidden border border-border-strong bg-muted/60">
+        <span className="relative block max-w-full overflow-hidden rounded-panel border border-border-strong bg-muted/60">
           {failed ? (
             <span className="flex min-h-24 min-w-48 flex-col items-center justify-center gap-2 p-6 text-muted-foreground">
               <ImageOff aria-hidden="true" />

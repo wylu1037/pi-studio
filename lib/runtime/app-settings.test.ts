@@ -25,7 +25,7 @@ test('normalizes invalid metrics values and removes unknown metric IDs', () => {
     intervalOverrides: { 'runtime.cpu': 7, 'unknown.metric': 15 },
   })
 
-  assert.equal(settings.enabled, true)
+  assert.equal(settings.enabled, false)
   assert.equal(settings.detailLevel, 'standard')
   assert.equal(settings.intervalSeconds, 15)
   assert.equal(settings.retentionDays, 7)
