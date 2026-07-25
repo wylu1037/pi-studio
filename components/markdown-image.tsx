@@ -6,7 +6,6 @@ import { Download, ImageOff, Maximize2, RotateCcw, X, ZoomIn, ZoomOut } from 'lu
 
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { useSidebarOffset } from '@/hooks/use-sidebar-offset'
 import { cn } from '@/lib/utils'
 
 const MIN_ZOOM = 0.5
@@ -27,7 +26,6 @@ export function MarkdownImage({
   const [zoom, setZoom] = useState(1)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewZoom, setPreviewZoom] = useState(1)
-  const sidebarOffset = useSidebarOffset(previewOpen)
 
   const zoomOut = () => setZoom((current) => Math.max(MIN_ZOOM, current - ZOOM_STEP))
   const zoomIn = () => setZoom((current) => Math.min(MAX_ZOOM, current + ZOOM_STEP))
@@ -131,11 +129,8 @@ export function MarkdownImage({
       </figure>
 
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 min-h-dvh bg-background/85 backdrop-blur-sm transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0 supports-[-webkit-touch-callout:none]:absolute" />
-        <Dialog.Viewport
-          className="fixed inset-y-0 right-0 flex min-h-dvh items-center justify-center p-3 sm:p-6"
-          style={{ left: sidebarOffset }}
-        >
+        <Dialog.Backdrop className="fixed inset-0 z-50 min-h-dvh bg-background/85 backdrop-blur-sm transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0 supports-[-webkit-touch-callout:none]:absolute" />
+        <Dialog.Viewport className="fixed inset-0 z-50 flex min-h-dvh items-center justify-center p-3 sm:p-6">
           <Dialog.Popup className="flex h-[min(92dvh,64rem)] w-[min(96%,96rem)] flex-col overflow-hidden rounded-xl border border-border-strong bg-card shadow-2xl transition-[scale,opacity] duration-200 outline-none data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0">
             <Dialog.Title className="sr-only">Image preview: {alt}</Dialog.Title>
 

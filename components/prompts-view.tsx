@@ -327,7 +327,9 @@ export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
                         }}
                       >
                         <SelectTrigger className="w-full text-[11px]">
-                          <SelectValue />
+                          <SelectValue>
+                            {form.watch('scope') === 'project' ? 'Project' : 'Global'}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent align="start">
                           <SelectItem value="global">Global</SelectItem>

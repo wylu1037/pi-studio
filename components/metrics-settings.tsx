@@ -411,7 +411,7 @@ function MetricsOverview({
 
       {!settings.enabled || summary.health === 'disabled' ? (
         <Panel>
-          <Empty className="min-h-[420px] rounded-none border-0">
+          <Empty className="min-h-105 rounded-none border-0">
             <EmptyHeader>
               <EmptyMedia variant="icon">
                 <PulseIcon />
@@ -788,7 +788,7 @@ function MetricsCollection({
                 }}
               >
                 <SelectTrigger className="min-w-40">
-                  <SelectValue />
+                  <SelectValue>Every {formatInterval(draft.intervalSeconds)}</SelectValue>
                 </SelectTrigger>
                 <SelectContent align="start">
                   <SelectGroup>
@@ -818,7 +818,9 @@ function MetricsCollection({
                 }
               >
                 <SelectTrigger className="min-w-40">
-                  <SelectValue />
+                  <SelectValue>
+                    {draft.retentionDays} {draft.retentionDays === 1 ? 'day' : 'days'}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent align="start">
                   <SelectGroup>
@@ -858,7 +860,7 @@ function MetricsCollection({
           </span>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[780px] border-collapse text-left">
+          <table className="w-full min-w-195 border-collapse text-left">
             <thead>
               <tr className="border-b border-border bg-muted/25 font-mono text-[9px] tracking-wider text-muted-foreground uppercase">
                 <th className="px-5 py-2.5 font-medium">Metric</th>
@@ -923,7 +925,11 @@ function MetricsCollection({
                                 }
                               >
                                 <SelectTrigger size="sm" className="min-w-40">
-                                  <SelectValue />
+                                  <SelectValue>
+                                    {draft.intervalOverrides[metric.id]
+                                      ? `Every ${formatInterval(draft.intervalOverrides[metric.id] as MetricsIntervalSeconds)}`
+                                      : `Default (${formatInterval(effectiveDefault)})`}
+                                  </SelectValue>
                                 </SelectTrigger>
                                 <SelectContent align="start">
                                   <SelectGroup>

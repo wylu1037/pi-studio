@@ -2,7 +2,6 @@
 
 import { memo, type SyntheticEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { motion, useReducedMotion } from 'motion/react'
 import { useRouter } from 'next/navigation'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
@@ -110,10 +109,7 @@ import { cn } from '@/lib/utils'
 import { useChatAttachments } from '@/components/use-chat-attachments'
 import { ImageAttachmentPreview, isImageAttachment } from '@/components/image-attachment-preview'
 import { buildPromptWithAttachments } from '@/lib/chat/attachments'
-import {
-  hasPersistedAssistantResponse,
-  hasPersistedUserMessage,
-} from '@/lib/chat/stream-lifecycle'
+import { hasPersistedAssistantResponse, hasPersistedUserMessage } from '@/lib/chat/stream-lifecycle'
 
 const SESSION_TREE_RECENT_NODE_LIMIT = 80
 const INITIAL_VISIBLE_MESSAGE_LIMIT = 120
@@ -139,7 +135,13 @@ type PiRunEvent =
   | { type: 'assistant_message_start'; messageId?: string; responseId?: string }
   | { type: 'assistant_message_end'; messageId?: string; responseId?: string; stopReason?: string }
   | { type: 'assistant_text_end'; messageId: string; contentIndex: number; content?: string }
-  | { type: 'message_delta'; content: string; usage?: PiUsage; messageId?: string; contentIndex?: number }
+  | {
+      type: 'message_delta'
+      content: string
+      usage?: PiUsage
+      messageId?: string
+      contentIndex?: number
+    }
   | { type: 'thinking_delta'; content: string }
   | { type: 'tool_call_delta'; content: string; title?: string }
   | { type: 'tool_result_delta'; content: string; title?: string; isError?: boolean }
@@ -156,7 +158,12 @@ type RunStreamFrame =
       activityKind: 'prompt' | 'steer' | 'follow-up' | 'command'
       startedAt: string
     }
-  | { kind: 'activity_end'; activityId: string; status: 'completed' | 'failed' | 'aborted'; error?: string }
+  | {
+      kind: 'activity_end'
+      activityId: string
+      status: 'completed' | 'failed' | 'aborted'
+      error?: string
+    }
   | { kind: 'pi'; event: PiRunEvent }
 
 const ComposerSchema = postApiSessionsIdRunsMutationRequestSchema.extend({ message: z.string() })
@@ -858,6 +865,27 @@ export function ChatView({
     [displayItems],
   )
 
+  // Live context-window occupancy for the composer meter. The most recent
+  // assistant turn's usage is the authoritative snapshot of what currently
+  // sits in the window (prompt = input + both cache buckets, plus that turn's
+  // output), unlike the session's cumulative totalTokens which only ever grows.
+  const contextUsage = useMemo(() => {
+    const contextWindow = selectedModelOption?.model.contextWindow
+    if (!contextWindow || contextWindow <= 0) return null
+    let latestUsage: ChatMessage['usage'] | undefined
+    for (let index = displayMessages.length - 1; index >= 0; index--) {
+      const candidate = displayMessages[index]
+      if (candidate.type === 'assistant' && candidate.usage) {
+        latestUsage = candidate.usage
+        break
+      }
+    }
+    const usedTokens = latestUsage
+      ? latestUsage.input + latestUsage.cacheRead + latestUsage.cacheWrite + latestUsage.output
+      : 0
+    return { contextWindow, usedTokens }
+  }, [displayMessages, selectedModelOption])
+
   const loadOlderMessages = () => {
     const viewport = messageViewportRef.current
     if (viewport) {
@@ -905,6 +933,17 @@ export function ChatView({
     if (!viewport || !shouldFollowMessagesRef.current) return
     viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'auto' })
   }, [displayMessages.length, streamMessages])
+
+  // Sending a message always snaps the view back to the live tail, even if the
+  // user had scrolled up into history; the display-length effect above corrects
+  // to the true bottom once the optimistic message renders.
+  const followMessagesToBottom = () => {
+    shouldFollowMessagesRef.current = true
+    window.requestAnimationFrame(() => {
+      const viewport = messageViewportRef.current
+      if (viewport) viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'auto' })
+    })
+  }
 
   // Error blocks are transient status, not persistent content: auto-dismiss so
   // a stale failure notice doesn't linger over a subsequent successful run.
@@ -1148,9 +1187,7 @@ export function ChatView({
       }
     }
 
-    const source = new EventSource(
-      `/api/sessions/${encodeURIComponent(activeSessionId)}/events`,
-    )
+    const source = new EventSource(`/api/sessions/${encodeURIComponent(activeSessionId)}/events`)
     eventSourceRef.current = source
 
     const onFrameMessage = (event: Event) => {
@@ -1262,8 +1299,7 @@ export function ChatView({
     currentStreamingAssistantIdRef.current = null
     latestStreamingAssistantIdRef.current = null
     streamMessageSequenceRef.current = 0
-    sourceMessageCountAtRunStartRef.current =
-      pendingSourceCountRef.current ?? sourceMessages.length
+    sourceMessageCountAtRunStartRef.current = pendingSourceCountRef.current ?? sourceMessages.length
     pendingSourceCountRef.current = null
     setOptimisticMessage({
       id: `optimistic-user-${Date.now()}`,
@@ -1272,6 +1308,7 @@ export function ChatView({
       attachments: uploadedAttachments,
       timestamp: 'sending',
     })
+    followMessagesToBottom()
     try {
       // The session-level event stream is always connected, so the run's frames
       // arrive through it. Starting a run only kicks off the activity; the
@@ -1376,6 +1413,7 @@ export function ChatView({
       }
       form.setValue('message', '')
       clearAttachments()
+      followMessagesToBottom()
       showToast({
         tone: 'success',
         title: behavior === 'steer' ? 'Steer queued' : 'Follow-up queued',
@@ -1506,7 +1544,6 @@ export function ChatView({
     form.setValue('message', trimmed, { shouldDirty: true })
     await submit()
   }
-
 
   const totalTreeNodes = countTreeNodes(tree)
   const visibleTree = useMemo(
@@ -1835,6 +1872,8 @@ export function ChatView({
             selectedModelOption={selectedModelOption}
             availableModelOptions={availableModelOptions}
             activeSessionCwd={activeSession.cwd}
+            contextWindow={contextUsage?.contextWindow}
+            contextUsedTokens={contextUsage?.usedTokens}
             attachments={attachments}
             slashCommandOptions={slashCommandOptions}
             slashSelection={slashSelection}
@@ -2441,68 +2480,31 @@ function messageOutlineReferences(content: string) {
   return references
 }
 
-// Each glyph runs the same dim → bright → dim color cycle; adjacent glyphs are
-// offset by THINKING_CHAR_STAGGER seconds, so the bright peak travels across the
-// word left → right as a light ripple. Glyphs only change *color* (never
-// opacity), so the text stays fully painted the whole time — nothing vanishes.
-// The dim base is faded well toward the background and the bright peak is the
-// full foreground, so the sweeping highlight reads clearly.
-const THINKING_DIM_COLOR = 'color-mix(in oklch, var(--muted-foreground) 40%, var(--background))'
-const THINKING_BRIGHT_COLOR = 'var(--foreground)'
-const THINKING_SWEEP_SECONDS = 1.5
-const THINKING_CHAR_STAGGER = 0.11
-
-// A word whose glyphs are lit one after another by a bright peak sweeping
-// left → right. Reused by the "Thinking" waiting bubble and the "Working" /
-// activity-title labels so every in-progress state shares the same shimmer.
+// In-progress label lit by the shadcn `shimmer` utility (static under reduced
+// motion, handled by the utility itself). Reused by the "Thinking" waiting
+// bubble and the "Working" / activity-title labels so every in-progress state
+// shares the same effect.
+//
+// The utility's gradient base is `currentColor`, so contrast depends entirely
+// on the text color: at a plain `muted-foreground` base the foreground peak is
+// too close to read. We own the color here (callers pass only layout/size) and
+// force a heavily faded base against a solid-foreground peak, so the sweep
+// travels as a clear dim → bright glint the way the old hand-rolled effect did.
+// Both tokens adapt, so it holds up in light and dark.
 function ShimmerText({ text, className }: { text: string; className?: string }) {
-  const reduceMotion = useReducedMotion()
-  const chars = text.split('')
-
-  if (reduceMotion) {
-    return <span className={className}>{text}</span>
-  }
-
   return (
-    <span aria-label={text} className={cn('inline-flex', className)}>
-      {chars.map((char, index) => (
-        <motion.span
-          key={index}
-          aria-hidden="true"
-          className="whitespace-pre"
-          animate={{
-            color: [
-              THINKING_DIM_COLOR,
-              THINKING_BRIGHT_COLOR,
-              THINKING_DIM_COLOR,
-              THINKING_DIM_COLOR,
-            ],
-          }}
-          transition={{
-            duration: THINKING_SWEEP_SECONDS,
-            ease: 'easeInOut',
-            // Bright peak lands early then decays and holds dim: the highlight
-            // reads as a quick glint passing through rather than a slow fade,
-            // making the sweep more legible.
-            times: [0, 0.18, 0.5, 1],
-            repeat: Infinity,
-            // Negative delay starts each glyph part-way into the cycle, so the
-            // phase offset (and thus the ripple) is present from frame one
-            // instead of building up over the first sweep. Leftmost glyph is
-            // furthest ahead, so the bright peak travels left → right.
-            delay: -((chars.length - 1 - index) * THINKING_CHAR_STAGGER),
-          }}
-        >
-          {char}
-        </motion.span>
-      ))}
+    <span
+      className={cn(
+        className,
+        'shimmer text-muted-foreground/40 shimmer-color-foreground shimmer-duration-1500 shimmer-spread-8',
+      )}
+    >
+      {text}
     </span>
   )
 }
 
 function WaitingBubble({ agentAvatar }: { agentAvatar?: string }) {
-  const reduceMotion = useReducedMotion()
-
   return (
     <Message>
       <MessageAvatar className="bg-transparent">
@@ -2516,23 +2518,14 @@ function WaitingBubble({ agentAvatar }: { agentAvatar?: string }) {
         >
           <span aria-hidden="true" className="flex items-center gap-1">
             {[0, 1, 2].map((index) => (
-              <motion.span
+              <span
                 key={index}
-                className="size-1 rounded-full bg-accent"
-                animate={reduceMotion ? undefined : { y: [0, -4, 0] }}
-                transition={{
-                  duration: 0.9,
-                  // Solid dots bouncing in a relay: each dot springs up then
-                  // settles, staggered so the motion ripples left → right.
-                  ease: [0.45, 0, 0.55, 1],
-                  repeat: Infinity,
-                  repeatDelay: 0.25,
-                  delay: index * 0.15,
-                }}
+                className="thinking-dot size-1 rounded-full bg-accent"
+                style={{ animationDelay: `${index * 0.15}s` }}
               />
             ))}
           </span>
-          <ShimmerText text="Thinking" className="text-muted-foreground" />
+          <ShimmerText text="Thinking" />
         </div>
       </MessageContent>
     </Message>
@@ -2747,7 +2740,10 @@ function ProcessDetailsGroup({
           )}
         </span>
         {isStreaming ? (
-          <ShimmerText text="Working" className="shrink-0 text-xs font-medium" />
+          <ShimmerText
+            text="Working"
+            className="shrink-0 text-xs font-medium text-muted-foreground"
+          />
         ) : (
           <span className="shrink-0 text-xs font-medium text-foreground/85">Activity</span>
         )}
@@ -2973,7 +2969,7 @@ function MessageActivityRow({
         {streaming ? (
           <ShimmerText
             text={title}
-            className="max-w-[36%] shrink-0 overflow-hidden text-xs font-medium"
+            className="max-w-[36%] shrink-0 overflow-hidden text-xs font-medium text-muted-foreground"
           />
         ) : (
           <span className="max-w-[36%] shrink-0 truncate text-xs font-medium text-foreground/85">
@@ -3063,9 +3059,7 @@ function ToolActivityRow({ activity }: { activity: Extract<RunActivity, { kind: 
           {preview}
         </span>
         {result ? (
-          <span className="shrink-0 font-mono text-[9px] text-success uppercase">
-            {status}
-          </span>
+          <span className="shrink-0 font-mono text-[9px] text-success uppercase">{status}</span>
         ) : (
           <ShimmerText
             className="shrink-0 font-mono text-[9px] text-accent uppercase"
@@ -3332,7 +3326,7 @@ function UserMessage({
                 </BubbleContent>
               </Bubble>
             )}
-            <MessageFooter className="justify-end gap-1 px-0 opacity-100 transition-opacity md:opacity-0 md:group-hover/message:opacity-100 md:group-focus-within/message:opacity-100">
+            <MessageFooter className="justify-end gap-1 px-0 opacity-100 transition-opacity md:opacity-0 md:group-focus-within/message:opacity-100 md:group-hover/message:opacity-100">
               <span className="font-mono text-[10px] text-muted-foreground/50">
                 {message.timestamp}
               </span>
@@ -3392,9 +3386,7 @@ function extractRequestId(value: string) {
 }
 
 function humanizeErrorCode(code: string) {
-  return code
-    .replace(/[_-]+/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase())
+  return code.replace(/[_-]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
 function titleFromError(code?: string | null, status?: string | null) {
@@ -3442,13 +3434,14 @@ function parseApiErrorFields(raw: string) {
   const code = raw.match(/"code"\s*:\s*"([^"]+)"/)?.[1] ?? null
   const type = raw.match(/"type"\s*:\s*"([^"]+)"/)?.[1] ?? null
   const message =
-    raw.match(/"message"\s*:\s*"((?:\\.|[^"\\])*)"/)?.[1]?.replace(/\\"/g, '"').replace(/\\n/g, '\n') ??
+    raw
+      .match(/"message"\s*:\s*"((?:\\.|[^"\\])*)"/)?.[1]
+      ?.replace(/\\"/g, '"')
+      .replace(/\\n/g, '\n') ??
     raw.match(/"message"\s*:\s*"([^"]*)/)?.[1] ??
     null
   const requestId =
-    extractRequestId(raw) ??
-    raw.match(/"request[_ ]?id"\s*:\s*"([^"]+)"/i)?.[1] ??
-    null
+    extractRequestId(raw) ?? raw.match(/"request[_ ]?id"\s*:\s*"([^"]+)"/i)?.[1] ?? null
   return { code, type, message, requestId }
 }
 
@@ -3499,9 +3492,7 @@ function parseChatError(rawInput: string): ParsedChatError {
   const fields = parseApiErrorFields(body)
   if (fields.message || fields.code) {
     const cleanMessage =
-      fields.message?.replace(/\s*\(request id:\s*[^)]+\)\s*/i, '').trim() ||
-      fields.message ||
-      raw
+      fields.message?.replace(/\s*\(request id:\s*[^)]+\)\s*/i, '').trim() || fields.message || raw
     return {
       title: titleFromError(fields.code, status),
       message: cleanMessage,
@@ -3514,14 +3505,13 @@ function parseChatError(rawInput: string): ParsedChatError {
   }
 
   const plainMessage = statusPrefix ? body : raw
-  const inferredCode =
-    /rate limit/i.test(plainMessage)
-      ? 'rate_limit_exceeded'
-      : /model not (found|available)|no available channel/i.test(plainMessage)
-        ? 'model_not_found'
-        : /context.*(length|too long)|maximum context/i.test(plainMessage)
-          ? 'context_length_exceeded'
-          : null
+  const inferredCode = /rate limit/i.test(plainMessage)
+    ? 'rate_limit_exceeded'
+    : /model not (found|available)|no available channel/i.test(plainMessage)
+      ? 'model_not_found'
+      : /context.*(length|too long)|maximum context/i.test(plainMessage)
+        ? 'context_length_exceeded'
+        : null
 
   return {
     title: titleFromError(inferredCode, status),

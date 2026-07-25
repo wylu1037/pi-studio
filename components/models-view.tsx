@@ -1053,7 +1053,19 @@ function ModelDialog({
                     >
                       <SelectValue
                         placeholder={loadingModels ? 'Loading models…' : 'Select a model'}
-                      />
+                      >
+                        {field.value
+                          ? (() => {
+                              const selected = availableModels.find(
+                                (item) => item.id === field.value,
+                              )
+                              if (!selected) return field.value
+                              return selected.name === selected.id
+                                ? selected.id
+                                : `${selected.name} · ${selected.id}`
+                            })()
+                          : null}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent align="start">
                       {availableModels.map((item) => (

@@ -63,8 +63,8 @@ export function ImageAttachmentPreview({
       </button>
 
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 bg-background/80 backdrop-blur-sm data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
-        <Dialog.Viewport className="fixed inset-0 flex items-center justify-center p-4 sm:p-8">
+        <Dialog.Backdrop className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
+        <Dialog.Viewport className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-8">
           <Dialog.Popup className="relative flex max-h-full max-w-full flex-col overflow-hidden border border-border-strong bg-card shadow-2xl outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95">
             <Dialog.Title className="sr-only">Image preview: {alt}</Dialog.Title>
             <img

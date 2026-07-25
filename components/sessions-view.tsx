@@ -225,7 +225,11 @@ export function SessionsView({
             }}
           >
             <SelectTrigger size="sm" className="min-w-28">
-              <SelectValue />
+              <SelectValue>
+                {agentFilter === 'all'
+                  ? 'all'
+                  : (agents.find((a) => a.id === agentFilter)?.name ?? agentFilter)}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent align="start">
               <SelectItem value="all">all</SelectItem>
@@ -394,7 +398,7 @@ export function SessionsView({
               onClick={() => setSelected(null)}
               className="absolute inset-0 bg-foreground/20 backdrop-blur-[1px]"
             />
-            <aside className="relative flex h-full w-full max-w-[440px] flex-col border-l border-border bg-panel shadow-[-24px_0_64px_-36px_rgba(0,0,0,0.45)]">
+            <aside className="relative flex h-full w-full max-w-110 flex-col border-l border-border bg-panel shadow-[-24px_0_64px_-36px_rgba(0,0,0,0.45)]">
               <div className="flex items-start justify-between gap-2 border-b border-border px-4 py-3">
                 <div className="min-w-0">
                   <Label>Session detail</Label>

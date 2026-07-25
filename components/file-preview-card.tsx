@@ -43,7 +43,6 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useSidebarOffset } from '@/hooks/use-sidebar-offset'
 
 export type PreviewFileKind =
   | 'pdf'
@@ -128,7 +127,6 @@ export function FilePreviewCard({
   const config = fileKindConfig[kind]
   const Icon = config.icon
   const isScript = config.category === 'script'
-  const sidebarOffset = useSidebarOffset(open)
 
   useEffect(() => {
     if (!open || !isScript) return
@@ -203,11 +201,8 @@ export function FilePreviewCard({
       </AttachmentGroup>
 
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 bg-background/80 backdrop-blur-sm data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
-        <Dialog.Viewport
-          className="fixed inset-y-0 right-0 flex min-h-dvh items-center justify-center p-4 sm:p-8"
-          style={{ left: sidebarOffset }}
-        >
+        <Dialog.Backdrop className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
+        <Dialog.Viewport className="fixed inset-0 z-50 flex min-h-dvh items-center justify-center p-4 sm:p-8">
           <Dialog.Popup className="flex h-[min(86dvh,60rem)] w-[min(94vw,72rem)] flex-col overflow-hidden rounded-xl border border-border-strong bg-card shadow-2xl outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95">
             <header className="flex min-w-0 items-center gap-3 border-b border-border px-3 py-2.5">
               <Icon className="size-4 shrink-0 text-accent" weight="duotone" aria-hidden="true" />

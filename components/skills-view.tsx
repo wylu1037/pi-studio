@@ -98,7 +98,6 @@ export function SkillsView({ agents, skills }: { agents: AgentProfile[]; skills:
   const [viewing, setViewing] = useState<GlobalSkill | null>(null)
   const [assigning, setAssigning] = useState<GlobalSkill | null>(null)
   const [editing, setEditing] = useState<GlobalSkill | null>(null)
-  const [creating, setCreating] = useState(false)
   const [addingFromCommand, setAddingFromCommand] = useState(false)
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [registryQuery, setRegistryQuery] = useState('')
@@ -142,11 +141,6 @@ export function SkillsView({ agents, skills }: { agents: AgentProfile[]; skills:
       alive = false
     }
   }, [showBrowser, registryQuery, registryReloadKey])
-
-  const importManualSkill = () => {
-    setEditing(null)
-    setCreating(true)
-  }
 
   const importRegistrySkill = async (skill: RegistrySkill) => {
     const importKey = registrySkillKey(skill)
@@ -212,10 +206,6 @@ export function SkillsView({ agents, skills }: { agents: AgentProfile[]; skills:
           <Terminal className="size-3.5" />
           Add from command
         </ActionButton>
-        <ActionButton variant="accent" onClick={importManualSkill}>
-          <Download className="size-3.5" />
-          Import
-        </ActionButton>
       </PageHeader>
 
       <div className="flex flex-wrap items-center gap-3 border-b border-border px-6 py-3">
@@ -243,7 +233,7 @@ export function SkillsView({ agents, skills }: { agents: AgentProfile[]; skills:
       {/* Table */}
       <div className="scrollbar-thin flex-1 overflow-y-auto p-6">
         {skills.length === 0 ? (
-          <SkillsEmptyState onBrowse={() => setShowBrowser(true)} onImport={importManualSkill} />
+          <SkillsEmptyState onBrowse={() => setShowBrowser(true)} />
         ) : (
           <Panel>
             <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_112px_176px] items-center gap-4 border-b border-border bg-panel px-4 py-2.5">
@@ -437,15 +427,7 @@ export function SkillsView({ agents, skills }: { agents: AgentProfile[]; skills:
           onToggle={assignSkill}
         />
       )}
-      {(editing || creating) && (
-        <SkillEditor
-          skill={editing}
-          onClose={() => {
-            setEditing(null)
-            setCreating(false)
-          }}
-        />
-      )}
+      {editing && <SkillEditor skill={editing} onClose={() => setEditing(null)} />}
       {addingFromCommand && (
         <CommandImportDialog onClose={() => setAddingFromCommand(false)} />
       )}
@@ -989,7 +971,7 @@ function RegistryEmptyState({ query }: { query: string }) {
   )
 }
 
-function SkillsEmptyState({ onBrowse, onImport }: { onBrowse: () => void; onImport: () => void }) {
+function SkillsEmptyState({ onBrowse }: { onBrowse: () => void }) {
   return (
     <Empty className="py-24">
       <EmptyHeader>
@@ -998,7 +980,7 @@ function SkillsEmptyState({ onBrowse, onImport }: { onBrowse: () => void; onImpo
         </EmptyMedia>
         <EmptyTitle>No skills yet</EmptyTitle>
         <EmptyDescription>
-          Import a local skill or browse skills.sh to build a reusable global skill pool for your
+          Browse skills.sh or add from a command to build a reusable global skill pool for your
           agents.
         </EmptyDescription>
       </EmptyHeader>
@@ -1006,10 +988,6 @@ function SkillsEmptyState({ onBrowse, onImport }: { onBrowse: () => void; onImpo
         <ActionButton onClick={onBrowse}>
           <Search className="size-3.5" />
           Browse skills.sh
-        </ActionButton>
-        <ActionButton variant="accent" onClick={onImport}>
-          <Download className="size-3.5" />
-          Import
         </ActionButton>
       </EmptyContent>
     </Empty>

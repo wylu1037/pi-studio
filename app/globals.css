@@ -133,30 +133,27 @@
     background-color: var(--border-strong);
     border-radius: 4px;
   }
-  /* Loading micro-glow: a highlight sweeps across the text. The gradient's
-     edge colors extend past its stops (no-repeat), so glyphs always keep a
-     color and never blank out as the background scrolls. */
-  .shimmer {
-    background: linear-gradient(
-      100deg,
-      var(--muted-foreground) 40%,
-      var(--foreground) 50%,
-      var(--muted-foreground) 60%
-    );
-    background-size: 200% 100%;
-    background-clip: text;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    color: transparent;
-    animation: shimmer 1.6s linear infinite;
+  /* Waiting-bubble dots: a relay bounce, staggered per dot via inline
+     animation-delay. Pure CSS so it shares the same prefers-reduced-motion
+     gate as the shimmer utility (framer-motion's hook was leaving the dots
+     static while the CSS shimmer kept running). */
+  .thinking-dot {
+    animation: thinking-bounce 1.15s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .thinking-dot {
+      animation: none;
+    }
   }
 }
 
-@keyframes shimmer {
-  from {
-    background-position: 200% 0;
+@keyframes thinking-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
   }
-  to {
-    background-position: -200% 0;
+  30% {
+    transform: translateY(-4px);
   }
 }

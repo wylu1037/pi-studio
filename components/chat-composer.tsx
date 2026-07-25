@@ -35,11 +35,17 @@ import {
   AttachmentActions,
   AttachmentContent,
   AttachmentDescription,
-  AttachmentGroup,
   AttachmentMedia,
   AttachmentTitle,
 } from '@/components/ui/attachment'
 import { Button } from '@/components/ui/button'
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  CarouselNext,
+  CarouselPrevious,
+} from '@/components/ui/carousel'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,6 +58,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { DraftAttachment } from '@/components/use-chat-attachments'
 import { ImageAttachmentPreview, isImageAttachment } from '@/components/image-attachment-preview'
 import type { GlobalModel, GlobalModelProvider, GlobalPromptTemplate } from '@/lib/types'
@@ -104,6 +111,8 @@ export function ChatComposer({
   selectedModelOption,
   availableModelOptions,
   activeSessionCwd,
+  contextWindow,
+  contextUsedTokens,
   attachments,
   slashCommandOptions,
   slashSelection,
@@ -134,6 +143,8 @@ export function ChatComposer({
   selectedModelOption?: ComposerModelOption
   availableModelOptions: ComposerModelOption[]
   activeSessionCwd: string
+  contextWindow?: number
+  contextUsedTokens?: number
   attachments: DraftAttachment[]
   slashCommandOptions: SlashCommandOption[]
   slashSelection: number
@@ -271,63 +282,72 @@ export function ChatComposer({
           />
 
           {attachments.length > 0 && (
-            <AttachmentGroup className="px-3 pt-3">
-              {attachments.map((attachment) => (
-                <Attachment
-                  key={attachment.id}
-                  state={attachment.state}
-                  size="xs"
-                  className="rounded-panel"
-                >
-                  <AttachmentMedia
-                    variant={
-                      isImageAttachment(attachment.file.name, attachment.file.type)
-                        ? 'image'
-                        : 'icon'
-                    }
-                    className="rounded-panel-inner"
-                  >
-                    {isImageAttachment(attachment.file.name, attachment.file.type) ? (
-                      <ImageAttachmentPreview
-                        file={attachment.file}
-                        alt={attachment.file.name}
-                        className="size-full"
-                      />
-                    ) : (
-                      attachmentIcon(attachment.file)
-                    )}
-                  </AttachmentMedia>
-                  <AttachmentContent>
-                    <AttachmentTitle title={attachment.file.name}>
-                      {attachment.file.name}
-                    </AttachmentTitle>
-                    <AttachmentDescription title={attachment.error}>
-                      {attachmentStatus(attachment)}
-                    </AttachmentDescription>
-                  </AttachmentContent>
-                  <AttachmentActions>
-                    {attachment.state === 'error' && (
-                      <AttachmentAction
-                        type="button"
-                        aria-label={`Retry ${attachment.file.name}`}
-                        title="Retry upload"
-                        onClick={() => onRetryAttachment(attachment.id)}
+            <Carousel opts={{ align: 'start' }} className="mx-3 mt-3">
+              <CarouselContent className="-ml-2">
+                {attachments.map((attachment) => (
+                  <CarouselItem key={attachment.id} className="basis-auto pl-2">
+                    <Attachment state={attachment.state} size="xs" className="rounded-panel">
+                      <AttachmentMedia
+                        variant={
+                          isImageAttachment(attachment.file.name, attachment.file.type)
+                            ? 'image'
+                            : 'icon'
+                        }
+                        className="rounded-panel-inner"
                       >
-                        <RefreshCw />
-                      </AttachmentAction>
-                    )}
-                    <AttachmentAction
-                      type="button"
-                      aria-label={`Remove ${attachment.file.name}`}
-                      title="Remove attachment"
-                      onClick={() => onRemoveAttachment(attachment.id)}
-                    >
-                      <X />
-                    </AttachmentAction>
-                  </AttachmentActions>
-                </Attachment>
-              ))}
-            </AttachmentGroup>
+                        {isImageAttachment(attachment.file.name, attachment.file.type) ? (
+                          <ImageAttachmentPreview
+                            file={attachment.file}
+                            alt={attachment.file.name}
+                            className="size-full"
+                          />
+                        ) : (
+                          attachmentIcon(attachment.file)
+                        )}
+                      </AttachmentMedia>
+                      <AttachmentContent>
+                        <AttachmentTitle title={attachment.file.name}>
+                          {attachment.file.name}
+                        </AttachmentTitle>
+                        <AttachmentDescription title={attachment.error}>
+                          {attachmentStatus(attachment)}
+                        </AttachmentDescription>
+                      </AttachmentContent>
+                      <AttachmentActions>
+                        {attachment.state === 'error' && (
+                          <AttachmentAction
+                            type="button"
+                            aria-label={`Retry ${attachment.file.name}`}
+                            title="Retry upload"
+                            onClick={() => onRetryAttachment(attachment.id)}
+                          >
+                            <RefreshCw />
+                          </AttachmentAction>
+                        )}
+                        <AttachmentAction
+                          type="button"
+                          aria-label={`Remove ${attachment.file.name}`}
+                          title="Remove attachment"
+                          onClick={() => onRemoveAttachment(attachment.id)}
+                        >
+                          <X />
+                        </AttachmentAction>
+                      </AttachmentActions>
+                    </Attachment>
+                  </CarouselItem>
+                ))}
+              </CarouselContent>
+              <CarouselPrevious
+                type="button"
+                aria-label="Previous attachments"
+                className="left-1 rounded-panel bg-background/90 shadow-sm disabled:pointer-events-none disabled:opacity-0"
+              />
+              <CarouselNext
+                type="button"
+                aria-label="Next attachments"
+                className="right-1 rounded-panel bg-background/90 shadow-sm disabled:pointer-events-none disabled:opacity-0"
+              />
+            </Carousel>
           )}
 
           <textarea
@@ -364,6 +384,9 @@ export function ChatComposer({
             >
               <Paperclip className="size-4" />
             </button>
+            {contextWindow ? (
+              <ContextMeter contextWindow={contextWindow} usedTokens={contextUsedTokens ?? 0} />
+            ) : null}
             <input type="hidden" {...form.register('providerId')} />
             <input type="hidden" {...form.register('modelId')} />
             <input type="hidden" {...form.register('thinkingLevel')} />
@@ -719,4 +742,115 @@ export function formatFileSize(size: number) {
   if (size < 1024) return `${size} B`
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(size < 10 * 1024 ? 1 : 0)} KB`
   return `${(size / (1024 * 1024)).toFixed(size < 10 * 1024 * 1024 ? 1 : 0)} MB`
+}
+
+function formatCompactTokens(value: number) {
+  if (value < 1000) return String(value)
+  if (value < 1_000_000) return `${(value / 1000).toFixed(value < 10_000 ? 1 : 0)}k`
+  return `${(value / 1_000_000).toFixed(value < 10_000_000 ? 1 : 0)}M`
+}
+
+// A hollow ring that depletes as the context window fills, like a fuel gauge:
+// the arc length is the remaining fraction, so a fuller ring means more room
+// left. It warms from accent → warning → destructive as headroom runs out.
+// Hover reveals the exact used / remaining / window breakdown.
+const CONTEXT_RING_CIRCUMFERENCE = 2 * Math.PI * 8
+
+function ContextMeter({
+  contextWindow,
+  usedTokens,
+}: {
+  contextWindow: number
+  usedTokens: number
+}) {
+  const clampedUsed = Math.min(Math.max(usedTokens, 0), contextWindow)
+  const remainingTokens = contextWindow - clampedUsed
+  const remainingFraction = contextWindow > 0 ? remainingTokens / contextWindow : 0
+  const remainingPercent = Math.round(remainingFraction * 100)
+  const usedPercent = 100 - remainingPercent
+  const severity = remainingPercent <= 8 ? 'critical' : remainingPercent <= 20 ? 'low' : 'ok'
+  const strokeClass =
+    severity === 'critical'
+      ? 'stroke-destructive'
+      : severity === 'low'
+        ? 'stroke-warning'
+        : 'stroke-accent'
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={`Context: ${remainingPercent}% remaining (${remainingTokens.toLocaleString()} of ${contextWindow.toLocaleString()} tokens)`}
+            className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          />
+        }
+      >
+        <svg viewBox="0 0 20 20" className="size-4 -rotate-90" aria-hidden="true">
+          <circle
+            cx="10"
+            cy="10"
+            r="8"
+            fill="none"
+            strokeWidth="3"
+            className="stroke-border-strong/45"
+          />
+          <circle
+            cx="10"
+            cy="10"
+            r="8"
+            fill="none"
+            strokeWidth="3"
+            strokeLinecap="round"
+            className={cn('transition-[stroke-dashoffset,stroke] duration-500', strokeClass)}
+            strokeDasharray={CONTEXT_RING_CIRCUMFERENCE}
+            strokeDashoffset={CONTEXT_RING_CIRCUMFERENCE * (1 - remainingFraction)}
+          />
+        </svg>
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        sideOffset={8}
+        hideArrow
+        className="block w-56 rounded-xl border border-border bg-card p-0 text-foreground shadow-xl"
+      >
+        <div className="flex flex-col gap-2.5 p-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="font-mono text-[10px] tracking-wide text-muted-foreground/70 uppercase">
+              Context
+            </span>
+            <span className="font-mono text-xs text-foreground">{usedPercent}% used</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-border-strong/40">
+            <div
+              className={cn(
+                'h-full rounded-full transition-[width]',
+                severity === 'critical'
+                  ? 'bg-destructive'
+                  : severity === 'low'
+                    ? 'bg-warning'
+                    : 'bg-accent',
+              )}
+              style={{ width: `${Math.min(100, usedPercent)}%` }}
+            />
+          </div>
+          <dl className="flex flex-col gap-1 font-mono text-[11px]">
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-muted-foreground">Used</dt>
+              <dd className="text-foreground">{clampedUsed.toLocaleString()}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-muted-foreground">Remaining</dt>
+              <dd className="text-foreground">{remainingTokens.toLocaleString()}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-1">
+              <dt className="text-muted-foreground">Window</dt>
+              <dd className="text-foreground">{formatCompactTokens(contextWindow)}</dd>
+            </div>
+          </dl>
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  )
 }

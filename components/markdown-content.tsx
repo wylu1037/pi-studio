@@ -4,10 +4,16 @@ import { CodeBlock } from '@/components/code-block'
 import { FilePreviewCard, type PreviewFileKind } from '@/components/file-preview-card'
 import { MermaidDiagram } from '@/components/mermaid-diagram'
 import { MarkdownImage } from '@/components/markdown-image'
+import { MathFormula } from '@/components/math-formula'
 import { parseMarkdown, type MarkdownBlock } from '@/lib/markdown/streaming-markdown'
 import { cn } from '@/lib/utils'
 
-const inlinePattern = /(!?\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_)/g
+// Math delimiters are matched first and as atomic tokens so TeX internals like
+// `x_i`, `a^2`, or `*` are never mistaken for markdown emphasis/code. Order
+// matters: `$$…$$` before `$…$`. Inline `$…$` forbids a leading space and a
+// trailing digit to skip prose currency like "$5 and $10".
+const inlinePattern =
+  /(\$\$[^\n$]+?\$\$|\$(?!\s)[^\n$]+?\$(?!\d)|\\\((?:\\.|[^\n])+?\\\)|!?\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_)/g
 export const markdownContentClassName =
   'max-w-full min-w-0 space-y-3 overflow-hidden text-sm leading-relaxed wrap-break-word text-foreground'
 
@@ -135,7 +141,15 @@ const MarkdownBlockView = memo(function MarkdownBlockView({
     case 'hr':
       return <div className="h-px bg-border" />
     case 'paragraph': {
-      const href = mediaSessionId ? standalonePreviewHref(block.content.trim()) : null
+      const trimmed = block.content.trim()
+      // A paragraph that is nothing but a fenced display formula (possibly
+      // spanning several lines) renders as a centered block, not inline.
+      const displayMath =
+        trimmed.match(/^\$\$([\s\S]+)\$\$$/) ?? trimmed.match(/^\\\[([\s\S]+)\\\]$/)
+      if (displayMath) {
+        return <MathFormula display tex={displayMath[1].trim()} />
+      }
+      const href = mediaSessionId ? standalonePreviewHref(trimmed) : null
       if (mediaSessionId && href) {
         return (
           <FilePreviewCard
@@ -178,6 +192,15 @@ function renderInline(content: string, mediaSessionId?: string): ReactNode[] {
 }
 
 function renderInlineToken(token: string, key: number, mediaSessionId?: string) {
+  if (token.startsWith('$$') && token.endsWith('$$')) {
+    return <MathFormula key={key} display tex={token.slice(2, -2).trim()} />
+  }
+  if (token.startsWith('$') && token.endsWith('$')) {
+    return <MathFormula key={key} tex={token.slice(1, -1).trim()} />
+  }
+  if (token.startsWith('\\(') && token.endsWith('\\)')) {
+    return <MathFormula key={key} tex={token.slice(2, -2).trim()} />
+  }
   if (token.startsWith('`')) {
     const value = token.slice(1, -1).trim()
     const fileKind = getPreviewFileKind(value)

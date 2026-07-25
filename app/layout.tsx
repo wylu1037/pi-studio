@@ -52,7 +52,7 @@ export default async function RootLayout({
                     <SidebarTrigger title="Open navigation" />
                     <span className="font-serif text-base italic">Pi Studio</span>
                   </header>
-                  <div className="min-h-0 flex-1 overflow-hidden">
+                  <div className="min-h-0 flex-1 overflow-hidden contain-[layout]">
                     <RouteTransition>{children}</RouteTransition>
                   </div>
                 </main>

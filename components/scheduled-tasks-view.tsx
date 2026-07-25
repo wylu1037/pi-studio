@@ -601,8 +601,8 @@ export function ScheduledTasksView({
           }}
         >
           <Dialog.Portal>
-            <Dialog.Backdrop className="fixed inset-0 bg-foreground/25 backdrop-blur-[1px] data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
-            <Dialog.Viewport className="fixed inset-0 flex items-center justify-center p-4">
+            <Dialog.Backdrop className="fixed inset-0 z-50 bg-foreground/25 backdrop-blur-[1px] data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
+            <Dialog.Viewport className="fixed inset-0 z-50 flex items-center justify-center p-4">
               <Dialog.Popup className="flex max-h-[90dvh] w-[min(96vw,72rem)] flex-col overflow-hidden border border-border-strong bg-card shadow-2xl outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95">
                 <div className="flex shrink-0 items-center justify-between border-b border-border bg-panel px-5 py-3">
                   <Dialog.Title className="font-serif text-lg text-foreground italic">
