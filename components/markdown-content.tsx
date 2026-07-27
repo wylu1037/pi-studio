@@ -224,10 +224,10 @@ function renderInlineToken(token: string, key: number, mediaSessionId?: string) 
     )
   }
   if (token.startsWith('**') || token.startsWith('__')) {
-    return <strong key={key}>{token.slice(2, -2)}</strong>
+    return <strong key={key}>{renderInline(token.slice(2, -2), mediaSessionId)}</strong>
   }
   if (token.startsWith('*') || token.startsWith('_')) {
-    return <em key={key}>{token.slice(1, -1)}</em>
+    return <em key={key}>{renderInline(token.slice(1, -1), mediaSessionId)}</em>
   }
 
   const link = token.match(/^!?\[([^\]]+)\]\(([^)]+)\)$/)
