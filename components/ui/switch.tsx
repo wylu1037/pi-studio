@@ -6,9 +6,11 @@ import { cn } from '@/lib/utils'
 
 function Switch({
   className,
+  thumbClassName,
   icons,
   ...props
 }: React.ComponentProps<typeof SwitchPrimitive.Root> & {
+  thumbClassName?: string
   icons?: {
     unchecked: React.ReactNode
     checked: React.ReactNode
@@ -32,7 +34,8 @@ function Switch({
           'pointer-events-none block bg-card transition-transform',
           icons
             ? 'h-6 w-9 translate-x-1 shadow-sm data-checked:translate-x-10'
-            : 'size-3.5 translate-x-0.5 data-checked:translate-x-[18px]',
+            : 'size-3.5 translate-x-0.5 data-checked:translate-x-4.5',
+          thumbClassName,
         )}
       />
       {icons && (

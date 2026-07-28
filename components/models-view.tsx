@@ -70,32 +70,42 @@ interface ModelPreset {
 // longest-prefix so variants like `gpt-5.6-turbo` inherit the `gpt-5.6` preset.
 // Values follow each family's published specs and are editable after prefill.
 const MODEL_PRESETS: Record<string, ModelPreset> = {
-  // OpenAI
-  'gpt-5.6': { contextWindow: 400_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
-  'gpt-5.5': { contextWindow: 400_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
-  'gpt-5.4': { contextWindow: 272_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
-  'gpt-5': { contextWindow: 272_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
+  // OpenAI — GPT-5.x are reasoning models; gpt-5.6 alias routes to GPT-5.6 Sol.
+  'gpt-5.6': { contextWindow: 1_050_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
+  'gpt-5.5': { contextWindow: 1_050_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
+  'gpt-5.4': { contextWindow: 1_050_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
+  'gpt-5': { contextWindow: 400_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
   'gpt-4.1': { contextWindow: 1_047_576, maxTokens: 32_768, inputTypes: ['text', 'image'], reasoning: false },
   'gpt-4o': { contextWindow: 128_000, maxTokens: 16_384, inputTypes: ['text', 'image'], reasoning: false },
-  // Anthropic
+  // Anthropic — the claude-opus-4 prefix spans 4.0–4.8; 4.5+ moved to 1M context / 128K output.
+  'claude-opus-4-8': { contextWindow: 1_000_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
+  'claude-opus-4-7': { contextWindow: 1_000_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
+  'claude-opus-4-6': { contextWindow: 1_000_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
+  'claude-opus-4-5': { contextWindow: 1_000_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
   'claude-opus-4': { contextWindow: 200_000, maxTokens: 32_000, inputTypes: ['text', 'image'], reasoning: true },
-  'claude-sonnet-5': { contextWindow: 200_000, maxTokens: 64_000, inputTypes: ['text', 'image'], reasoning: true },
+  'claude-sonnet-5': { contextWindow: 1_000_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
   'claude-sonnet-4': { contextWindow: 200_000, maxTokens: 64_000, inputTypes: ['text', 'image'], reasoning: true },
-  'claude-haiku-4': { contextWindow: 200_000, maxTokens: 32_000, inputTypes: ['text', 'image'], reasoning: false },
+  // No Haiku 4.0 exists; claude-haiku-4 resolves to Haiku 4.5, the first reasoning-capable Haiku.
+  'claude-haiku-4': { contextWindow: 200_000, maxTokens: 64_000, inputTypes: ['text', 'image'], reasoning: true },
   // Google
   'gemini-2.5-pro': { contextWindow: 1_048_576, maxTokens: 65_536, inputTypes: ['text', 'image'], reasoning: true },
   'gemini-2.5-flash': { contextWindow: 1_048_576, maxTokens: 65_536, inputTypes: ['text', 'image'], reasoning: true },
-  // Zhipu GLM
-  'glm-5.2': { contextWindow: 200_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
-  'glm-5.1': { contextWindow: 200_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
-  'glm-4.6': { contextWindow: 200_000, maxTokens: 128_000, inputTypes: ['text'], reasoning: true },
-  // xAI Grok
-  'grok-4.5': { contextWindow: 256_000, maxTokens: 32_768, inputTypes: ['text', 'image'], reasoning: true },
+  // Zhipu GLM — text-only (vision lives in separate GLM-V variants); output cap 128K = 131072.
+  'glm-5.2': { contextWindow: 1_000_000, maxTokens: 131_072, inputTypes: ['text'], reasoning: true },
+  'glm-5.1': { contextWindow: 200_000, maxTokens: 131_072, inputTypes: ['text'], reasoning: true },
+  'glm-4.6': { contextWindow: 200_000, maxTokens: 131_072, inputTypes: ['text'], reasoning: true },
+  // xAI Grok — no published output cap; maxTokens is a sane default bounded by the context window.
+  'grok-4.5': { contextWindow: 500_000, maxTokens: 32_768, inputTypes: ['text', 'image'], reasoning: true },
   'grok-4': { contextWindow: 256_000, maxTokens: 32_768, inputTypes: ['text', 'image'], reasoning: true },
-  // DeepSeek
-  'deepseek-v4-pro': { contextWindow: 128_000, maxTokens: 8_192, inputTypes: ['text'], reasoning: true },
+  // DeepSeek — text-only; V3 is a non-reasoning chat model.
+  'deepseek-v4-pro': { contextWindow: 1_000_000, maxTokens: 384_000, inputTypes: ['text'], reasoning: true },
   'deepseek-v3': { contextWindow: 128_000, maxTokens: 8_192, inputTypes: ['text'], reasoning: false },
-  'deepseek-r1': { contextWindow: 128_000, maxTokens: 8_192, inputTypes: ['text'], reasoning: true },
+  'deepseek-r1': { contextWindow: 128_000, maxTokens: 32_768, inputTypes: ['text'], reasoning: true },
+  // Moonshot Kimi
+  // K3: 1M shared context; max_completion_tokens defaults to 131072 (hard cap is 1M − prompt).
+  // Native vision and always-on max reasoning.
+  'kimi-k3': { contextWindow: 1_048_576, maxTokens: 131_072, inputTypes: ['text', 'image'], reasoning: true },
+  'kimi-k2-thinking': { contextWindow: 262_144, maxTokens: 100_352, inputTypes: ['text'], reasoning: true },
 }
 
 function findModelPreset(modelId: string): ModelPreset | undefined {

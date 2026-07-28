@@ -10,7 +10,10 @@ import {
   type Ref,
 } from 'react'
 import type { UseFormReturn } from 'react-hook-form'
+import { Popover } from '@base-ui/react/popover'
+import { Slider } from '@base-ui/react/slider'
 import {
+  Brain,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -58,6 +61,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { DraftAttachment } from '@/components/use-chat-attachments'
 import { ImageAttachmentPreview, isImageAttachment } from '@/components/image-attachment-preview'
@@ -66,7 +70,13 @@ import { cn } from '@/lib/utils'
 
 export const thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 const codexThinkingLevels = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+const reasoningEffortLevels = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 export const COMPOSER_MAX_HEIGHT = 176
+
+// Shared by every icon button on the composer's action row so they keep one
+// footprint and only light up on hover.
+const composerIconButtonClass =
+  'flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30 active:scale-[0.98]'
 
 export type ComposerValues = {
   message: string
@@ -378,12 +388,13 @@ export function ChatComposer({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98]"
+              className={composerIconButtonClass}
               aria-label="Attach files"
               title="Attach files"
             >
-              <Paperclip className="size-4" />
+              <Paperclip className="size-4" strokeWidth={1.75} />
             </button>
+            <ReasoningControl form={form} thinking={thinking} selected={selectedModelOption} />
             {contextWindow ? (
               <ContextMeter contextWindow={contextWindow} usedTokens={contextUsedTokens ?? 0} />
             ) : null}
@@ -637,6 +648,188 @@ function reasoningLabel(level: (typeof thinkingLevels)[number]) {
     max: 'Ultra',
   }
   return labels[level]
+}
+
+// Square icon button beside the attach control (mirrors Claude Code's composer):
+// opens a popover with a thinking on/off switch and a discrete effort slider.
+// Both write the shared `thinkingLevel` form field, so the model dropdown and
+// hidden input stay in sync.
+function ReasoningControl({
+  form,
+  thinking,
+  selected,
+}: {
+  form: UseFormReturn<ComposerValues>
+  thinking: (typeof thinkingLevels)[number]
+  selected?: ComposerModelOption
+}) {
+  const supportsReasoning = selected?.model.reasoning ?? false
+  const reasoningOn = supportsReasoning && thinking !== 'off'
+  const [lastActiveLevel, setLastActiveLevel] = useState<(typeof reasoningEffortLevels)[number]>(
+    thinking !== 'off' ? thinking : 'medium',
+  )
+
+  useEffect(() => {
+    if (thinking !== 'off') setLastActiveLevel(thinking)
+  }, [thinking])
+
+  const setLevel = (level: (typeof thinkingLevels)[number]) => {
+    form.setValue('thinkingLevel', level, { shouldDirty: true, shouldValidate: true })
+  }
+
+  const effortLevel = thinking !== 'off' ? thinking : lastActiveLevel
+
+  return (
+    <Popover.Root>
+      <Popover.Trigger
+        aria-label="Reasoning settings"
+        title={
+          supportsReasoning
+            ? `Reasoning: ${reasoningLabel(thinking)}`
+            : 'This model is not marked as a reasoning model'
+        }
+        className={composerIconButtonClass}
+      >
+        <Brain className="size-4" strokeWidth={1.75} />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Positioner side="top" sideOffset={8} align="start" className="z-50">
+          <Popover.Popup className="w-72 origin-(--transform-origin) rounded-xl border border-border-strong bg-popover p-1 text-popover-foreground shadow-xl duration-150 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95">
+            <div className="flex min-h-9 items-center justify-between gap-3 rounded-lg px-2.5 py-1.5">
+              <span className="text-[13px] font-medium text-foreground">Thinking</span>
+              <Switch
+                checked={reasoningOn}
+                onCheckedChange={(checked) => setLevel(checked ? lastActiveLevel : 'off')}
+                disabled={!supportsReasoning}
+                aria-label="Toggle thinking"
+                className="rounded-full border-transparent bg-border-strong/70 data-checked:border-transparent data-checked:bg-accent"
+                thumbClassName="rounded-full shadow-sm"
+              />
+            </div>
+            <div
+              className={cn(
+                'flex min-h-9 items-center justify-between gap-3 rounded-lg px-2.5 py-1.5 transition-opacity',
+                !reasoningOn && 'opacity-45',
+              )}
+            >
+              <span className="text-[13px] font-medium whitespace-nowrap text-foreground">
+                Effort{' '}
+                <span className="text-muted-foreground">({reasoningLabel(effortLevel)})</span>
+              </span>
+              <EffortSlider
+                level={effortLevel}
+                disabled={!reasoningOn}
+                onLevelChange={(level) => setLevel(level)}
+              />
+            </div>
+            {!supportsReasoning && (
+              <p className="mx-1 border-t border-border/60 px-1.5 pt-1.5 pb-1 text-[11px] leading-4 text-muted-foreground">
+                {selected
+                  ? `${selected.model.name ?? selected.model.id} is not marked as a reasoning model, so thinking stays off.`
+                  : 'Select a model to configure reasoning.'}
+              </p>
+            )}
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
+  )
+}
+
+// Discrete effort track styled after the Switch: a filled capsule with a dot per
+// level and a thumb that snaps between positions, where the visible knob is
+// smaller than its positioning box so it keeps an even rim on all sides — like
+// the switch thumb, which never touches the track edges. The thumb *box* equals
+// the track height (h-4.5 = 18px) and is `edge`-aligned, so at the extremes the
+// box sits flush against the capsule ends; the visible knob (12px) is centered
+// inside that box, leaving a 3px rim all around (including the right side at
+// `max`, which the full-width blue fill shows through). Snap positions land at
+// `boxRadius + (100% - box) * ratio`, which the fill and dots both use.
+const EFFORT_BOX_SIZE = 18
+const EFFORT_KNOB_SIZE = 12
+
+function EffortSlider({
+  level,
+  disabled,
+  onLevelChange,
+}: {
+  level: (typeof reasoningEffortLevels)[number]
+  disabled: boolean
+  onLevelChange: (level: (typeof reasoningEffortLevels)[number]) => void
+}) {
+  const lastIndex = reasoningEffortLevels.length - 1
+  const index = Math.max(0, reasoningEffortLevels.indexOf(level))
+
+  return (
+    <Slider.Root
+      value={index}
+      min={0}
+      max={lastIndex}
+      step={1}
+      largeStep={1}
+      disabled={disabled}
+      thumbAlignment="edge-client-only"
+      onValueChange={(value) => {
+        const next = reasoningEffortLevels[Array.isArray(value) ? value[0] : value]
+        if (next) onLevelChange(next)
+      }}
+      aria-label="Reasoning effort"
+      className="shrink-0"
+    >
+      <Slider.Control className="flex h-4.5 w-28 touch-none items-center rounded-full bg-border-strong/60 select-none data-disabled:bg-border-strong/40">
+        <Slider.Track className="group/track h-full w-full">
+          {/* Fill the full track height (a rounded capsule) and extend it to the
+              thumb-box's right edge, so the blue wraps all the way around the
+              knob — the left fill continues past the knob to its right rim, not
+              just to its center. Width = box + (100% - box) * ratio, so at `max`
+              (ratio 1) the fill spans the whole track (blue rounded end) and at
+              `minimal` (ratio 0) it's just the box-sized cap around the knob. */}
+          <span
+            aria-hidden="true"
+            className={cn(
+              'pointer-events-none absolute inset-y-0 left-0 rounded-full',
+              // Smoothly grow/shrink when the level snaps to a new stop. Killed
+              // mid-drag (data-dragging on the track) so the fill tracks the
+              // pointer 1:1, and disabled under prefers-reduced-motion.
+              'transition-[width] duration-200 ease-out group-data-dragging/track:transition-none motion-reduce:transition-none',
+              disabled ? 'bg-border-strong/70' : 'bg-accent',
+            )}
+            style={{
+              width: `calc(${EFFORT_BOX_SIZE}px + (100% - ${EFFORT_BOX_SIZE}px) * ${index / lastIndex})`,
+            }}
+          />
+          {reasoningEffortLevels.map((tick, tickIndex) => (
+            <span
+              key={tick}
+              aria-hidden="true"
+              className={cn(
+                'pointer-events-none absolute top-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full',
+                disabled
+                  ? 'bg-foreground/25'
+                  : tickIndex <= index
+                    ? 'bg-accent-foreground/50'
+                    : 'bg-foreground/25',
+              )}
+              style={{
+                left: `calc(${EFFORT_BOX_SIZE / 2}px + (100% - ${EFFORT_BOX_SIZE}px) * ${tickIndex / lastIndex})`,
+              }}
+            />
+          ))}
+          {/* Thumb box equals the track height for edge alignment; the visible
+              knob is smaller and centered, leaving an even rim on all sides. */}
+          <Slider.Thumb
+            className="flex items-center justify-center outline-none select-none has-focus-visible:ring-2 has-focus-visible:ring-ring/60 has-focus-visible:rounded-full [transition:inset-inline-start_200ms_ease-out] group-data-dragging/track:transition-none motion-reduce:transition-none"
+            style={{ width: EFFORT_BOX_SIZE, height: EFFORT_BOX_SIZE }}
+          >
+            <span
+              className="rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.35),0_0_0_0.5px_rgba(0,0,0,0.08)]"
+              style={{ width: EFFORT_KNOB_SIZE, height: EFFORT_KNOB_SIZE }}
+            />
+          </Slider.Thumb>
+        </Slider.Track>
+      </Slider.Control>
+    </Slider.Root>
+  )
 }
 
 function SlashCommandMenu({
