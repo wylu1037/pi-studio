@@ -9,6 +9,7 @@ import {
   getSessionRunController,
   peekSessionRunController,
 } from '@/lib/chat/session-run-controller'
+import { getExtensionUiBroker, subscribeExtensionUi } from '@/lib/chat/extension-ui-broker'
 import { runNpx } from '@/lib/npx'
 import { loadPiPackageCatalog } from '@/lib/packages/pi-dev-gallery'
 import { materializeInstalledSkill, removeStoredSkill, studioRootDir } from '@/lib/skills/store'
@@ -774,6 +775,22 @@ api.get('/sessions/:id/events', async (c) => {
       notify()
     })
 
+    // Extension-UI snapshots ride the same connection instead of a 900ms client
+    // poll. These frames carry no sequence id (there is nothing to replay: the
+    // latest snapshot is always self-contained), so they go out on their own
+    // `extension_ui` event rather than through the sequenced writeFrame path.
+    let pendingExtensionUi = false
+    const flushExtensionUi = async () => {
+      pendingExtensionUi = false
+      const snapshot = getExtensionUiBroker(sessionId)?.snapshot(0)
+      if (!snapshot) return
+      await stream.writeSSE({ event: 'extension_ui', data: JSON.stringify(snapshot) })
+    }
+    const unsubscribeExtensionUi = subscribeExtensionUi(sessionId, () => {
+      pendingExtensionUi = true
+      notify()
+    })
+
     // Replay buffered frames the client missed (same-process reconnect).
     for (const entry of controller.bufferedFrames(afterSequence)) {
       await writeFrame(entry)
@@ -785,6 +802,10 @@ api.get('/sessions/:id/events', async (c) => {
       event: 'state',
       data: JSON.stringify(controller.stateFrame()),
     })
+
+    // Push the current extension-UI snapshot once on connect so a client that
+    // joined after the extension mutated state still renders it immediately.
+    if (getExtensionUiBroker(sessionId)) await flushExtensionUi()
 
     stream.onAbort(() => {
       aborted = true
@@ -800,10 +821,11 @@ api.get('/sessions/:id/events', async (c) => {
           const entry = queue.shift()
           if (entry) await writeFrame(entry)
         }
+        if (!aborted && pendingExtensionUi) await flushExtensionUi()
         if (aborted) break
         await new Promise<void>((resolve) => {
           wake = resolve
-          if (aborted || queue.length > 0) {
+          if (aborted || queue.length > 0 || pendingExtensionUi) {
             wake = null
             resolve()
           }
@@ -812,6 +834,7 @@ api.get('/sessions/:id/events', async (c) => {
     } finally {
       clearInterval(heartbeat)
       unsubscribe()
+      unsubscribeExtensionUi()
     }
   })
 })
@@ -2096,8 +2119,22 @@ api.openapi(
     request: { params: z.object({ id: z.string() }) },
     responses: { 200: json(z.object({ ok: z.boolean() })) },
   }),
-  (c) => {
-    deleteSession(c.req.valid('param').id)
+  async (c) => {
+    const id = c.req.valid('param').id
+    // Free in-memory run state before dropping the DB row. Abort any live run so
+    // the SDK session can be disposed (a running session refuses dispose), then
+    // evict the broker + run controller so deleting a session does not leak the
+    // SDK session, extension-UI broker, and its 300-frame ring buffer forever.
+    const controller = peekSessionRunController(id)
+    if (controller?.getSnapshot().running) await controller.abort()
+    const { disposeSdkSession, disposeSessionRunController } = await import(
+      '@/lib/chat/sdk-session-manager'
+    )
+    const { disposeExtensionUiSession } = await import('@/lib/chat/extension-ui-broker')
+    disposeSdkSession(id)
+    disposeSessionRunController(id)
+    disposeExtensionUiSession(id)
+    deleteSession(id)
     return c.json({ ok: true })
   },
 )

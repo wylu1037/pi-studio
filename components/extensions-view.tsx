@@ -31,6 +31,7 @@ import {
   Tag,
   TextInput,
 } from '@/components/pi-ui'
+import { Spinner } from '@/components/ui/spinner'
 import {
   Select,
   SelectContent,
@@ -837,6 +838,7 @@ function ExtensionDetails({
                       disabled={assigningAgentId === agent.id}
                       onClick={() => void toggleAssignment(agent)}
                     >
+                      {assigningAgentId === agent.id && <Spinner />}
                       {assigningAgentId === agent.id ? 'Saving' : assigned ? 'Unassign' : 'Assign'}
                     </ActionButton>
                   </div>
@@ -1548,7 +1550,7 @@ function CreateExtensionModal({
             disabled={creating || !name.trim()}
             onClick={() => void create()}
           >
-            <Plus size={14} />
+            {creating ? <Spinner /> : <Plus size={14} />}
             {creating ? 'Creating' : 'Create extension'}
           </ActionButton>
         </div>

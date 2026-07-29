@@ -9,7 +9,6 @@ import {
   Folder,
   FolderOpen,
   GitBranch,
-  LoaderCircle,
   Pencil,
   Plus,
   RotateCcw,
@@ -31,6 +30,7 @@ import {
   Tag,
   TextInput,
 } from '@/components/pi-ui'
+import { Spinner } from '@/components/ui/spinner'
 import {
   Empty,
   EmptyContent,
@@ -921,7 +921,7 @@ function EnvFileDrawer({
                   disabled={versionPending}
                   className="active:scale-[0.98]"
                 >
-                  <Save className="size-3.5" />
+                  {pending === 'save' ? <Spinner /> : <Save className="size-3.5" />}
                   {pending === 'save' ? 'Saving' : 'Save to disk'}
                 </ActionButton>
               ) : (
@@ -937,7 +937,7 @@ function EnvFileDrawer({
                   disabled={versionPending}
                   className="active:scale-[0.98]"
                 >
-                  <Save className="size-3.5" />
+                  {pending === 'save' ? <Spinner /> : <Save className="size-3.5" />}
                   {pending === 'save' ? 'Saving' : 'Save draft'}
                 </ActionButton>
                 <ActionButton
@@ -946,7 +946,7 @@ function EnvFileDrawer({
                   disabled={versionPending}
                   className="active:scale-[0.98]"
                 >
-                  <Check className="size-3.5" />
+                  {pending === 'save-activate' ? <Spinner /> : <Check className="size-3.5" />}
                   {pending === 'save-activate' ? 'Activating' : 'Save & activate'}
                 </ActionButton>
               </>
@@ -1096,7 +1096,7 @@ function AddEnvFileDialog({
             disabled={!path.trim() || pending || choosing}
             className="active:scale-[0.98]"
           >
-            <Plus className="size-3.5" />
+            {pending ? <Spinner /> : <Plus className="size-3.5" />}
             {pending ? 'Adding' : 'Add file'}
           </ActionButton>
         </footer>
@@ -1215,7 +1215,7 @@ function EnvFilePickerDialog({
           >
             {loading && !directory ? (
               <div className="flex h-full items-center justify-center gap-2 font-mono text-xs text-muted-foreground">
-                <LoaderCircle className="size-4 animate-spin" />
+                <Spinner className="size-4" />
                 Loading files
               </div>
             ) : error ? (

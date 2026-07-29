@@ -53,7 +53,7 @@ import {
   type StreamingContentBatch,
 } from '@/components/use-streaming-markdown'
 import { WorkspaceExplorer } from '@/components/workspace-explorer'
-import { ExtensionUiHost } from '@/components/extension-ui-host'
+import { ExtensionUiHost, type ExtensionUiSnapshot } from '@/components/extension-ui-host'
 import { ChatAvatar } from '@/components/chat-avatar'
 import { ChatMessageOutline, type ChatMessageOutlineEntry } from '@/components/chat-message-outline'
 import { useProfileSettings } from '@/components/use-profile-settings'
@@ -232,6 +232,7 @@ export function ChatView({
   const [extensionCommands, setExtensionCommands] = useState<
     Array<{ name: string; description?: string }>
   >([])
+  const [extensionUiSnapshot, setExtensionUiSnapshot] = useState<ExtensionUiSnapshot | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
   const currentStreamingAssistantIdRef = useRef<string | null>(null)
   const latestStreamingAssistantIdRef = useRef<string | null>(null)
@@ -472,45 +473,46 @@ export function ChatView({
       .map((extension) => extension.name)
   }, [activeAgent?.selectedExtensionIds, extensions])
 
+  // Extension commands are effectively static per session — they change only
+  // when an extension (re)loads, which happens on session entry and as a run
+  // brings extensions online. So we fetch once per session and once more on each
+  // run-state transition, instead of the old fixed 2.5s poll that ran forever
+  // even while the app sat idle.
   useEffect(() => {
+    if (!activeSession) return
     let active = true
-    let timer: number | undefined
     const load = async () => {
-      if (!activeSession) return
       try {
         const response = await fetch(
           `/api/sessions/${encodeURIComponent(activeSession.id)}/extensions`,
           { cache: 'no-store' },
         )
-        if (response.ok) {
-          const snapshot = (await response.json()) as {
-            extensions: Array<{
-              commands: Array<{ name: string; description?: string }>
-            }>
-          }
-          if (active) {
-            const commands = snapshot.extensions.flatMap((extension) => extension.commands)
-            setExtensionCommands(
-              commands.filter(
-                (command, index) =>
-                  commands.findIndex((candidate) => candidate.name === command.name) === index,
-              ),
-            )
-          }
-        } else if (active) {
-          setExtensionCommands([])
+        if (!response.ok) {
+          if (active) setExtensionCommands([])
+          return
         }
+        const snapshot = (await response.json()) as {
+          extensions: Array<{
+            commands: Array<{ name: string; description?: string }>
+          }>
+        }
+        if (!active) return
+        const commands = snapshot.extensions.flatMap((extension) => extension.commands)
+        setExtensionCommands(
+          commands.filter(
+            (command, index) =>
+              commands.findIndex((candidate) => candidate.name === command.name) === index,
+          ),
+        )
       } catch {
         if (active) setExtensionCommands([])
       }
-      if (active) timer = window.setTimeout(load, 2500)
     }
     void load()
     return () => {
       active = false
-      if (timer) window.clearTimeout(timer)
     }
-  }, [activeSession])
+  }, [activeSession, sdkSessionRunning])
 
   const createNewSession = async () => {
     if (!activeAgent || creatingSession || clearingSession) return
@@ -844,6 +846,15 @@ export function ChatView({
     return hasPersistedOptimisticMessage ? sourceMessages : [...sourceMessages, optimisticMessage]
   }, [optimisticMessage, sourceMessages])
 
+  // `displayMessages` (persisted + optimistic + live stream) stays defined for
+  // the cheap consumers below (context meter, empty-state check, scroll length).
+  // The EXPENSIVE derivations — `buildDisplayItems` and especially
+  // `buildMessageOutlineEntries`, which allocates a full content-string cache key
+  // per message — deliberately do NOT read it. They hang off `baseMessages`
+  // (persisted + optimistic user), which is referentially stable between tokens,
+  // so a streaming delta no longer forces an O(total messages) rebuild. The live
+  // turn is derived separately from `streamMessages` and rendered as a tail; only
+  // that small subtree recomputes per token.
   const displayMessages = useMemo(
     () =>
       hasPersistedRun
@@ -851,18 +862,33 @@ export function ChatView({
         : [...baseMessages, ...streamMessages.filter((message) => message.content)],
     [baseMessages, hasPersistedRun, streamMessages],
   )
-  const hiddenMessageCount = Math.max(0, displayMessages.length - visibleMessageLimit)
-  const visibleDisplayMessages = useMemo(
-    () => (hiddenMessageCount > 0 ? displayMessages.slice(-visibleMessageLimit) : displayMessages),
-    [displayMessages, hiddenMessageCount, visibleMessageLimit],
+  const hiddenMessageCount = Math.max(0, baseMessages.length - visibleMessageLimit)
+  const visibleBaseMessages = useMemo(
+    () => (hiddenMessageCount > 0 ? baseMessages.slice(-visibleMessageLimit) : baseMessages),
+    [baseMessages, hiddenMessageCount, visibleMessageLimit],
   )
-  const displayItems = useMemo(
-    () => buildDisplayItems(visibleDisplayMessages),
-    [visibleDisplayMessages],
+  const baseDisplayItems = useMemo(
+    () => buildDisplayItems(visibleBaseMessages),
+    [visibleBaseMessages],
+  )
+  const liveDisplayItems = useMemo(
+    () =>
+      hasPersistedRun
+        ? []
+        : buildDisplayItems(streamMessages.filter((message) => message.content)),
+    [hasPersistedRun, streamMessages],
+  )
+  const baseOutlineEntries = useMemo(
+    () => buildMessageOutlineEntries(baseDisplayItems),
+    [baseDisplayItems],
+  )
+  const liveOutlineEntries = useMemo(
+    () => buildMessageOutlineEntries(liveDisplayItems),
+    [liveDisplayItems],
   )
   const messageOutlineEntries = useMemo(
-    () => buildMessageOutlineEntries(displayItems),
-    [displayItems],
+    () => (liveOutlineEntries.length > 0 ? [...baseOutlineEntries, ...liveOutlineEntries] : baseOutlineEntries),
+    [baseOutlineEntries, liveOutlineEntries],
   )
 
   // Live context-window occupancy for the composer meter. The most recent
@@ -1045,6 +1071,10 @@ export function ChatView({
     const activeSessionId = activeSession?.id
     if (!activeSessionId) return
 
+    // A new session starts with no extension-UI state; the stream re-pushes the
+    // current snapshot on connect if the broker already has one.
+    setExtensionUiSnapshot(null)
+
     const handlePiEvent = (event: PiRunEvent) => {
       switch (event.type) {
         case 'assistant_message_start': {
@@ -1141,6 +1171,19 @@ export function ChatView({
 
     const finishActivity = (error?: string) => {
       finishAllStreamingMarkdown()
+      // Settle any still-'streaming' rows to 'now'. Process rows (thinking/tool/
+      // bash) never get their timestamp flipped elsewhere — only assistant rows do,
+      // on assistant_message_end — so the turn-level "Working" shimmer (gated on
+      // `messages.some(m => m.timestamp === 'streaming')`) would keep animating
+      // until the persisted-run effect eventually clears streamMessages. Flip them
+      // here so the shimmer stops the instant the run ends, not a refresh later.
+      setStreamMessages((current) =>
+        current.some((message) => message.timestamp === 'streaming')
+          ? current.map((message) =>
+              message.timestamp === 'streaming' ? { ...message, timestamp: 'now' } : message,
+            )
+          : current,
+      )
       setActivityId(null)
       setSdkSessionRunning(false)
       setSdkSessionQueueReady(false)
@@ -1200,12 +1243,27 @@ export function ChatView({
       }
     }
 
+    // Extension-UI snapshots ride the same stream on their own event. They are
+    // self-contained (the broker always sends its full current snapshot), so we
+    // just replace the held snapshot; the host applies one-shot side effects.
+    const onExtensionUiMessage = (event: Event) => {
+      const data = (event as MessageEvent).data
+      if (typeof data !== 'string' || !data) return
+      try {
+        setExtensionUiSnapshot(JSON.parse(data) as ExtensionUiSnapshot)
+      } catch {
+        // Ignore malformed frames; the stream stays open for the next message.
+      }
+    }
+
     source.addEventListener('frame', onFrameMessage)
     source.addEventListener('state', onFrameMessage)
+    source.addEventListener('extension_ui', onExtensionUiMessage)
 
     return () => {
       source.removeEventListener('frame', onFrameMessage)
       source.removeEventListener('state', onFrameMessage)
+      source.removeEventListener('extension_ui', onExtensionUiMessage)
       source.close()
       if (eventSourceRef.current === source) eventSourceRef.current = null
     }
@@ -1784,7 +1842,41 @@ export function ChatView({
                   Load {Math.min(MESSAGE_LIMIT_INCREMENT, hiddenMessageCount)} older messages
                 </button>
               )}
-              {displayItems.map((item) => {
+              {/* Persisted + optimistic history. Referentially stable between
+                  tokens, so React skips reconciling this whole list while a reply
+                  streams — only the live tail below re-renders per delta. */}
+              {baseDisplayItems.map((item) => {
+                const anchorId = messageOutlineAnchorId(item)
+                if (item.type === 'assistant-turn') {
+                  return (
+                    <div key={item.id} id={anchorId} data-message-outline-anchor>
+                      <AssistantTurn
+                        messages={item.messages}
+                        agentAvatar={activeAgent.icon}
+                        mediaSessionId={activeSession.id}
+                        streamStartedAt={null}
+                        isStreaming={false}
+                        streamingMarkdown={undefined}
+                      />
+                    </div>
+                  )
+                }
+
+                return (
+                  <div key={item.message.id} id={anchorId} data-message-outline-anchor>
+                    <StandaloneMessage
+                      message={item.message}
+                      userAvatar={userAvatar}
+                      mediaSessionId={activeSession.id}
+                      canEdit={!isRunningRun && !clearingSession}
+                      onResubmit={resubmitEditedUserMessage}
+                    />
+                  </div>
+                )
+              })}
+              {/* Live tail: only present mid-run. Isolated so its per-token
+                  re-render never touches the history list above. */}
+              {liveDisplayItems.map((item) => {
                 const anchorId = messageOutlineAnchorId(item)
                 if (item.type === 'assistant-turn') {
                   const isStreaming = item.messages.some(
@@ -1864,6 +1956,7 @@ export function ChatView({
             extensionUi={
               <ExtensionUiHost
                 sessionId={activeSession.id}
+                snapshot={extensionUiSnapshot}
                 onEditorText={applyExtensionEditorText}
               />
             }
@@ -2391,6 +2484,23 @@ function buildDisplayItems(messages: ChatMessage[]): DisplayItem[] {
   return items
 }
 
+// Outline previews/references run several regexes per message. Streaming pushes
+// a fresh `displayMessages` array every frame, so without memoization every
+// historical message is re-scanned on each frame — O(history) work per token.
+// These bounded FIFO caches (keyed by the stable message content) turn repeat
+// lookups into O(1); only the one actively streaming message misses each frame.
+const OUTLINE_CACHE_LIMIT = 400
+const outlinePreviewCache = new Map<string, string>()
+const outlineReferencesCache = new Map<string, string[]>()
+
+function setOutlineCache<V>(cache: Map<string, V>, key: string, value: V) {
+  if (cache.size >= OUTLINE_CACHE_LIMIT) {
+    const oldestKey = cache.keys().next().value
+    if (oldestKey !== undefined) cache.delete(oldestKey)
+  }
+  cache.set(key, value)
+}
+
 function messageOutlineAnchorId(item: DisplayItem) {
   return `chat-message-${item.type === 'assistant-turn' ? item.id : item.message.id}`
 }
@@ -2445,6 +2555,10 @@ function buildMessageOutlineEntries(items: DisplayItem[]): ChatMessageOutlineEnt
 }
 
 function messageOutlinePreview(content: string, maxLength: number) {
+  const cacheKey = `${maxLength}\u0000${content}`
+  const cached = outlinePreviewCache.get(cacheKey)
+  if (cached !== undefined) return cached
+
   const preview = content
     .replace(/```[\s\S]*?```/g, ' code block ')
     .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1 image')
@@ -2453,10 +2567,15 @@ function messageOutlinePreview(content: string, maxLength: number) {
     .replace(/\s+/g, ' ')
     .trim()
 
-  return preview.length > maxLength ? `${preview.slice(0, maxLength).trimEnd()}…` : preview
+  const result = preview.length > maxLength ? `${preview.slice(0, maxLength).trimEnd()}…` : preview
+  setOutlineCache(outlinePreviewCache, cacheKey, result)
+  return result
 }
 
 function messageOutlineReferences(content: string) {
+  const cached = outlineReferencesCache.get(content)
+  if (cached) return cached
+
   const references: string[] = []
   const addReference = (value: string) => {
     const normalized = value.trim().replace(/^.*[\\/]/, '')
@@ -2467,16 +2586,19 @@ function messageOutlineReferences(content: string) {
     /\[([^\]]+\.(?:tsx?|jsx?|css|json|ya?ml|md|cjs|mjs)(?::\d+)?)\]\([^)]+\)/gi,
   )) {
     addReference(match[1])
-    if (references.length === 2) return references
-  }
-
-  for (const match of content.matchAll(
-    /`([^`\n]+\.(?:tsx?|jsx?|css|json|ya?ml|md|cjs|mjs)(?::\d+)?)`/gi,
-  )) {
-    addReference(match[1])
     if (references.length === 2) break
   }
 
+  if (references.length < 2) {
+    for (const match of content.matchAll(
+      /`([^`\n]+\.(?:tsx?|jsx?|css|json|ya?ml|md|cjs|mjs)(?::\d+)?)`/gi,
+    )) {
+      addReference(match[1])
+      if (references.length === 2) break
+    }
+  }
+
+  setOutlineCache(outlineReferencesCache, content, references)
   return references
 }
 
@@ -2967,10 +3089,12 @@ function MessageActivityRow({
           {meta.icon}
         </span>
         {streaming ? (
-          <ShimmerText
-            text={title}
-            className="max-w-[36%] shrink-0 overflow-hidden text-xs font-medium text-muted-foreground"
-          />
+          // Static (not shimmer) while streaming: the turn-level "Working"
+          // label already carries the animated in-progress cue, so per-row
+          // shimmer only multiplies background-clip:text repaints for no signal.
+          <span className="max-w-[36%] shrink-0 truncate text-xs font-medium text-muted-foreground">
+            {title}
+          </span>
         ) : (
           <span className="max-w-[36%] shrink-0 truncate text-xs font-medium text-foreground/85">
             {title}
@@ -3283,7 +3407,7 @@ function UserMessage({
             <textarea
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              className="min-h-20 w-full resize-none bg-transparent text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60"
+              className="scrollbar-thin min-h-20 w-full resize-none bg-transparent text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60"
               autoFocus
               disabled={submitting}
               rows={Math.min(12, Math.max(3, draft.split('\n').length))}
@@ -3321,8 +3445,10 @@ function UserMessage({
           <>
             {message.content && (
               <Bubble variant="secondary" align="end" className="max-w-[85%]">
-                <BubbleContent className="px-3.5 py-2.5 whitespace-pre-wrap text-foreground">
-                  {message.content}
+                <BubbleContent className="p-0">
+                  <ScrollArea viewportClassName="max-h-72 px-3.5 py-2.5">
+                    <div className="whitespace-pre-wrap text-foreground">{message.content}</div>
+                  </ScrollArea>
                 </BubbleContent>
               </Bubble>
             )}

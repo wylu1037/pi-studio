@@ -94,7 +94,7 @@ export function syncAgentRuntime(input: PiRunInput) {
     )
   }
 
-  writeJson(join(agentDir, 'models.json'), { ...modelsJson, providers }, 0o600)
+  writeJsonIfChanged(join(agentDir, 'models.json'), { ...modelsJson, providers }, 0o600)
   return agentDir
 }
 
@@ -141,7 +141,7 @@ function syncSettingsJson(agentDir: string, input: PiRunInput) {
     : input.provider
   const model = input.model ?? input.providerConfig?.models?.[0]?.id
 
-  writeJson(
+  writeJsonIfChanged(
     settingsPath,
     {
       ...settings,
@@ -162,7 +162,7 @@ function syncSettingsJson(agentDir: string, input: PiRunInput) {
 }
 
 function syncMcpConfig(agentDir: string, input: PiRunInput) {
-  writeJson(
+  writeJsonIfChanged(
     join(agentDir, 'pi-studio-mcp.json'),
     {
       agent: {
@@ -197,8 +197,52 @@ function readJsonObject(path: string) {
   }
 }
 
-function writeJson(path: string, value: unknown, mode?: number) {
-  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, { mode })
+/**
+ * Write JSON only when the meaningful content differs from what is already on
+ * disk. Runtime sync runs on every prompt, but the provider/settings/MCP config
+ * rarely changes between prompts — rewriting identical files each turn is
+ * needless disk churn. Volatile bookkeeping fields (e.g. `syncedAt`) are
+ * stripped before comparison so a fresh timestamp alone never forces a write;
+ * the timestamp is only refreshed when something real changed.
+ */
+export function writeJsonIfChanged(path: string, value: unknown, mode?: number) {
+  const next = `${JSON.stringify(value, null, 2)}\n`
+  if (existsSync(path)) {
+    try {
+      const current = readFileSync(path, 'utf8')
+      if (current === next) return
+      if (stableJson(current) === stableJson(next)) return
+    } catch {
+      // Unreadable/corrupt file — fall through and rewrite it.
+    }
+  }
+  writeFileSync(path, next, { mode })
+}
+
+/**
+ * Canonical JSON string with volatile fields removed, for content comparison.
+ * Returns a sentinel on parse failure so an unparseable current file never
+ * compares equal to a valid next payload.
+ */
+function stableJson(text: string) {
+  try {
+    return JSON.stringify(stripVolatile(JSON.parse(text)))
+  } catch {
+    return null
+  }
+}
+
+const VOLATILE_KEYS = new Set(['syncedAt'])
+
+function stripVolatile(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripVolatile)
+  const record = asRecord(value)
+  if (!record) return value
+  return Object.fromEntries(
+    Object.entries(record)
+      .filter(([key]) => !VOLATILE_KEYS.has(key))
+      .map(([key, nested]) => [key, stripVolatile(nested)]),
+  )
 }
 
 function asRecord(value: unknown) {

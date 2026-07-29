@@ -30,6 +30,7 @@ import {
   Tag,
   TextInput,
 } from '@/components/pi-ui'
+import { Spinner } from '@/components/ui/spinner'
 import {
   Empty,
   EmptyContent,
@@ -105,7 +106,7 @@ export function AgentsDashboard({
         subtitle="Named configuration profiles. Each agent bundles its own skills, prompts, and model range."
       >
         <ActionButton variant="accent" onClick={createNewAgent} disabled={pendingId === 'new'}>
-          <Plus className="size-3.5" />
+          {pendingId === 'new' ? <Spinner /> : <Plus className="size-3.5" />}
           New Agent
         </ActionButton>
       </PageHeader>
@@ -296,7 +297,11 @@ function AgentCard({
             onClick={() => onDuplicate(agent.id)}
             disabled={pendingId === `duplicate:${agent.id}`}
           >
-            <Copy className="size-3.5" />
+            {pendingId === `duplicate:${agent.id}` ? (
+              <Spinner className="size-3.5" />
+            ) : (
+              <Copy className="size-3.5" />
+            )}
           </ActionButton>
           <ActionButton
             variant="ghost"

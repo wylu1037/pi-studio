@@ -36,21 +36,39 @@ export function ChatMessageOutline({
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null)
   const [availableHeight, setAvailableHeight] = useState(280)
   const outlineRef = useRef<HTMLElement>(null)
+  const entriesRef = useRef(entries)
+  const entryCount = entries.length
+
+  // Streaming produces a fresh `entries` array on every frame. The scroll/resize
+  // handler reads entries through a ref so the binding effect below does NOT
+  // depend on the array identity — otherwise it would tear down and re-create the
+  // scroll listener + ResizeObservers (and force a synchronous layout) ~60 times
+  // a second while a reply streams in. The binding effect only re-runs when the
+  // number of turns changes; live active-entry tracking is driven by the scroll
+  // event and the ResizeObserver as content grows.
+  useEffect(() => {
+    entriesRef.current = entries
+  }, [entries])
 
   useEffect(() => {
     const viewport = viewportRef.current
-    if (!viewport || entries.length === 0) {
+    if (!viewport || entryCount === 0) {
       setActiveId(null)
       return
     }
 
     let frame = 0
     const updateActiveEntry = () => {
+      const currentEntries = entriesRef.current
+      if (currentEntries.length === 0) {
+        setActiveId(null)
+        return
+      }
       const viewportRect = viewport.getBoundingClientRect()
       const threshold = viewportRect.top + Math.min(viewport.clientHeight * 0.32, 220)
-      let nextActiveId = entries[0].id
+      let nextActiveId = currentEntries[0].id
 
-      for (const entry of entries) {
+      for (const entry of currentEntries) {
         const anchor = document.getElementById(entry.anchorId)
         if (!anchor) continue
         if (anchor.getBoundingClientRect().top <= threshold) nextActiveId = entry.id
@@ -76,7 +94,7 @@ export function ChatMessageOutline({
       viewport.removeEventListener('scroll', scheduleUpdate)
       resizeObserver.disconnect()
     }
-  }, [entries, viewportRef])
+  }, [viewportRef, entryCount])
 
   useEffect(() => {
     const outline = outlineRef.current

@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
-import { createModelRuntimeSignature } from './pi-adapter'
+import { createModelRuntimeSignature, writeJsonIfChanged } from './pi-adapter'
 import { createPiRunEventParser, parseSdkEvent } from './pi-events'
 
 const usage = {
@@ -41,6 +44,54 @@ test('model runtime signature changes with provider connection or model configur
   assert.equal(createModelRuntimeSignature(base), createModelRuntimeSignature(reordered))
   assert.notEqual(createModelRuntimeSignature(base), createModelRuntimeSignature(changedUrl))
   assert.notEqual(createModelRuntimeSignature(base), createModelRuntimeSignature(changedModel))
+})
+
+test('writeJsonIfChanged skips rewrites when only a volatile timestamp differs', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pi-adapter-'))
+  try {
+    const path = join(dir, 'settings.json')
+    const payload = (syncedAt: string) => ({
+      defaultModel: 'model-a',
+      piStudioActiveAgent: { id: 'agent-1', syncedAt },
+    })
+
+    writeJsonIfChanged(path, payload('2026-07-28T00:00:00.000Z'))
+    const firstWrite = statSync(path).mtimeMs
+    const firstContent = readFileSync(path, 'utf8')
+
+    // Same meaningful content, only the volatile syncedAt changed → no rewrite.
+    writeJsonIfChanged(path, payload('2026-07-28T01:00:00.000Z'))
+    assert.equal(statSync(path).mtimeMs, firstWrite)
+    assert.equal(readFileSync(path, 'utf8'), firstContent)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('writeJsonIfChanged rewrites when meaningful content changes', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pi-adapter-'))
+  try {
+    const path = join(dir, 'settings.json')
+    writeJsonIfChanged(path, { defaultModel: 'model-a', syncedAt: 't1' })
+    writeJsonIfChanged(path, { defaultModel: 'model-b', syncedAt: 't2' })
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as { defaultModel: string }
+    assert.equal(parsed.defaultModel, 'model-b')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('writeJsonIfChanged rewrites an unparseable existing file', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pi-adapter-'))
+  try {
+    const path = join(dir, 'settings.json')
+    writeFileSync(path, '{ not valid json')
+    writeJsonIfChanged(path, { defaultModel: 'model-a' })
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as { defaultModel: string }
+    assert.equal(parsed.defaultModel, 'model-a')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 test('uses SDK text deltas across assistant messages separated by a tool call', () => {

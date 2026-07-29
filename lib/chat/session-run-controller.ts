@@ -326,3 +326,14 @@ export function getSessionRunController(sessionId: string) {
 export function peekSessionRunController(sessionId: string) {
   return controllers().get(sessionId) ?? null
 }
+
+/**
+ * Drop the controller for a session that is gone for good (session deleted).
+ * Not called on idle SDK-session teardown: the controller is designed to
+ * outlive the SDK session so a reconnecting client can replay its ring buffer.
+ * Only a definitive "session no longer exists" event should evict it, otherwise
+ * the registry grows unbounded with one buffered controller per deleted session.
+ */
+export function disposeSessionRunController(sessionId: string) {
+  controllers().delete(sessionId)
+}

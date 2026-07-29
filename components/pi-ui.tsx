@@ -3,6 +3,7 @@
 import type React from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { cn } from '@/lib/utils'
+import { Spinner } from '@/components/ui/spinner'
 
 /* Uppercase tracked mono label used for section headers */
 export function Label({ children, className }: { children: React.ReactNode; className?: string }) {
@@ -339,6 +340,7 @@ export function ConfirmDialog({
                 {cancelLabel}
               </ActionButton>
               <ActionButton variant="danger" onClick={onConfirm} disabled={busy}>
+                {busy && <Spinner />}
                 {confirmLabel}
               </ActionButton>
             </div>

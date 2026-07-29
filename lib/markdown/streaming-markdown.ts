@@ -415,7 +415,13 @@ export class StreamingMarkdownAssembler {
   private readonly segmentsById = new Map<string, MutableSegment>()
   private segmentsInternal: MutableSegment[] = []
   private segmentsSnapshot: readonly StreamingMarkdownSegment[] = Object.freeze([])
-  private committedBlocksSnapshot: readonly MarkdownBlock[] = Object.freeze([])
+  /**
+   * The flattened committed-block view is only read by `committedBlocks` (tests
+   * and non-grouping consumers); the streaming UI renders `segment.committedBlocks`
+   * per segment. Building it eagerly on every append meant an O(total blocks)
+   * `flatMap` per delta. Instead we mark it dirty here and rebuild lazily on read.
+   */
+  private committedBlocksSnapshot: readonly MarkdownBlock[] | null = Object.freeze([])
   private active: MutableSegment | undefined
   private isFinished = false
 
@@ -441,8 +447,16 @@ export class StreamingMarkdownAssembler {
     return this.active?.snapshot
   }
 
-  /** Flattens committed blocks for consumers that do not need content-part grouping. */
+  /**
+   * Flattens committed blocks for consumers that do not need content-part
+   * grouping. Built lazily and cached: the streaming UI only reads each
+   * segment's own `committedBlocks`, so paying for a full `flatMap` on every
+   * delta (as the eager snapshot did) was pure waste on the hot append path.
+   */
   get committedBlocks(): readonly MarkdownBlock[] {
+    this.committedBlocksSnapshot ??= Object.freeze(
+      this.segmentsInternal.flatMap((segment) => segment.committedBlocks),
+    )
     return this.committedBlocksSnapshot
   }
 
@@ -585,9 +599,9 @@ export class StreamingMarkdownAssembler {
 
   private refreshSegmentsSnapshot() {
     this.segmentsSnapshot = Object.freeze(this.segmentsInternal.map((segment) => segment.snapshot))
-    this.committedBlocksSnapshot = Object.freeze(
-      this.segmentsInternal.flatMap((segment) => segment.committedBlocks),
-    )
+    // Invalidate only. The flattened view is rebuilt lazily in the getter, so a
+    // per-delta append no longer pays a full flatMap it may never be read.
+    this.committedBlocksSnapshot = null
   }
 
   private assertNotFinished() {

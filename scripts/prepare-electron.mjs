@@ -48,8 +48,22 @@ function internalizeStandaloneLinks(directory) {
 
 internalizeStandaloneLinks(web)
 
-rmSync(join(web, '.env'), { force: true })
-rmSync(join(web, 'drizzle'), { recursive: true, force: true })
+// Drop artifacts that Next.js may trace into the standalone output but that the
+// packaged app never needs. Without this, electron-builder output (dist) and
+// prior staging trees snowball into each subsequent build.
+const prunablePaths = [
+  '.env',
+  'drizzle',
+  'dist',
+  '.electron-staging',
+  'out',
+  'build',
+  'videos',
+  'docs',
+]
+for (const entry of prunablePaths) {
+  rmSync(join(web, entry), { recursive: true, force: true })
+}
 
 const targets = [
   [join(root, '.next', 'static'), join(web, '.next', 'static')],

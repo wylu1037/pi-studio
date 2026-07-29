@@ -26,6 +26,7 @@ import {
   Panel,
   PanelHeader,
 } from '@/components/pi-ui'
+import { Spinner } from '@/components/ui/spinner'
 import type { AgentProfile, AgentSessionSummary } from '@/lib/types'
 import { deleteApiSessionsId } from '@/lib/api/generated/clients/deleteApiSessionsId'
 import { postApiSessions } from '@/lib/api/generated/clients/postApiSessions'
@@ -515,7 +516,11 @@ export function SessionsView({
                   onClick={() => duplicateSession(selected)}
                   disabled={pending === `duplicate:${selected.id}`}
                 >
-                  <Copy className="size-3.5" />
+                  {pending === `duplicate:${selected.id}` ? (
+                    <Spinner className="size-3.5" />
+                  ) : (
+                    <Copy className="size-3.5" />
+                  )}
                 </ActionButton>
                 <ActionButton
                   variant="danger"
@@ -641,6 +646,7 @@ export function SessionsView({
                 variant="accent"
                 disabled={!newAgentId || !newSessionName.trim() || pending === 'new'}
               >
+                {pending === 'new' && <Spinner />}
                 {pending === 'new' ? 'Creating' : 'Create session'}
               </ActionButton>
             </div>
@@ -705,6 +711,7 @@ export function SessionsView({
                   !editName.trim() || !editCwd.trim() || pending === `edit:${editTarget.id}`
                 }
               >
+                {pending === `edit:${editTarget.id}` && <Spinner />}
                 Save changes
               </ActionButton>
             </div>

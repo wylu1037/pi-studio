@@ -19,7 +19,6 @@ import {
   Puzzle,
   ChevronUp,
   Folder,
-  LoaderCircle,
   MessageSquare,
   GitBranch,
   Clock,
@@ -50,6 +49,7 @@ import {
   TextInput,
   BracketButton,
 } from '@/components/pi-ui'
+import { Spinner } from '@/components/ui/spinner'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -792,7 +792,7 @@ function ModelsTab({
                                     aria-hidden="true"
                                   >
                                     {modelPending ? (
-                                      <LoaderCircle className="size-2.5 animate-spin" />
+                                      <Spinner className="size-2.5" />
                                     ) : (
                                       modelEnabled && <Check className="size-2.5" />
                                     )}
@@ -850,8 +850,8 @@ function ModelsTab({
                     <TableCell className="border-l border-border p-4 align-middle whitespace-normal">
                       <div className="flex flex-col items-center justify-center gap-2.5 text-center">
                         {providerPending ? (
-                          <LoaderCircle
-                            className="size-4 animate-spin text-muted-foreground"
+                          <Spinner
+                            className="size-4 text-muted-foreground"
                             aria-label={`Updating ${provider.name}`}
                           />
                         ) : (
@@ -1203,6 +1203,7 @@ function SettingsTab({
           Delete agent
         </ActionButton>
         <ActionButton variant="accent" type="submit" disabled={isSubmitting}>
+          {isSubmitting && <Spinner />}
           Save changes
         </ActionButton>
       </div>
@@ -1336,7 +1337,7 @@ function DirectoryPickerDialog({
           <div className="h-72 overflow-y-auto border border-border bg-panel">
             {loading && !directory ? (
               <div className="flex h-full items-center justify-center gap-2 font-mono text-xs text-muted-foreground">
-                <LoaderCircle className="size-4 animate-spin" />
+                <Spinner className="size-4" />
                 Loading folders
               </div>
             ) : error ? (

@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { NumberField } from '@/components/ui/number-field'
+import { Spinner } from '@/components/ui/spinner'
 import {
   Empty,
   EmptyContent,
@@ -78,6 +79,10 @@ const MODEL_PRESETS: Record<string, ModelPreset> = {
   'gpt-4.1': { contextWindow: 1_047_576, maxTokens: 32_768, inputTypes: ['text', 'image'], reasoning: false },
   'gpt-4o': { contextWindow: 128_000, maxTokens: 16_384, inputTypes: ['text', 'image'], reasoning: false },
   // Anthropic — the claude-opus-4 prefix spans 4.0–4.8; 4.5+ moved to 1M context / 128K output.
+  // Fable 5 / Mythos 5 are the Mythos-class tier above Opus and share one underlying model.
+  'claude-opus-5': { contextWindow: 1_000_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
+  'claude-fable-5': { contextWindow: 1_000_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
+  'claude-mythos-5': { contextWindow: 1_000_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
   'claude-opus-4-8': { contextWindow: 1_000_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
   'claude-opus-4-7': { contextWindow: 1_000_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
   'claude-opus-4-6': { contextWindow: 1_000_000, maxTokens: 128_000, inputTypes: ['text', 'image'], reasoning: true },
@@ -630,7 +635,7 @@ function ProviderDetail({
           </div>
           <div className="flex items-center gap-2">
             <ActionButton onClick={testProvider} disabled={pending === 'test'}>
-              <Zap className="size-3.5" />
+              {pending === 'test' ? <Spinner /> : <Zap className="size-3.5" />}
               {pending === 'test' ? 'Testing' : 'Test connection'}
             </ActionButton>
             <ActionButton onClick={setDefault} disabled={pending === 'default'}>
@@ -638,8 +643,8 @@ function ProviderDetail({
               {provider.isDefault ? 'Unset default' : 'Set default'}
             </ActionButton>
             <ActionButton variant="accent" type="submit" disabled={isSubmitting}>
-              <Save className="size-3.5" />
-              Save
+              {isSubmitting ? <Spinner /> : <Save className="size-3.5" />}
+              {isSubmitting ? 'Saving' : 'Save'}
             </ActionButton>
             <ActionButton
               variant="danger"
@@ -1205,7 +1210,14 @@ function ModelDialog({
             Cancel
           </ActionButton>
           <ActionButton variant="accent" type="submit" disabled={busy}>
-            {mode === 'add' ? 'Add model' : 'Save model'}
+            {busy ? <Spinner /> : null}
+            {busy
+              ? mode === 'add'
+                ? 'Adding model'
+                : 'Saving model'
+              : mode === 'add'
+                ? 'Add model'
+                : 'Save model'}
           </ActionButton>
         </footer>
       </form>

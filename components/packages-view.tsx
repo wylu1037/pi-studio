@@ -17,7 +17,6 @@ import {
   GitFork,
   Package as PackageIcon,
   Download,
-  LoaderCircle,
   Folder,
   Globe2,
   HardDrive,
@@ -54,6 +53,7 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Spinner } from '@/components/ui/spinner'
 
 const statusTone: Record<PackageStatus, 'success' | 'warning' | 'accent' | 'danger'> = {
   installed: 'success',
@@ -609,12 +609,8 @@ function SearchCatalogView({ initialCatalog }: { initialCatalog: PiPackageCatalo
             </select>
             <div className="flex gap-2">
               <ActionButton variant="accent" type="submit" disabled={loading}>
-                {loading ? (
-                  <LoaderCircle className="size-3.5 animate-spin" />
-                ) : (
-                  <Search className="size-3.5" />
-                )}
-                Search
+                {loading ? <Spinner /> : <Search className="size-3.5" />}
+                {loading ? 'Searching' : 'Search'}
               </ActionButton>
               <ActionButton
                 type="button"
@@ -751,12 +747,8 @@ function CatalogPackageCard({
             $ pi install {pkg.source}
           </code>
           <ActionButton variant="accent" onClick={onInstall} disabled={installing}>
-            {installing ? (
-              <LoaderCircle className="size-3.5 animate-spin" />
-            ) : (
-              <Download className="size-3.5" />
-            )}
-            Install
+            {installing ? <Spinner /> : <Download className="size-3.5" />}
+            {installing ? 'Installing' : 'Install'}
           </ActionButton>
         </div>
       </div>

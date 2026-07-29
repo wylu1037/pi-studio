@@ -46,8 +46,30 @@ const languageLoaders: Record<SupportedCodeLanguage, LanguageLoader> = {
 
 let highlighterPromise: ReturnType<typeof createHighlighterCore> | null = null
 const languageLoadPromises = new Map<SupportedCodeLanguage, Promise<void>>()
+// LRU over highlighted HTML keyed by `language\0code`. Insertion order is the
+// recency order: a cache hit re-inserts the key so it moves to the newest slot,
+// and eviction always drops `keys().next()` (the oldest). A plain FIFO evicted
+// blocks a user was still scrolling past in a long thread, forcing re-highlight;
+// LRU keeps the on-screen working set warm instead.
 const highlightedCodeCache = new Map<string, string>()
-const HIGHLIGHT_CACHE_LIMIT = 120
+const HIGHLIGHT_CACHE_LIMIT = 300
+
+function readHighlightCache(cacheKey: string) {
+  const cached = highlightedCodeCache.get(cacheKey)
+  if (cached === undefined) return undefined
+  // Promote to most-recently-used.
+  highlightedCodeCache.delete(cacheKey)
+  highlightedCodeCache.set(cacheKey, cached)
+  return cached
+}
+
+function writeHighlightCache(cacheKey: string, html: string) {
+  if (highlightedCodeCache.size >= HIGHLIGHT_CACHE_LIMIT) {
+    const oldestKey = highlightedCodeCache.keys().next().value
+    if (oldestKey) highlightedCodeCache.delete(oldestKey)
+  }
+  highlightedCodeCache.set(cacheKey, html)
+}
 
 function getHighlighter() {
   highlighterPromise ??= createHighlighterCore({
@@ -74,7 +96,7 @@ async function ensureLanguage(language: SupportedCodeLanguage) {
 
 async function highlightCode(code: string, language: SupportedCodeLanguage) {
   const cacheKey = `${language}\u0000${code}`
-  const cached = highlightedCodeCache.get(cacheKey)
+  const cached = readHighlightCache(cacheKey)
   if (cached) return cached
 
   await ensureLanguage(language)
@@ -84,11 +106,7 @@ async function highlightCode(code: string, language: SupportedCodeLanguage) {
     theme: 'github-light-default',
   })
 
-  if (highlightedCodeCache.size >= HIGHLIGHT_CACHE_LIMIT) {
-    const oldestKey = highlightedCodeCache.keys().next().value
-    if (oldestKey) highlightedCodeCache.delete(oldestKey)
-  }
-  highlightedCodeCache.set(cacheKey, html)
+  writeHighlightCache(cacheKey, html)
   return html
 }
 
@@ -135,7 +153,7 @@ export function CodeBlock({
       }
     }
 
-    const cached = highlightedCodeCache.get(cacheKey)
+    const cached = readHighlightCache(cacheKey)
     if (cached) {
       setHighlightState({ cacheKey, html: cached, status: 'ready' })
       return () => {

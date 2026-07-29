@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Dialog } from '@base-ui/react/dialog'
 import { CalendarClock, Pencil, Play, Trash2, X } from 'lucide-react'
 import { ActionButton, ConfirmDialog, Label, Panel, Tag, TextInput } from '@/components/pi-ui'
+import { Spinner } from '@/components/ui/spinner'
 import {
   Select,
   SelectContent,
@@ -547,7 +548,11 @@ export function ScheduledTasksView({
                                 disabled={pending !== null}
                                 className="inline-flex size-7 items-center justify-center border border-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground disabled:opacity-40"
                               >
-                                <Play className="size-3.5" />
+                                {pending === `run:${task.id}` ? (
+                                  <Spinner className="size-3.5" />
+                                ) : (
+                                  <Play className="size-3.5" />
+                                )}
                               </button>
                               <button
                                 type="button"
@@ -1028,6 +1033,7 @@ function TaskEditor({
               type="submit"
               disabled={pending || agents.length === 0 || !form.providerId || !form.modelId}
             >
+              {pending && <Spinner />}
               Save task
             </ActionButton>
           </div>

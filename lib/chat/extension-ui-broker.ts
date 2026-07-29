@@ -32,6 +32,8 @@ type PendingInteraction = ExtensionUiInteraction & {
   removeAbort?: () => void
 }
 
+type ExtensionUiListener = () => void
+
 class ExtensionUiBroker {
   private pending = new Map<string, PendingInteraction>()
   private notifications: ExtensionUiNotification[] = []
@@ -50,7 +52,30 @@ class ExtensionUiBroker {
   private hiddenThinkingLabel: string | undefined
   private toolsExpanded = false
 
+  private notifyScheduled = false
+
   constructor(readonly sessionId: string) {}
+
+  /**
+   * Coalesce the many synchronous mutations an extension performs in one tick
+   * (e.g. setStatus + setWidget + notify) into a single listener fan-out on the
+   * microtask boundary, so the SSE stream emits one snapshot per burst.
+   *
+   * Listeners live in a module-level registry keyed by session id, not on the
+   * broker instance: a broker is disposed and recreated across a single
+   * long-lived SSE connection, so an instance-scoped listener set would be lost
+   * on the first `dispose`. The registry lets a subscriber outlive the broker.
+   */
+  private notifyChange() {
+    if (this.notifyScheduled) return
+    const listeners = listenerRegistry().get(this.sessionId)
+    if (!listeners || listeners.size === 0) return
+    this.notifyScheduled = true
+    queueMicrotask(() => {
+      this.notifyScheduled = false
+      for (const listener of listenerRegistry().get(this.sessionId) ?? []) listener()
+    })
+  }
 
   private request(
     input: Omit<ExtensionUiInteraction, 'id' | 'createdAt' | 'expiresAt'>,
@@ -66,6 +91,7 @@ class ExtensionUiBroker {
         clearTimeout(pending.timeout)
         pending.removeAbort?.()
         this.pending.delete(id)
+        this.notifyChange()
         resolve(value)
       }
       const timeout = setTimeout(
@@ -81,6 +107,7 @@ class ExtensionUiBroker {
         timeout,
       }
       this.pending.set(id, interaction)
+      this.notifyChange()
       if (options?.signal) {
         const abort = () => complete(input.type === 'confirm' ? false : undefined)
         options.signal.addEventListener('abort', abort, { once: true })
@@ -109,21 +136,26 @@ class ExtensionUiBroker {
       })
       if (this.notifications.length > 100)
         this.notifications.splice(0, this.notifications.length - 100)
+      this.notifyChange()
     },
     onTerminalInput: () => () => undefined,
     setStatus: (key: string, text: string | undefined) => {
       if (text === undefined) this.statuses.delete(key)
       else this.statuses.set(key, text)
+      this.notifyChange()
     },
     setWorkingMessage: (message?: string) => {
       this.workingMessage = message
+      this.notifyChange()
     },
     setWorkingVisible: (visible: boolean) => {
       this.workingVisible = visible
+      this.notifyChange()
     },
     setWorkingIndicator: () => undefined,
     setHiddenThinkingLabel: (label?: string) => {
       this.hiddenThinkingLabel = label
+      this.notifyChange()
     },
     setWidget: (
       key: string,
@@ -142,11 +174,13 @@ class ExtensionUiBroker {
           'warning',
         )
       }
+      this.notifyChange()
     },
     setFooter: () => undefined,
     setHeader: () => undefined,
     setTitle: (title: string) => {
       this.title = title
+      this.notifyChange()
     },
     custom: async <T>() => {
       this.uiContext.notify('This extension requested a TUI-only custom component.', 'warning')
@@ -156,11 +190,13 @@ class ExtensionUiBroker {
       this.editorText += text
       this.editorRevision += 1
       this.editorCommand = { revision: this.editorRevision, mode: 'append', text }
+      this.notifyChange()
     },
     setEditorText: (text: string) => {
       this.editorText = text
       this.editorRevision += 1
       this.editorCommand = { revision: this.editorRevision, mode: 'set', text }
+      this.notifyChange()
     },
     getEditorText: () => this.editorText,
     addAutocompleteProvider: () => undefined,
@@ -175,6 +211,7 @@ class ExtensionUiBroker {
     getToolsExpanded: () => this.toolsExpanded,
     setToolsExpanded: (expanded: boolean) => {
       this.toolsExpanded = expanded
+      this.notifyChange()
     },
   } as ExtensionUIContext
 
@@ -216,11 +253,39 @@ class ExtensionUiBroker {
 
 declare global {
   var __piStudioExtensionUiBrokers: Map<string, ExtensionUiBroker> | undefined
+  var __piStudioExtensionUiListeners: Map<string, Set<ExtensionUiListener>> | undefined
 }
 
 function brokers() {
   globalThis.__piStudioExtensionUiBrokers ??= new Map()
   return globalThis.__piStudioExtensionUiBrokers
+}
+
+function listenerRegistry() {
+  globalThis.__piStudioExtensionUiListeners ??= new Map()
+  return globalThis.__piStudioExtensionUiListeners
+}
+
+/**
+ * Subscribe to a session's extension-UI change notifications. The subscription
+ * is keyed by session id and survives broker dispose/recreate, so a single
+ * long-lived SSE connection stays subscribed across the SDK session lifecycle.
+ * Returns an unsubscribe function.
+ */
+export function subscribeExtensionUi(sessionId: string, listener: ExtensionUiListener) {
+  const registry = listenerRegistry()
+  let listeners = registry.get(sessionId)
+  if (!listeners) {
+    listeners = new Set()
+    registry.set(sessionId, listeners)
+  }
+  listeners.add(listener)
+  return () => {
+    const current = registry.get(sessionId)
+    if (!current) return
+    current.delete(listener)
+    if (current.size === 0) registry.delete(sessionId)
+  }
 }
 
 export function getOrCreateExtensionUiBroker(sessionId: string) {
@@ -239,4 +304,18 @@ export function disposeExtensionUiBroker(sessionId: string) {
   const broker = brokers().get(sessionId)
   broker?.destroy()
   brokers().delete(sessionId)
+}
+
+/**
+ * Evict everything for a session that is gone for good (session deleted).
+ * Unlike `disposeExtensionUiBroker` (called on idle SDK-session teardown), this
+ * also drops the listener registry entry. Normal SSE disconnects self-clean via
+ * the unsubscribe callback, but a deleted session may leave a stale set behind
+ * (e.g. its SSE never closing cleanly), so evict it explicitly. Do NOT call this
+ * on idle teardown: the registry is meant to outlive broker dispose/recreate so
+ * a reconnecting client stays subscribed.
+ */
+export function disposeExtensionUiSession(sessionId: string) {
+  disposeExtensionUiBroker(sessionId)
+  listenerRegistry().delete(sessionId)
 }

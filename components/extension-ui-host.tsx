@@ -17,7 +17,7 @@ type Interaction = {
   expiresAt: string
 }
 
-type ExtensionUiSnapshot = {
+export type ExtensionUiSnapshot = {
   interactions: Interaction[]
   notifications: Array<{
     id: number
@@ -37,62 +37,57 @@ type ExtensionUiSnapshot = {
   editorCommand?: { revision: number; mode: 'set' | 'append'; text: string }
 }
 
+// The snapshot now arrives via the session event stream (see chat-view's
+// EventSource `extension_ui` handler) instead of a 900ms poll, so this host is
+// a pure renderer: it applies one-shot side-effects (toast notifications, editor
+// commands) as the pushed snapshot changes and locally clears an interaction it
+// just answered so the modal closes without waiting for the next push.
 export function ExtensionUiHost({
   sessionId,
+  snapshot,
   onEditorText,
 }: {
   sessionId: string
+  snapshot: ExtensionUiSnapshot | null
   onEditorText?: (text: string, mode: 'set' | 'append') => void
 }) {
-  const [snapshot, setSnapshot] = useState<ExtensionUiSnapshot | null>(null)
   const [responding, setResponding] = useState(false)
+  const [answeredInteractionIds, setAnsweredInteractionIds] = useState<Set<string>>(
+    () => new Set(),
+  )
   const latestNotification = useRef(0)
   const latestEditorRevision = useRef(0)
 
+  // Reset the one-shot cursors when the session changes: notification ids and
+  // editor revisions restart per session, so a stale cursor would swallow the
+  // new session's first notification/editor command.
   useEffect(() => {
-    let stopped = false
-    let timeout: number | undefined
     latestNotification.current = 0
     latestEditorRevision.current = 0
-    setSnapshot(null)
+    setAnsweredInteractionIds(new Set())
+  }, [sessionId])
 
-    const poll = async () => {
-      try {
-        const response = await fetch(
-          `/api/sessions/${encodeURIComponent(sessionId)}/extensions/ui?afterNotification=${latestNotification.current}`,
-          { cache: 'no-store' },
-        )
-        if (response.ok) {
-          const next = (await response.json()) as ExtensionUiSnapshot
-          if (!stopped) {
-            for (const notification of next.notifications) {
-              latestNotification.current = Math.max(latestNotification.current, notification.id)
-              showToast({
-                tone: notification.type,
-                title: 'Extension',
-                message: notification.message,
-              })
-            }
-            if (next.editorCommand && next.editorCommand.revision > latestEditorRevision.current) {
-              latestEditorRevision.current = next.editorCommand.revision
-              onEditorText?.(next.editorCommand.text, next.editorCommand.mode)
-            }
-            setSnapshot(next)
-          }
-        }
-      } catch {
-        // The SDK session may not exist until the first run. Polling resumes quietly.
-      }
-      if (!stopped) timeout = window.setTimeout(poll, 900)
+  // Surface newly arrived notifications exactly once. The pushed snapshot always
+  // carries the broker's full (capped) notification list, so we gate on the
+  // monotonic id cursor rather than the array contents.
+  useEffect(() => {
+    if (!snapshot) return
+    for (const notification of snapshot.notifications) {
+      if (notification.id <= latestNotification.current) continue
+      latestNotification.current = notification.id
+      showToast({ tone: notification.type, title: 'Extension', message: notification.message })
     }
-    void poll()
-    return () => {
-      stopped = true
-      if (timeout) window.clearTimeout(timeout)
-    }
-  }, [onEditorText, sessionId])
+  }, [snapshot])
 
-  const interaction = snapshot?.interactions[0]
+  // Apply an editor command once, gated on its monotonic revision.
+  useEffect(() => {
+    const command = snapshot?.editorCommand
+    if (!command || command.revision <= latestEditorRevision.current) return
+    latestEditorRevision.current = command.revision
+    onEditorText?.(command.text, command.mode)
+  }, [snapshot, onEditorText])
+
+  const interaction = snapshot?.interactions.find((item) => !answeredInteractionIds.has(item.id))
   const statuses = Object.entries(snapshot?.statuses ?? {})
   const widgets = snapshot?.widgets ?? []
 
@@ -109,14 +104,14 @@ export function ExtensionUiHost({
         },
       )
       if (!response.ok) throw new Error('The extension interaction is no longer active.')
-      setSnapshot((current) =>
-        current
-          ? {
-              ...current,
-              interactions: current.interactions.filter((item) => item.id !== interaction.id),
-            }
-          : current,
-      )
+      // Locally mark this interaction answered so the modal closes immediately;
+      // the next pushed snapshot (broker deletes the pending interaction on
+      // respond) will drop it from the list for good.
+      setAnsweredInteractionIds((current) => {
+        const next = new Set(current)
+        next.add(interaction.id)
+        return next
+      })
     } catch (error) {
       showToast({
         tone: 'error',

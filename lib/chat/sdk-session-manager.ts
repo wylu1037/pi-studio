@@ -13,7 +13,11 @@ import { registerPiStudioApiProviders } from '@/lib/models/pi-ai'
 import { isProjectTrusted } from '@/lib/extensions/project-trust'
 import { logger } from '@/lib/runtime/logger'
 import { createPiRunEventParser, type PiRunEvent } from './pi-events'
-import { getSessionRunController, type SessionRunController } from './session-run-controller'
+import {
+  disposeSessionRunController,
+  getSessionRunController,
+  type SessionRunController,
+} from './session-run-controller'
 import {
   disposeExtensionUiBroker,
   getExtensionUiBroker,
@@ -322,6 +326,8 @@ export function getSdkSession(studioSessionId: string) {
   const session = sessions().get(studioSessionId)
   return session?.isAlive() ? session : null
 }
+
+export { disposeSessionRunController }
 
 export function disposeSdkSession(studioSessionId: string) {
   if (locks().has(studioSessionId)) return { status: 'running' as const }

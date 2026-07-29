@@ -13,6 +13,7 @@ import { postApiPromptsMutationRequestSchema } from '@/lib/api/generated/zod/pos
 import { refreshAfterMutation } from '@/lib/api/refresh'
 import { errorMessage, showToast } from '@/lib/toast'
 import { ActionButton, ConfirmDialog, Label, Tag, TextInput } from '@/components/pi-ui'
+import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
@@ -158,7 +159,7 @@ export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
                 onClick={createPrompt}
                 disabled={pending === 'new'}
               >
-                <Plus className="size-3.5" />
+                {pending === 'new' ? <Spinner className="size-3.5" /> : <Plus className="size-3.5" />}
               </ActionButton>
             </div>
             <ScrollArea className="min-h-0 flex-1" viewportClassName="pr-3">
@@ -237,7 +238,11 @@ export function PromptsView({ prompts }: { prompts: GlobalPromptTemplate[] }) {
                     className="h-8 py-0"
                     disabled={form.formState.isSubmitting}
                   >
-                    <Save className="size-3.5" />
+                    {form.formState.isSubmitting ? (
+                      <Spinner className="size-3.5" />
+                    ) : (
+                      <Save className="size-3.5" />
+                    )}
                     Save
                   </ActionButton>
                   <ActionButton

@@ -54,6 +54,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
+import { Spinner } from '@/components/ui/spinner'
 
 const sourceTone: Record<SkillSource, 'accent' | 'default' | 'outline'> = {
   'skills.sh': 'accent',
@@ -388,7 +389,11 @@ export function SkillsView({ agents, skills }: { agents: AgentProfile[]; skills:
                             onClick={() => importRegistrySkill(m)}
                             disabled={pendingId === `import:${importKey}`}
                           >
-                            <Download className="size-3" />
+                            {pendingId === `import:${importKey}` ? (
+                              <Spinner className="size-3" />
+                            ) : (
+                              <Download className="size-3" />
+                            )}
                             {pendingId === `import:${importKey}` ? 'Importing' : 'Import'}
                           </ActionButton>
                         )}
@@ -746,7 +751,7 @@ function CommandImportDialog({ onClose }: { onClose: () => void }) {
             onClick={install}
             disabled={!parsed || submitting}
           >
-            <Download className="size-3.5" />
+            {submitting ? <Spinner /> : <Download className="size-3.5" />}
             {submitting ? 'Installing' : 'Install'}
           </ActionButton>
         </div>
@@ -915,6 +920,7 @@ function AssignSkillDialog({
                       disabled={pendingId === key}
                       onClick={() => onToggle(skill, agent, !enabled)}
                     >
+                      {pendingId === key && <Spinner />}
                       {pendingId === key ? 'Saving' : enabled ? 'Disable' : 'Enable'}
                     </ActionButton>
                   </li>
