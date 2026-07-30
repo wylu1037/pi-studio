@@ -213,7 +213,7 @@ export async function getOrCreateSdkSession(input: {
     registerPiStudioApiProviders()
     const model =
       input.modelProvider && input.modelId
-        ? services.modelRegistry.find(input.modelProvider, input.modelId)
+        ? services.modelRuntime.getModel(input.modelProvider, input.modelId)
         : undefined
     if (input.modelProvider && input.modelId && !model) {
       throw new Error(

@@ -85,4 +85,20 @@ rmSync(stagedBetterSqlite, { recursive: true, force: true })
 mkdirSync(stagedBetterSqlite, { recursive: true })
 cpSync(sourceBetterSqlite, stagedBetterSqlite, { recursive: true })
 
+// pi-ai loads generated provider catalogs through JSON import attributes at
+// runtime. Next.js tracing follows the importing JavaScript but does not include
+// those JSON files, so copy the catalog directory into the traced package.
+const piAiProviderData = join('dist', 'providers', 'data')
+const sourcePiAiData = join(
+  realpathSync(join(root, 'node_modules', '@earendil-works', 'pi-ai')),
+  piAiProviderData,
+)
+const stagedPiAiData = join(
+  realpathSync(join(web, 'node_modules', '@earendil-works', 'pi-ai')),
+  piAiProviderData,
+)
+rmSync(stagedPiAiData, { recursive: true, force: true })
+mkdirSync(stagedPiAiData, { recursive: true })
+cpSync(sourcePiAiData, stagedPiAiData, { recursive: true })
+
 process.stdout.write(`Electron staging bundle prepared at ${web}\n`)

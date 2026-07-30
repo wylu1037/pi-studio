@@ -90,14 +90,27 @@ export function GET(request: NextRequest) {
   const start = range?.start ?? 0
   const end = range?.end ?? size - 1
   const stream = createReadStream(path, { start, end })
+
+  // HTML is served as text/plain by default so this same-origin endpoint can
+  // never be turned into an XSS vector. Only when a preview explicitly asks to
+  // render it (`render=html`) do we return text/html — and even then we pin the
+  // document into an opaque-origin sandbox via CSP, so its scripts cannot reach
+  // this app's cookies/storage/DOM even if the URL is opened directly.
+  const ext = extname(path).toLowerCase()
+  const renderHtml =
+    request.nextUrl.searchParams.get('render') === 'html' && (ext === '.html' || ext === '.htm')
+
   const headers = new Headers({
     'Accept-Ranges': 'bytes',
     'Cache-Control': 'private, no-cache',
     'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(basename(path))}`,
     'Content-Length': String(end - start + 1),
-    'Content-Type': contentTypes[extname(path).toLowerCase()] ?? 'application/octet-stream',
+    'Content-Type': renderHtml
+      ? 'text/html; charset=utf-8'
+      : (contentTypes[ext] ?? 'application/octet-stream'),
     'X-Content-Type-Options': 'nosniff',
   })
+  if (renderHtml) headers.set('Content-Security-Policy', 'sandbox allow-scripts;')
   if (range) headers.set('Content-Range', `bytes ${start}-${end}/${size}`)
 
   return new Response(Readable.toWeb(stream) as ReadableStream, {

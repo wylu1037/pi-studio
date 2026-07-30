@@ -1,6 +1,6 @@
 appId: com.pistudio.desktop
 productName: Pi Studio
-electronVersion: 39.8.10
+electronVersion: 43.2.0
 npmRebuild: false
 artifactName: Pi-Studio-${version}-${os}-${arch}.${ext}
 

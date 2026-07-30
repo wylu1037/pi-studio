@@ -119,7 +119,7 @@ export function EnvEditor({
         quickSuggestions: false,
         suggestOnTriggerCharacters: false,
         parameterHints: { enabled: false },
-        hover: { enabled: false },
+        hover: { enabled: 'off' },
         contextmenu: true,
         smoothScrolling: true,
         cursorSmoothCaretAnimation: 'on',

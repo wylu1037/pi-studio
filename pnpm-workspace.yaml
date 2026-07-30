@@ -10,4 +10,4 @@ allowBuilds:
   sharp: true
 
 overrides:
-  hono: 4.12.25
+  hono: 4.12.32

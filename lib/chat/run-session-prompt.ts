@@ -102,7 +102,7 @@ export async function startSessionPrompt(input: {
   }
 
   if (storedProvider && model) {
-    const resolved = studioSession.inner.modelRegistry.find(storedProvider, model)
+    const resolved = studioSession.inner.modelRuntime.getModel(storedProvider, model)
     if (!resolved) {
       throw new Error(`Configured model not found in SDK registry: ${storedProvider} / ${model}`)
     }

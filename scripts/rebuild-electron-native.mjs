@@ -11,7 +11,15 @@ const electronPath = require('electron')
 const nodeGyp = require.resolve('node-gyp/bin/node-gyp.js')
 const rootBetterSqlite = realpathSync(join(root, 'node_modules', 'better-sqlite3'))
 const betterSqliteRequire = createRequire(join(rootBetterSqlite, 'package.json'))
-const prebuildInstall = betterSqliteRequire.resolve('prebuild-install/bin.js')
+let prebuildInstall
+try {
+  // better-sqlite3 <=12 shipped prebuild-install; v13 removed it and only
+  // provides Node-runtime prebuilds, so Electron must use the source build
+  // path below.
+  prebuildInstall = betterSqliteRequire.resolve('prebuild-install/bin.js')
+} catch {
+  prebuildInstall = null
+}
 const packageDir = realpathSync(
   join(root, '.electron-staging', 'web', 'node_modules', 'better-sqlite3'),
 )
@@ -28,15 +36,22 @@ const nativeEnv = {
   npm_config_dist_url: 'https://electronjs.org/headers',
 }
 
-const prebuild = spawnSync(
-  process.execPath,
-  [prebuildInstall, '--runtime=electron', `--target=${electronVersion}`, `--arch=${process.arch}`],
-  {
-    cwd: packageDir,
-    env: nativeEnv,
-    stdio: 'inherit',
-  },
-)
+const prebuild = prebuildInstall
+  ? spawnSync(
+      process.execPath,
+      [
+        prebuildInstall,
+        '--runtime=electron',
+        `--target=${electronVersion}`,
+        `--arch=${process.arch}`,
+      ],
+      {
+        cwd: packageDir,
+        env: nativeEnv,
+        stdio: 'inherit',
+      },
+    )
+  : { status: 1 }
 
 if (prebuild.status !== 0) {
   process.stdout.write('No compatible prebuilt binary found; compiling from source.\n')

@@ -1,5 +1,6 @@
 'use client'
 
+import type { ComponentProps } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { LayoutGroup, motion } from 'motion/react'
@@ -44,7 +45,13 @@ const nav = [
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
 
-export function Sidebar({ piVersion }: { piVersion: string }) {
+export function Sidebar({
+  piVersion,
+  variant,
+}: {
+  piVersion: string
+  variant?: ComponentProps<typeof SidebarRoot>['variant']
+}) {
   const pathname = usePathname()
   const { isMobile, setOpenMobile } = useSidebar()
 
@@ -53,7 +60,7 @@ export function Sidebar({ piVersion }: { piVersion: string }) {
   }
 
   return (
-    <SidebarRoot collapsible="icon">
+    <SidebarRoot collapsible="icon" variant={variant}>
       <SidebarHeader className="group/header relative block p-0 px-4 py-4">
         <Link
           href="/"

@@ -11,6 +11,7 @@ import {
   type SupportedCodeLanguage,
 } from '@/lib/markdown/code-languages'
 import { showToast } from '@/lib/toast'
+import { cn } from '@/lib/utils'
 
 type LanguageLoader = () => Promise<LanguageRegistration[]>
 
@@ -120,10 +121,14 @@ export function CodeBlock({
   code,
   language,
   highlight = true,
+  bare = false,
 }: {
   code: string
   language?: string
   highlight?: boolean
+  // Renders just the highlighted code without the framed card (border, header,
+  // copy button) — for hosts that already provide their own chrome.
+  bare?: boolean
 }) {
   const normalizedLanguage = highlight ? normalizeCodeLanguage(language) : 'text'
   const label = codeLanguageLabel(language)
@@ -205,6 +210,26 @@ export function CodeBlock({
     }
   }
 
+  const codeArea = (
+    <div
+      className={cn(
+        'scrollbar-thin max-w-full overflow-x-auto [&_.shiki]:m-0! [&_.shiki]:w-max! [&_.shiki]:min-w-full! [&_.shiki]:bg-transparent! [&_.shiki]:p-3! [&_.shiki]:font-mono [&_.shiki]:text-[11px] [&_.shiki]:leading-relaxed',
+        !bare && 'bg-card/70',
+      )}
+      tabIndex={0}
+      aria-label={`${label} code`}
+      aria-busy={currentHighlight.status === 'loading'}
+    >
+      {currentHighlight.html ? (
+        <div dangerouslySetInnerHTML={{ __html: currentHighlight.html }} />
+      ) : (
+        fallbackCode
+      )}
+    </div>
+  )
+
+  if (bare) return codeArea
+
   return (
     <div className="max-w-full overflow-hidden rounded-panel border border-border bg-card">
       <div className="flex h-7 items-center justify-between border-b border-border bg-panel px-3">
@@ -221,18 +246,7 @@ export function CodeBlock({
           {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
         </button>
       </div>
-      <div
-        className="scrollbar-thin max-w-full overflow-x-auto bg-card/70 [&_.shiki]:m-0! [&_.shiki]:w-max! [&_.shiki]:min-w-full! [&_.shiki]:bg-transparent! [&_.shiki]:p-3! [&_.shiki]:font-mono [&_.shiki]:text-[11px] [&_.shiki]:leading-relaxed"
-        tabIndex={0}
-        aria-label={`${label} code`}
-        aria-busy={currentHighlight.status === 'loading'}
-      >
-        {currentHighlight.html ? (
-          <div dangerouslySetInnerHTML={{ __html: currentHighlight.html }} />
-        ) : (
-          fallbackCode
-        )}
-      </div>
+      {codeArea}
     </div>
   )
 }

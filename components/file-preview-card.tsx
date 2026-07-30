@@ -3,6 +3,7 @@
 import { useEffect, useState, type ElementType } from 'react'
 import { Dialog } from '@base-ui/react/dialog'
 import {
+  Code,
   DownloadSimple,
   Eye,
   FileC,
@@ -42,7 +43,9 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 
 export type PreviewFileKind =
   | 'pdf'
@@ -113,26 +116,14 @@ type ScriptPreviewState =
   | { status: 'ready'; content: string; truncated: boolean }
   | { status: 'error'; message: string }
 
-export function FilePreviewCard({
-  href,
-  label,
-  kind,
-}: {
-  href: string
-  label: string
-  kind: PreviewFileKind
-}) {
-  const [open, setOpen] = useState(false)
-  const [scriptPreview, setScriptPreview] = useState<ScriptPreviewState>({ status: 'idle' })
-  const config = fileKindConfig[kind]
-  const Icon = config.icon
-  const isScript = config.category === 'script'
+function useScriptPreview(href: string, enabled: boolean) {
+  const [state, setState] = useState<ScriptPreviewState>({ status: 'idle' })
 
   useEffect(() => {
-    if (!open || !isScript) return
+    if (!enabled) return
 
     const controller = new AbortController()
-    setScriptPreview({ status: 'loading' })
+    setState({ status: 'loading' })
     void fetch(href, {
       cache: 'no-store',
       headers: { Range: `bytes=0-${SCRIPT_PREVIEW_BYTES - 1}` },
@@ -144,7 +135,7 @@ export function FilePreviewCard({
         const rangeMatch = contentRange?.match(/bytes \d+-\d+\/(\d+)/)
         const totalBytes = rangeMatch ? Number(rangeMatch[1]) : null
         const content = await response.text()
-        setScriptPreview({
+        setState({
           status: 'ready',
           content,
           truncated: totalBytes !== null && totalBytes > SCRIPT_PREVIEW_BYTES,
@@ -152,14 +143,109 @@ export function FilePreviewCard({
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return
-        setScriptPreview({
+        setState({
           status: 'error',
           message: error instanceof Error ? error.message : 'Unable to load this file.',
         })
       })
 
     return () => controller.abort()
-  }, [href, isScript, open])
+  }, [enabled, href])
+
+  return state
+}
+
+export function FilePreviewCard({
+  href,
+  label,
+  kind,
+}: {
+  href: string
+  label: string
+  kind: PreviewFileKind
+}) {
+  // HTML renders inline right in the conversation instead of behind a card,
+  // with a switch to flip between the rendered page and its source.
+  if (kind === 'html') return <HtmlPreviewPanel href={href} label={label} />
+  return <DocumentPreviewCard href={href} label={label} kind={kind} />
+}
+
+function HtmlPreviewPanel({ href, label }: { href: string; label: string }) {
+  const [showSource, setShowSource] = useState(false)
+  // Only fetch the raw text once the user first flips to the source view, and
+  // keep it fetched afterwards so toggling back and forth doesn't re-read the file.
+  const [sourceRequested, setSourceRequested] = useState(false)
+  const scriptPreview = useScriptPreview(href, sourceRequested)
+
+  return (
+    <div className="my-2 flex h-96 w-full flex-col overflow-hidden rounded-panel border border-border-strong bg-card">
+      <header className="flex min-w-0 shrink-0 items-center gap-2 border-b border-border px-3 py-1.5">
+        <FileHtml className="size-4 shrink-0 text-accent" weight="duotone" aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground" title={label}>
+          {label}
+        </span>
+        <Switch
+          checked={showSource}
+          onCheckedChange={(checked) => {
+            setShowSource(checked)
+            if (checked) setSourceRequested(true)
+          }}
+          icons={{
+            unchecked: <Eye className="size-3" />,
+            checked: <Code className="size-3" />,
+          }}
+          className="h-6 w-14 rounded-panel border-border bg-muted/50"
+          thumbClassName="h-4.5 w-6 rounded-panel-inner data-checked:translate-x-7"
+          aria-label={showSource ? 'Switch to rendered preview' : 'Switch to source view'}
+          title={showSource ? 'Source view' : 'Rendered preview'}
+        />
+        <Button
+          nativeButton={false}
+          render={<a href={href} download={label} aria-label={`Download ${label}`} />}
+          variant="ghost"
+          size="icon-sm"
+          title="Download"
+        >
+          <DownloadSimple />
+        </Button>
+      </header>
+
+      {showSource ? (
+        <ScriptPreview state={scriptPreview} language="html" />
+      ) : (
+        <iframe
+          // Isolated preview: allow-scripts WITHOUT allow-same-origin keeps the
+          // frame in an opaque origin, so the file's own JS runs but cannot reach
+          // this app's cookies, storage, or DOM. Never add allow-same-origin — the
+          // sandbox could then be lifted from inside the frame.
+          className="min-h-0 flex-1 bg-white"
+          // `render=html` flips the media endpoint from its default text/plain
+          // (used by the source view) to text/html so the iframe actually renders
+          // the page; the endpoint pairs that with a CSP sandbox for defence in depth.
+          src={`${href}${href.includes('?') ? '&' : '?'}render=html`}
+          sandbox="allow-scripts"
+          referrerPolicy="no-referrer"
+          title={`Rendered preview of ${label}`}
+        />
+      )}
+    </div>
+  )
+}
+
+function DocumentPreviewCard({
+  href,
+  label,
+  kind,
+}: {
+  href: string
+  label: string
+  kind: Exclude<PreviewFileKind, 'html'>
+}) {
+  const [open, setOpen] = useState(false)
+  const config = fileKindConfig[kind]
+  const Icon = config.icon
+  const isScript = config.category === 'script'
+  const scriptPreview = useScriptPreview(href, open && isScript)
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
@@ -191,6 +277,7 @@ export function FilePreviewCard({
               <Eye />
             </AttachmentAction>
             <AttachmentAction
+              nativeButton={false}
               render={<a href={href} download={label} aria-label={`Download ${label}`} />}
               title="Download"
             >
@@ -210,6 +297,7 @@ export function FilePreviewCard({
                 {label}
               </Dialog.Title>
               <Button
+                nativeButton={false}
                 render={<a href={href} download={label} aria-label={`Download ${label}`} />}
                 variant="ghost"
                 size="icon-sm"
@@ -247,7 +335,11 @@ export function FilePreviewCard({
                   </EmptyDescription>
                 </EmptyHeader>
                 <EmptyContent>
-                  <Button render={<a href={href} download={label} />} variant="outline">
+                  <Button
+                    nativeButton={false}
+                    render={<a href={href} download={label} />}
+                    variant="outline"
+                  >
                     <DownloadSimple data-icon="inline-start" />
                     Download file
                   </Button>
@@ -294,13 +386,13 @@ function ScriptPreview({ language, state }: { language?: string; state: ScriptPr
   if (state.status !== 'ready') return null
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-muted/30 p-3">
+    <ScrollArea className="min-h-0 flex-1">
       {state.truncated ? (
-        <p className="mb-2 font-mono text-[10px] text-muted-foreground">
+        <p className="border-b border-border px-3 py-1.5 font-mono text-[10px] text-muted-foreground">
           Showing the first 1 MB of this file.
         </p>
       ) : null}
-      <CodeBlock code={state.content} language={language} />
-    </div>
+      <CodeBlock bare code={state.content} language={language} />
+    </ScrollArea>
   )
 }

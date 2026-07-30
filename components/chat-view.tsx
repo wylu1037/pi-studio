@@ -3123,9 +3123,14 @@ function MessageActivityRow({
               <MarkdownContent content={message.content} mediaSessionId={mediaSessionId} />
             </div>
           ) : message.type === 'bash' ? (
-            <pre className="max-h-72 overflow-auto border border-border bg-panel px-3 py-2 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-foreground/85">
-              {message.content}
-            </pre>
+            <ScrollArea
+              className="rounded-panel border border-border bg-panel"
+              viewportClassName="max-h-72 px-3 py-2"
+            >
+              <pre className="font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-foreground/85">
+                {message.content}
+              </pre>
+            </ScrollArea>
           ) : (
             // Thinking (and other prose) is model-authored markdown; render it so
             // bold/headings/lists show properly instead of leaking `**` syntax.
@@ -3204,9 +3209,14 @@ function ToolActivityRow({ activity }: { activity: Extract<RunActivity, { kind: 
               <div className="mb-1 font-mono text-[9px] tracking-wide text-muted-foreground/55 uppercase">
                 Input
               </div>
-              <pre className="max-h-56 overflow-auto border border-border bg-panel px-3 py-2 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-foreground/85">
-                {call.content}
-              </pre>
+              <ScrollArea
+                className="rounded-panel border border-border bg-panel"
+                viewportClassName="max-h-56 px-3 py-2"
+              >
+                <pre className="font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-foreground/85">
+                  {call.content}
+                </pre>
+              </ScrollArea>
             </div>
           )}
           {result && (
@@ -3214,9 +3224,14 @@ function ToolActivityRow({ activity }: { activity: Extract<RunActivity, { kind: 
               <div className="mb-1 font-mono text-[9px] tracking-wide text-muted-foreground/55 uppercase">
                 Result
               </div>
-              <pre className="max-h-72 overflow-auto border border-border bg-panel px-3 py-2 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-muted-foreground">
-                {result.content}
-              </pre>
+              <ScrollArea
+                className="rounded-panel border border-border bg-panel"
+                viewportClassName="max-h-72 px-3 py-2"
+              >
+                <pre className="font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap text-muted-foreground">
+                  {result.content}
+                </pre>
+              </ScrollArea>
             </div>
           )}
         </div>

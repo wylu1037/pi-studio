@@ -108,6 +108,7 @@ export function MarkdownImage({
                 <ZoomIn />
               </Button>
               <Button
+                nativeButton={false}
                 variant="ghost"
                 size="icon-sm"
                 aria-label={`Download ${alt}`}
@@ -193,6 +194,7 @@ export function MarkdownImage({
                   <ZoomIn />
                 </Button>
                 <Button
+                  nativeButton={false}
                   variant="ghost"
                   size="icon-sm"
                   aria-label={`Download ${alt} from preview`}
