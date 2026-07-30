@@ -164,20 +164,17 @@ const providerApis: ProviderApi[] = [
 
 const CUSTOM_USER_AGENT = '__custom__'
 const USER_AGENT_PRESETS = [
-  { value: 'Pi-Studio/1.0', label: 'Pi Studio' },
-  { value: 'claude-cli/2.1.202 (external, cli)', label: 'Claude Code CLI' },
+  { value: 'pi/0.82.1 (darwin; node/v24.18.0; arm64)', label: 'pi' },
+  { value: 'claude-cli/2.1.161', label: 'Claude CLI' },
+  { value: 'claude-code/1.0.0', label: 'Claude Code 1.0.0' },
+  { value: 'claude-code/0.1.0', label: 'Claude Code 0.1.0' },
+  { value: 'Kilo-Code/1.0', label: 'Kilo Code' },
   {
-    value: 'claude-cli/2.1.202 (external, claude-vscode, agent-sdk/0.3.202)',
-    label: 'Claude VS Code',
+    value:
+      'codex-tui/0.145.0 (Mac OS 15.5.0; arm64) WarpTerminal/v0.2026.07.15.08.55.stable_01 (codex-tui; 0.145.0)',
+    label: 'Codex TUI (Warp, macOS ARM)',
   },
-  {
-    value: 'codex_cli_rs/0.144.5 (Mac OS 15.5.0; aarch64) Apple_Terminal',
-    label: 'Codex CLI (macOS ARM)',
-  },
-  { value: 'OpenAI-Compatible-Client/1.0', label: 'OpenAI-compatible client' },
-  { value: 'Anthropic-Compatible-Client/1.0', label: 'Anthropic-compatible client' },
   { value: 'curl/8.0.1', label: 'curl' },
-  { value: 'Mozilla/5.0', label: 'Browser-like' },
 ] as const
 
 const providerBrand: Record<ProviderApi, { label: string }> = {
