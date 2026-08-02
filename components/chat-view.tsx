@@ -807,6 +807,9 @@ export function ChatView({
     setBranchError(null)
   }, [activeSession?.id, tree])
 
+  // Single refresh point per run: `finishActivity` must NOT call
+  // `router.refresh()` itself, or a run end would issue two refreshes (this
+  // effect + the handler) and re-render the whole history list twice.
   useEffect(() => {
     if (!streamDone) return
     const timer = window.setTimeout(() => {
@@ -1196,7 +1199,9 @@ export function ChatView({
         setStreamPhase('idle')
         setStreamDone(true)
       }
-      router.refresh()
+      // No router.refresh() here: the streamDone effect owns the single post-run
+      // refresh (see that effect), so the run ends with exactly one refresh and
+      // the history list is reconciled once, not twice.
     }
 
     const handleFrame = (frame: RunStreamFrame) => {
@@ -1273,7 +1278,6 @@ export function ChatView({
     appendStreamingAssistantDelta,
     endStreamingAssistant,
     finishAllStreamingMarkdown,
-    router,
     sealStreamingMarkdownSegment,
     startStreamingAssistant,
     resetStreamingMarkdown,
