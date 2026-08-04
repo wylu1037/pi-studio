@@ -78,6 +78,12 @@ export class SessionRunController {
   /** The chatRuns row id for the current prompt activity, if any. */
   private runId: string | null = null
   private firstAssistantSeen = false
+  /**
+   * A Stop requested during the prompt preflight window (activity exists but the
+   * SDK isn't streaming yet, so there's no AbortController to signal). `ingest()`
+   * cashes it in the moment the run goes busy.
+   */
+  private abortRequested = false
   private counter = 0
   /** Resolves when the current activity reaches a terminal status. */
   private completionResolver: ((status: RunActivityStatus) => void) | null = null
@@ -197,6 +203,7 @@ export class SessionRunController {
     this.activityKind = null
     this.startedAt = null
     this.firstAssistantSeen = false
+    this.abortRequested = false
     this.emit({ kind: 'activity_end', activityId, status, ...(error ? { error } : {}) })
     const resolve = this.completionResolver
     this.completionResolver = null
@@ -208,6 +215,14 @@ export class SessionRunController {
     // Assign/refresh the activity id before forwarding so a subscriber taking a
     // snapshot mid-dispatch already sees a consistent state.
     this.sync(this.activityKind ?? 'prompt')
+    // Cash in a Stop pressed during the prompt preflight window: back then the SDK
+    // had no live run to abort, so the intent was parked. The run is streaming now,
+    // so honor it — this drives the abort + `activity_end` the client is waiting on
+    // instead of leaving it stuck on "Stopping" until the run finishes on its own.
+    if (this.abortRequested && this.isBusy()) {
+      this.abortRequested = false
+      void this.abortInner().catch(() => {})
+    }
     if (
       !this.firstAssistantSeen &&
       this.runId &&
@@ -295,12 +310,33 @@ export class SessionRunController {
     return true
   }
 
-  /** Stop whatever the session is currently doing. No-op when already idle. */
+  /**
+   * Stop whatever the session is currently doing. No-op when there's nothing to
+   * stop. When a run exists only as a controller activity but the SDK hasn't begun
+   * streaming yet (the `prompt()` preflight window: auth check, compaction, the
+   * `before_agent_start` hooks), there's no AbortController to signal, so the abort
+   * would be silently dropped and the client would hang on "Stopping" waiting for
+   * an `activity_end` that never arrives. Record the intent instead and let
+   * `ingest()` cash it in the instant the run goes busy.
+   */
   async abort(): Promise<boolean> {
-    if (!this.inner || !this.isBusy()) return false
+    if (!this.inner) return false
+    const busy = this.isBusy()
+    if (!this.activityId && !busy) return false
+    if (!busy) {
+      this.abortRequested = true
+      return true
+    }
+    this.abortRequested = false
+    await this.abortInner()
+    return true
+  }
+
+  /** Abort the live SDK run and close the activity. Assumes the run is busy. */
+  private async abortInner(): Promise<void> {
+    if (!this.inner) return
     await this.inner.abort()
     this.finishActivity('aborted')
-    return true
   }
 }
 

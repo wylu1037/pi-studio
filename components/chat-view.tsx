@@ -114,6 +114,16 @@ import { hasPersistedAssistantResponse, hasPersistedUserMessage } from '@/lib/ch
 const SESSION_TREE_RECENT_NODE_LIMIT = 80
 const INITIAL_VISIBLE_MESSAGE_LIMIT = 120
 const MESSAGE_LIMIT_INCREMENT = 100
+
+// After a Stop, the composer leaves "Stopping" only when the SSE `activity_end`
+// frame arrives — and that frame fires only once the agent run truly goes idle.
+// When the run is wedged on an operation slow to honor the abort (a still-
+// streaming LLM response, a lingering tool/bash child), that frame can be very
+// late or never come, and "Stopping" would spin forever. If the abort hasn't
+// settled within this window, we reconnect the event stream (which replays the
+// missed frame and re-pushes the true running state) and drop the pending flag —
+// automating the manual "switch pages" that used to be the only way out.
+const ABORT_FALLBACK_TIMEOUT_MS = 8000
 const STREAM_ERROR_TIMEOUT_MS = 8000
 
 type StreamPhase = 'idle' | 'starting' | 'connecting' | 'thinking' | 'streaming'
@@ -205,6 +215,10 @@ export function ChatView({
   const [sdkSessionRunning, setSdkSessionRunning] = useState(false)
   const [sdkSessionQueueReady, setSdkSessionQueueReady] = useState(false)
   const [abortingRun, setAbortingRun] = useState(false)
+  // Bumped to force the session event stream to reconnect (close + reopen). The
+  // Stop fallback uses it to re-pull the true running state (and replay a missed
+  // `activity_end`) instead of leaving the composer wedged on "Stopping".
+  const [eventStreamNonce, setEventStreamNonce] = useState(0)
   const [streamError, setStreamError] = useState<string | null>(null)
   const [queueingMessage, setQueueingMessage] = useState<'steer' | 'follow-up' | null>(null)
   const [showSessionTree, setShowSessionTree] = useState(false)
@@ -234,6 +248,9 @@ export function ChatView({
   >([])
   const [extensionUiSnapshot, setExtensionUiSnapshot] = useState<ExtensionUiSnapshot | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
+  // Pending Stop-fallback timer (see ABORT_FALLBACK_TIMEOUT_MS). Cleared when the
+  // run settles on its own (finishActivity) or the component unmounts.
+  const abortFallbackTimerRef = useRef<number | null>(null)
   const currentStreamingAssistantIdRef = useRef<string | null>(null)
   const latestStreamingAssistantIdRef = useRef<string | null>(null)
   const streamMessageSequenceRef = useRef(0)
@@ -797,6 +814,10 @@ export function ChatView({
   useEffect(() => {
     return () => {
       eventSourceRef.current?.close()
+      if (abortFallbackTimerRef.current !== null) {
+        window.clearTimeout(abortFallbackTimerRef.current)
+        abortFallbackTimerRef.current = null
+      }
     }
   }, [])
 
@@ -1173,6 +1194,12 @@ export function ChatView({
     }
 
     const finishActivity = (error?: string) => {
+      // The run settled on its own (activity_end arrived) — cancel any pending
+      // Stop-fallback so it can't fire a spurious reconnect after the fact.
+      if (abortFallbackTimerRef.current !== null) {
+        window.clearTimeout(abortFallbackTimerRef.current)
+        abortFallbackTimerRef.current = null
+      }
       finishAllStreamingMarkdown()
       // Settle any still-'streaming' rows to 'now'. Process rows (thinking/tool/
       // bash) never get their timestamp flipped elsewhere — only assistant rows do,
@@ -1281,6 +1308,7 @@ export function ChatView({
     sealStreamingMarkdownSegment,
     startStreamingAssistant,
     resetStreamingMarkdown,
+    eventStreamNonce,
   ])
 
   const submit = form.handleSubmit(async (values) => {
@@ -1442,11 +1470,30 @@ export function ChatView({
     if (abortingRun) return
     if (!isRunningRun || !activeSession) return
     setAbortingRun(true)
+    // The abort's UI settle rides entirely on the SSE `activity_end` frame, which
+    // fires only once the agent run truly goes idle. That can lag badly — or never
+    // arrive — when the run is wedged on an operation slow to honor the abort, or
+    // when the SDK drops the abort during its prompt preflight (isBusy() false).
+    // Arm a fallback: if we're still "Stopping" after the window, reconnect the
+    // event stream (replays the missed activity_end and re-pushes the true running
+    // state) and refresh history — automating the manual page switch that was, so
+    // far, the only escape from a stuck "Stopping".
+    if (abortFallbackTimerRef.current !== null) window.clearTimeout(abortFallbackTimerRef.current)
+    abortFallbackTimerRef.current = window.setTimeout(() => {
+      abortFallbackTimerRef.current = null
+      setAbortingRun(false)
+      setEventStreamNonce((nonce) => nonce + 1)
+      router.refresh()
+    }, ABORT_FALLBACK_TIMEOUT_MS)
     try {
       // Aborting is session-scoped; the resulting activity_end frame on the
       // session event stream drives the stream back to idle.
       await postApiSessionsIdAbort(activeSession.id)
     } catch (error) {
+      if (abortFallbackTimerRef.current !== null) {
+        window.clearTimeout(abortFallbackTimerRef.current)
+        abortFallbackTimerRef.current = null
+      }
       finishAllStreamingMarkdown()
       setAbortingRun(false)
       setStreamError(error instanceof Error ? error.message : 'Unable to abort pi run.')
