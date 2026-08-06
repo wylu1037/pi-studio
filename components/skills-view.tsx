@@ -5,6 +5,10 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import {
   AlertCircle,
+  ChevronDown,
+  ChevronUp,
+  Folder,
+  FolderOpen,
   Search,
   RefreshCw,
   Download,
@@ -18,6 +22,7 @@ import {
   UserPlus,
   X,
   Check,
+  Plus,
 } from 'lucide-react'
 import type { AgentProfile, GlobalSkill, SkillSource } from '@/lib/types'
 import { inferSkillName, parseSkillsAddCommand } from '@/lib/skills/parse-command'
@@ -48,13 +53,21 @@ import {
 } from '@/components/ui/select'
 import {
   Empty,
-  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
 import { Spinner } from '@/components/ui/spinner'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 const sourceTone: Record<SkillSource, 'accent' | 'default' | 'outline'> = {
   'skills.sh': 'accent',
@@ -92,6 +105,11 @@ function registrySkillKey(skill: RegistrySkill) {
   return skill.installUrl || skill.id || `${skill.source}/${skill.name}`
 }
 
+function localSkillName(path: string) {
+  const normalized = path.replace(/[\\/]+$/, '')
+  return normalized.split(/[\\/]/).pop() || 'local-skill'
+}
+
 export function SkillsView({ agents, skills }: { agents: AgentProfile[]; skills: GlobalSkill[] }) {
   const [query, setQuery] = useState('')
   const [source, setSource] = useState<SkillSource | 'all'>('all')
@@ -100,6 +118,8 @@ export function SkillsView({ agents, skills }: { agents: AgentProfile[]; skills:
   const [assigning, setAssigning] = useState<GlobalSkill | null>(null)
   const [editing, setEditing] = useState<GlobalSkill | null>(null)
   const [addingFromCommand, setAddingFromCommand] = useState(false)
+  const [localFolderPickerOpen, setLocalFolderPickerOpen] = useState(false)
+  const [choosingLocalFolder, setChoosingLocalFolder] = useState(false)
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [registryQuery, setRegistryQuery] = useState('')
   const [registry, setRegistry] = useState<RegistrySkill[]>([])
@@ -167,6 +187,50 @@ export function SkillsView({ agents, skills }: { agents: AgentProfile[]; skills:
     }
   }
 
+  const importLocalSkill = async (path: string) => {
+    const name = localSkillName(path)
+    setPendingId(`local:${path}`)
+    try {
+      await postApiSkills({
+        name,
+        description: '',
+        source: 'local',
+        path,
+        tags: [],
+      })
+      refreshAfterMutation(`${name} added successfully.`)
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        title: 'Add failed',
+        message: errorMessage(error, 'Unable to add the local skill folder.'),
+      })
+    } finally {
+      setPendingId(null)
+    }
+  }
+
+  const chooseLocalSkillFolder = async () => {
+    if (!window.piStudio?.selectSkillFolder) {
+      setLocalFolderPickerOpen(true)
+      return
+    }
+
+    setChoosingLocalFolder(true)
+    try {
+      const selectedPath = await window.piStudio.selectSkillFolder()
+      if (selectedPath) await importLocalSkill(selectedPath)
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        title: 'Folder selection failed',
+        message: errorMessage(error, 'Unable to select a local skill folder.'),
+      })
+    } finally {
+      setChoosingLocalFolder(false)
+    }
+  }
+
   const deleteSkill = async (skill: GlobalSkill) => {
     setPendingId(`delete:${skill.id}`)
     try {
@@ -199,14 +263,51 @@ export function SkillsView({ agents, skills }: { agents: AgentProfile[]; skills:
         title="Skills"
         subtitle="The global skill pool. Enable skills per-agent from their configuration. Import from skills.sh, git, or local directories."
       >
-        <ActionButton onClick={() => setShowBrowser(true)}>
-          <Search className="size-3.5" />
-          Browse skills.sh
-        </ActionButton>
-        <ActionButton onClick={() => setAddingFromCommand(true)}>
-          <Terminal className="size-3.5" />
-          Add from command
-        </ActionButton>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className="inline-flex items-center justify-center gap-2 border border-border-strong bg-card px-3 py-1.5 font-mono text-xs tracking-wide text-foreground uppercase transition-colors outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30"
+            aria-label="Add skills"
+          >
+            <Plus className="size-3.5" />
+            Add skills
+            <ChevronDown className="size-3.5 text-muted-foreground" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="bottom" align="end" className="w-72">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Add skills</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => setShowBrowser(true)}>
+                <Search />
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span>Browse skills.sh</span>
+                  <span className="font-normal text-muted-foreground">
+                    Search the community skill registry
+                  </span>
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setAddingFromCommand(true)}>
+                <Terminal />
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span>Add from command</span>
+                  <span className="font-normal text-muted-foreground">
+                    Paste a skills add command
+                  </span>
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={choosingLocalFolder || pendingId?.startsWith('local:')}
+                onClick={() => void chooseLocalSkillFolder()}
+              >
+                {choosingLocalFolder ? <Spinner /> : <FolderOpen />}
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span>Choose local folder</span>
+                  <span className="font-normal text-muted-foreground">
+                    Starts in ~/.agents/skills
+                  </span>
+                </span>
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </PageHeader>
 
       <div className="flex flex-wrap items-center gap-3 border-b border-border px-6 py-3">
@@ -234,7 +335,7 @@ export function SkillsView({ agents, skills }: { agents: AgentProfile[]; skills:
       {/* Table */}
       <div className="scrollbar-thin flex-1 overflow-y-auto p-6">
         {skills.length === 0 ? (
-          <SkillsEmptyState onBrowse={() => setShowBrowser(true)} />
+          <SkillsEmptyState />
         ) : (
           <Panel>
             <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_112px_176px] items-center gap-4 border-b border-border bg-panel px-4 py-2.5">
@@ -436,6 +537,14 @@ export function SkillsView({ agents, skills }: { agents: AgentProfile[]; skills:
       {addingFromCommand && (
         <CommandImportDialog onClose={() => setAddingFromCommand(false)} />
       )}
+      <SkillFolderPickerDialog
+        open={localFolderPickerOpen}
+        onClose={() => setLocalFolderPickerOpen(false)}
+        onSelect={(path) => {
+          setLocalFolderPickerOpen(false)
+          void importLocalSkill(path)
+        }}
+      />
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         title="Delete skill"
@@ -977,7 +1086,7 @@ function RegistryEmptyState({ query }: { query: string }) {
   )
 }
 
-function SkillsEmptyState({ onBrowse }: { onBrowse: () => void }) {
+function SkillsEmptyState() {
   return (
     <Empty className="py-24">
       <EmptyHeader>
@@ -986,16 +1095,184 @@ function SkillsEmptyState({ onBrowse }: { onBrowse: () => void }) {
         </EmptyMedia>
         <EmptyTitle>No skills yet</EmptyTitle>
         <EmptyDescription>
-          Browse skills.sh or add from a command to build a reusable global skill pool for your
-          agents.
+          Use Add skills to browse skills.sh, paste an install command, or choose a local folder.
         </EmptyDescription>
       </EmptyHeader>
-      <EmptyContent className="flex-row justify-center">
-        <ActionButton onClick={onBrowse}>
-          <Search className="size-3.5" />
-          Browse skills.sh
-        </ActionButton>
-      </EmptyContent>
     </Empty>
+  )
+}
+
+type SkillDirectoryEntry = {
+  name: string
+  path: string
+}
+
+type SkillDirectoryListing = {
+  path: string
+  parent?: string
+  entries: SkillDirectoryEntry[]
+}
+
+function SkillFolderPickerDialog({
+  open,
+  onClose,
+  onSelect,
+}: {
+  open: boolean
+  onClose: () => void
+  onSelect: (path: string) => void
+}) {
+  const [requestedPath, setRequestedPath] = useState('~/.agents/skills')
+  const [directory, setDirectory] = useState<SkillDirectoryListing | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
+
+  useEffect(() => {
+    if (!open) return
+    setRequestedPath('~/.agents/skills')
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+
+    const controller = new AbortController()
+    const query = new URLSearchParams({ path: requestedPath })
+    setLoading(true)
+    setError(null)
+    fetch(`/api/directories?${query}`, { signal: controller.signal })
+      .then(async (response) => {
+        const body = (await response.json()) as SkillDirectoryListing & { error?: string }
+        if (!response.ok) throw new Error(body.error ?? 'Unable to load this directory.')
+        setDirectory(body)
+      })
+      .catch((requestError: unknown) => {
+        if (controller.signal.aborted) return
+        setDirectory(null)
+        setError(
+          requestError instanceof Error ? requestError.message : 'Unable to load this directory.',
+        )
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [open, reloadKey, requestedPath])
+
+  useEffect(() => {
+    if (!open) return
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [onClose, open])
+
+  if (!open) return null
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="skill-folder-picker-title"
+    >
+      <button
+        type="button"
+        aria-label="Close folder picker"
+        onClick={onClose}
+        className="absolute inset-0 bg-foreground/25"
+      />
+      <div className="relative flex w-full max-w-xl flex-col border border-border bg-card shadow-xl">
+        <header className="border-b border-border bg-panel px-4 py-3">
+          <h2
+            id="skill-folder-picker-title"
+            className="font-serif text-lg text-foreground italic"
+          >
+            Choose local skill folder
+          </h2>
+          <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+            Select one skill directory, normally inside ~/.agents/skills.
+          </p>
+        </header>
+
+        <div className="flex flex-col gap-3 p-4">
+          <div className="flex items-center gap-2 border border-input bg-panel p-2">
+            <ActionButton
+              title="Go to parent folder"
+              onClick={() => directory?.parent && setRequestedPath(directory.parent)}
+              disabled={!directory?.parent || loading}
+              className="px-2"
+            >
+              <ChevronUp className="size-3.5" />
+            </ActionButton>
+            <p
+              className="min-w-0 flex-1 truncate font-mono text-[12px] text-foreground"
+              title={directory?.path}
+            >
+              {directory?.path ?? (loading ? 'Loading directory…' : 'Choose a directory')}
+            </p>
+          </div>
+
+          <ScrollArea
+            className="h-72 border border-border bg-panel"
+            viewportClassName="pr-2"
+            contentClassName="min-h-full"
+          >
+            {loading && !directory ? (
+              <div className="flex h-full items-center justify-center gap-2 font-mono text-xs text-muted-foreground">
+                <Spinner />
+                Loading folders
+              </div>
+            ) : error ? (
+              <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+                <p className="font-mono text-xs text-destructive">{error}</p>
+                <div className="flex items-center gap-2">
+                  {requestedPath !== '' && (
+                    <ActionButton onClick={() => setRequestedPath('')}>Open home folder</ActionButton>
+                  )}
+                  <ActionButton onClick={() => setReloadKey((value) => value + 1)}>
+                    Retry
+                  </ActionButton>
+                </div>
+              </div>
+            ) : directory?.entries.length === 0 ? (
+              <p className="px-4 py-10 text-center font-mono text-xs text-muted-foreground">
+                No subfolders in this directory.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {directory?.entries.map((entry) => (
+                  <li key={entry.path}>
+                    <button
+                      type="button"
+                      onClick={() => setRequestedPath(entry.path)}
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-muted"
+                    >
+                      <Folder className="size-4 shrink-0 text-accent" />
+                      <span className="truncate font-mono text-[13px] text-foreground">
+                        {entry.name}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </ScrollArea>
+        </div>
+
+        <footer className="flex items-center justify-end gap-2 border-t border-border bg-panel px-4 py-3">
+          <ActionButton onClick={onClose}>Cancel</ActionButton>
+          <ActionButton
+            variant="accent"
+            onClick={() => directory && onSelect(directory.path)}
+            disabled={!directory || loading}
+          >
+            Add this folder
+          </ActionButton>
+        </footer>
+      </div>
+    </div>
   )
 }

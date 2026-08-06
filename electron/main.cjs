@@ -28,6 +28,7 @@ let serverUrl = null
 let quitting = false
 
 const SELECT_ENV_FILE_CHANNEL = 'pi-studio:select-env-file'
+const SELECT_SKILL_FOLDER_CHANNEL = 'pi-studio:select-skill-folder'
 
 app.setAppUserModelId('com.pistudio.desktop')
 
@@ -221,6 +222,20 @@ ipcMain.handle(SELECT_ENV_FILE_CHANNEL, async () => {
     buttonLabel: 'Choose file',
     defaultPath: app.getPath('home'),
     properties: ['openFile', 'showHiddenFiles'],
+  }
+  const result =
+    mainWindow && !mainWindow.isDestroyed()
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options)
+  return result.canceled ? null : (result.filePaths[0] ?? null)
+})
+
+ipcMain.handle(SELECT_SKILL_FOLDER_CHANNEL, async () => {
+  const options = {
+    title: 'Choose skill folder',
+    buttonLabel: 'Add skill',
+    defaultPath: join(app.getPath('home'), '.agents', 'skills'),
+    properties: ['openDirectory', 'showHiddenFiles'],
   }
   const result =
     mainWindow && !mainWindow.isDestroyed()

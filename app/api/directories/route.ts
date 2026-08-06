@@ -10,7 +10,13 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
-  const requestedPath = request.nextUrl.searchParams.get('path')?.trim() || homedir()
+  const rawPath = request.nextUrl.searchParams.get('path')?.trim()
+  const requestedPath =
+    rawPath === '~'
+      ? homedir()
+      : rawPath?.startsWith('~/')
+        ? resolve(homedir(), rawPath.slice(2))
+        : rawPath || homedir()
   const includeEnvFiles = request.nextUrl.searchParams.get('includeFiles') === 'env'
 
   try {
