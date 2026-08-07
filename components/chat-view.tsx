@@ -248,6 +248,10 @@ export function ChatView({
   >([])
   const [extensionUiSnapshot, setExtensionUiSnapshot] = useState<ExtensionUiSnapshot | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
+  const eventCursorRef = useRef<{ sessionId: string | null; sequence: number }>({
+    sessionId: null,
+    sequence: 0,
+  })
   // Pending Stop-fallback timer (see ABORT_FALLBACK_TIMEOUT_MS). Cleared when the
   // run settles on its own (finishActivity) or the component unmounts.
   const abortFallbackTimerRef = useRef<number | null>(null)
@@ -1262,11 +1266,22 @@ export function ChatView({
       }
     }
 
-    const source = new EventSource(`/api/sessions/${encodeURIComponent(activeSessionId)}/events`)
+    if (eventCursorRef.current.sessionId !== activeSessionId) {
+      eventCursorRef.current = { sessionId: activeSessionId, sequence: 0 }
+    }
+    const cursor = eventCursorRef.current.sequence
+    const source = new EventSource(
+      `/api/sessions/${encodeURIComponent(activeSessionId)}/events${cursor > 0 ? `?after=${cursor}` : ''}`,
+    )
     eventSourceRef.current = source
 
     const onFrameMessage = (event: Event) => {
-      const data = (event as MessageEvent).data
+      const messageEvent = event as MessageEvent
+      const sequence = Number(messageEvent.lastEventId)
+      if (Number.isInteger(sequence) && sequence > eventCursorRef.current.sequence) {
+        eventCursorRef.current = { sessionId: activeSessionId, sequence }
+      }
+      const data = messageEvent.data
       if (typeof data !== 'string' || !data) return
       try {
         handleFrame(JSON.parse(data) as RunStreamFrame)

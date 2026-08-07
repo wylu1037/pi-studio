@@ -743,13 +743,22 @@ function scheduledTaskRunConfigError(input: {
 api.get('/sessions/:id/events', async (c) => {
   const sessionId = c.req.param('id')
   const controller = getSessionRunController(sessionId)
-  const afterSequence = parseLastEventId(c.req.header('Last-Event-ID'))
+  const requestedAfterSequence = parseEventCursor(
+    c.req.header('Last-Event-ID') ?? c.req.query('after'),
+  )
+  // A server/process restart resets controller sequences. Do not let a cursor
+  // from the old process suppress every new low-numbered live frame.
+  const afterSequence =
+    requestedAfterSequence !== undefined &&
+    requestedAfterSequence <= controller.currentSequence()
+      ? requestedAfterSequence
+      : undefined
 
   return streamSSE(c, async (stream) => {
     const queue: import('@/lib/chat/session-run-controller').SequencedFrame[] = []
     let aborted = false
     let wake: (() => void) | null = null
-    let lastSent = afterSequence
+    let lastSent = afterSequence ?? 0
     const notify = () => {
       wake?.()
       wake = null
@@ -791,8 +800,10 @@ api.get('/sessions/:id/events', async (c) => {
       notify()
     })
 
-    // Replay buffered frames the client missed (same-process reconnect).
-    for (const entry of controller.bufferedFrames(afterSequence)) {
+    // A cursor resumes an existing live view. Without one this is a fresh view,
+    // so replay only the currently running activity and never completed runs
+    // that are already rendered from persisted session history.
+    for (const entry of controller.replayFrames(afterSequence)) {
       await writeFrame(entry)
     }
 
@@ -2340,7 +2351,8 @@ api.openapi(
   },
 )
 
-function parseLastEventId(value?: string) {
-  const sequence = Number(value ?? 0)
-  return Number.isInteger(sequence) && sequence > 0 ? sequence : 0
+function parseEventCursor(value?: string) {
+  if (value === undefined || value.trim() === '') return undefined
+  const sequence = Number(value)
+  return Number.isInteger(sequence) && sequence >= 0 ? sequence : undefined
 }

@@ -137,6 +137,19 @@ export class SessionRunController {
     return this.buffer.filter((entry) => entry.sequence > afterSequence)
   }
 
+  /**
+   * Frames appropriate for a newly attached SSE subscriber.
+   *
+   * A subscriber with a cursor is resuming an existing live view and receives
+   * only the missed suffix. A subscriber without a cursor is a fresh page/view:
+   * it must never replay completed activities that are already present in the
+   * persisted session history. If an activity is currently running, replay only
+   * that activity so a page opened mid-run can reconstruct its live tail.
+   */
+  replayFrames(afterSequence?: number): SequencedFrame[] {
+    return selectReplayFrames(this.buffer, this.activityId, afterSequence)
+  }
+
   /** The highest sequence number emitted so far (for a fresh subscriber's cursor). */
   currentSequence() {
     return this.sequence
@@ -338,6 +351,38 @@ export class SessionRunController {
     await this.inner.abort()
     this.finishActivity('aborted')
   }
+}
+
+export function selectReplayFrames(
+  buffer: readonly SequencedFrame[],
+  currentActivityId: string | null,
+  afterSequence?: number,
+): SequencedFrame[] {
+  if (afterSequence !== undefined) {
+    const earliestSequence = buffer[0]?.sequence
+    const cursorIsCovered = earliestSequence === undefined || afterSequence >= earliestSequence - 1
+    if (cursorIsCovered) {
+      return buffer.filter((entry) => entry.sequence > afterSequence)
+    }
+  }
+
+  if (!currentActivityId || buffer.length === 0) return []
+
+  for (let index = buffer.length - 1; index >= 0; index--) {
+    const frame = buffer[index]?.frame
+    if (frame?.kind === 'activity_start' && frame.activityId === currentActivityId) {
+      return buffer.slice(index)
+    }
+  }
+
+  // The activity start can fall out of the bounded ring buffer during a long
+  // run. In that case everything after the most recent completed activity is
+  // part of the current run. If even that boundary was pruned, replay the whole
+  // remaining buffer as the best available live snapshot.
+  for (let index = buffer.length - 1; index >= 0; index--) {
+    if (buffer[index]?.frame.kind === 'activity_end') return buffer.slice(index + 1)
+  }
+  return [...buffer]
 }
 
 declare global {
