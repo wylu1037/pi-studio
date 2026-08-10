@@ -109,7 +109,11 @@ import { cn } from '@/lib/utils'
 import { useChatAttachments } from '@/components/use-chat-attachments'
 import { ImageAttachmentPreview, isImageAttachment } from '@/components/image-attachment-preview'
 import { buildPromptWithAttachments } from '@/lib/chat/attachments'
-import { hasPersistedAssistantResponse, hasPersistedUserMessage } from '@/lib/chat/stream-lifecycle'
+import {
+  hasPersistedAssistantResponse,
+  hasPersistedUserMessage,
+  selectPersistedHistory,
+} from '@/lib/chat/stream-lifecycle'
 
 const SESSION_TREE_RECENT_NODE_LIMIT = 80
 const INITIAL_VISIBLE_MESSAGE_LIMIT = 120
@@ -844,9 +848,24 @@ export function ChatView({
     return () => window.clearTimeout(timer)
   }, [router, streamDone])
 
+  // A turn that never produced assistant text — aborted after a tool call, or a
+  // pure tool turn — persists no assistant message, so waiting for one would pin
+  // the live tail on screen until the next submit (and with it the stream copy of
+  // the turn, which carries no usage and cannot be edited). When the live tail
+  // holds no assistant text either, nothing is pending: a persisted process
+  // message is enough to hand the turn over to history.
+  const runProducedAssistantText = streamMessages.some(
+    (message) => message.type === 'assistant' && message.content,
+  )
   const hasPersistedRun =
     streamDone &&
-    hasPersistedAssistantResponse(sourceMessages, sourceMessageCountAtRunStartRef.current)
+    hasPersistedAssistantResponse(sourceMessages, sourceMessageCountAtRunStartRef.current, {
+      acceptProcessMessages: !runProducedAssistantText,
+    })
+
+  // A live tail is on screen: the current run's frames are being rendered from
+  // the event stream, so its incrementally persisted copy must not render too.
+  const hasLiveTail = !hasPersistedRun && streamMessages.some((message) => message.content)
 
   useEffect(() => {
     if (!hasPersistedRun) return
@@ -863,7 +882,14 @@ export function ChatView({
   }, [hasPersistedRun, resetStreamingMarkdown])
 
   const baseMessages = useMemo(() => {
-    if (!optimisticMessage) return sourceMessages
+    // The SDK writes the session file as the run goes, so `sourceMessages` can
+    // already contain the turn the live tail is streaming. Strip that overlap.
+    const history = selectPersistedHistory(
+      sourceMessages,
+      sourceMessageCountAtRunStartRef.current,
+      hasLiveTail,
+    )
+    if (!optimisticMessage) return history
 
     const hasPersistedOptimisticMessage = hasPersistedUserMessage(
       sourceMessages,
@@ -871,8 +897,8 @@ export function ChatView({
       optimisticMessage,
     )
 
-    return hasPersistedOptimisticMessage ? sourceMessages : [...sourceMessages, optimisticMessage]
-  }, [optimisticMessage, sourceMessages])
+    return hasPersistedOptimisticMessage ? history : [...history, optimisticMessage]
+  }, [hasLiveTail, optimisticMessage, sourceMessages])
 
   // `displayMessages` (persisted + optimistic + live stream) stays defined for
   // the cheap consumers below (context meter, empty-state check, scroll length).
