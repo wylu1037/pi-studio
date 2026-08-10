@@ -11,3 +11,11 @@ allowBuilds:
 
 overrides:
   hono: 4.12.32
+
+# kubb 5 is still beta-only and @kubb/plugin-axios has no stable release, so
+# the 5.0.0-beta plugins must accept the installed kubb 3 until kubb 5 ships.
+peerDependencyRules:
+  allowedVersions:
+    '@kubb/plugin-axios>kubb': '3'
+    '@kubb/plugin-ts>kubb': '3'
+    '@kubb/plugin-zod>kubb': '3'

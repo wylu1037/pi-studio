@@ -749,8 +749,7 @@ api.get('/sessions/:id/events', async (c) => {
   // A server/process restart resets controller sequences. Do not let a cursor
   // from the old process suppress every new low-numbered live frame.
   const afterSequence =
-    requestedAfterSequence !== undefined &&
-    requestedAfterSequence <= controller.currentSequence()
+    requestedAfterSequence !== undefined && requestedAfterSequence <= controller.currentSequence()
       ? requestedAfterSequence
       : undefined
 
@@ -822,8 +821,11 @@ api.get('/sessions/:id/events', async (c) => {
       aborted = true
       notify()
     })
+    // A named event, not an SSE comment: the EventSource API never surfaces
+    // comments, so only a real event lets the client's liveness watchdog
+    // (SessionEventStream) distinguish a quiet-but-alive link from a dead one.
     const heartbeat = setInterval(() => {
-      void stream.write(`: heartbeat ${Date.now()}\n\n`)
+      void stream.writeSSE({ event: 'heartbeat', data: String(Date.now()) })
     }, 30000)
 
     try {
@@ -2138,9 +2140,8 @@ api.openapi(
     // SDK session, extension-UI broker, and its 300-frame ring buffer forever.
     const controller = peekSessionRunController(id)
     if (controller?.getSnapshot().running) await controller.abort()
-    const { disposeSdkSession, disposeSessionRunController } = await import(
-      '@/lib/chat/sdk-session-manager'
-    )
+    const { disposeSdkSession, disposeSessionRunController } =
+      await import('@/lib/chat/sdk-session-manager')
     const { disposeExtensionUiSession } = await import('@/lib/chat/extension-ui-broker')
     disposeSdkSession(id)
     disposeSessionRunController(id)

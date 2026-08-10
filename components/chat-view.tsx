@@ -1,6 +1,15 @@
 'use client'
 
-import { memo, type SyntheticEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  memo,
+  type CSSProperties,
+  type SyntheticEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -57,6 +66,8 @@ import { ExtensionUiHost, type ExtensionUiSnapshot } from '@/components/extensio
 import { ChatAvatar } from '@/components/chat-avatar'
 import { ChatMessageOutline, type ChatMessageOutlineEntry } from '@/components/chat-message-outline'
 import { useProfileSettings } from '@/components/use-profile-settings'
+import { useSessionEventStream } from '@/components/use-session-event-stream'
+import type { PiRunEvent, RunStreamFrame } from '@/lib/chat/session-event-stream'
 import { Bubble, BubbleContent } from '@/components/ui/bubble'
 import { Button } from '@/components/ui/button'
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker'
@@ -109,10 +120,7 @@ import { cn } from '@/lib/utils'
 import { useChatAttachments } from '@/components/use-chat-attachments'
 import { ImageAttachmentPreview, isImageAttachment } from '@/components/image-attachment-preview'
 import { buildPromptWithAttachments } from '@/lib/chat/attachments'
-import {
-  hasPersistedAssistantResponse,
-  hasPersistedUserMessage,
-} from '@/lib/chat/stream-lifecycle'
+import { hasPersistedAssistantResponse, hasPersistedUserMessage } from '@/lib/chat/stream-lifecycle'
 
 const SESSION_TREE_RECENT_NODE_LIMIT = 80
 const INITIAL_VISIBLE_MESSAGE_LIMIT = 120
@@ -141,43 +149,6 @@ type StreamUsage = {
     total?: number
   }
 }
-
-type PiUsage = StreamUsage
-
-type PiRunEvent =
-  | { type: 'assistant_message_start'; messageId?: string; responseId?: string }
-  | { type: 'assistant_message_end'; messageId?: string; responseId?: string; stopReason?: string }
-  | { type: 'assistant_text_end'; messageId: string; contentIndex: number; content?: string }
-  | {
-      type: 'message_delta'
-      content: string
-      usage?: PiUsage
-      messageId?: string
-      contentIndex?: number
-    }
-  | { type: 'thinking_delta'; content: string }
-  | { type: 'tool_call_delta'; content: string; title?: string }
-  | { type: 'tool_result_delta'; content: string; title?: string; isError?: boolean }
-  | { type: 'bash_output'; stream: 'stdout' | 'stderr'; content: string }
-  | { type: 'usage'; usage: PiUsage; messageId?: string }
-  | { type: 'error'; message: string }
-  | { type: 'done'; exitCode: number | null }
-
-type RunStreamFrame =
-  | { kind: 'state'; running: boolean; activityId: string | null; startedAt: string | null }
-  | {
-      kind: 'activity_start'
-      activityId: string
-      activityKind: 'prompt' | 'steer' | 'follow-up' | 'command'
-      startedAt: string
-    }
-  | {
-      kind: 'activity_end'
-      activityId: string
-      status: 'completed' | 'failed' | 'aborted'
-      error?: string
-    }
-  | { kind: 'pi'; event: PiRunEvent }
 
 const ComposerSchema = postApiSessionsIdRunsMutationRequestSchema.extend({ message: z.string() })
 
@@ -218,10 +189,6 @@ export function ChatView({
   const [sdkSessionRunning, setSdkSessionRunning] = useState(false)
   const [sdkSessionQueueReady, setSdkSessionQueueReady] = useState(false)
   const [abortingRun, setAbortingRun] = useState(false)
-  // Bumped to force the session event stream to reconnect (close + reopen). The
-  // Stop fallback uses it to re-pull the true running state (and replay a missed
-  // `activity_end`) instead of leaving the composer wedged on "Stopping".
-  const [eventStreamNonce, setEventStreamNonce] = useState(0)
   const [streamError, setStreamError] = useState<string | null>(null)
   const [queueingMessage, setQueueingMessage] = useState<'steer' | 'follow-up' | null>(null)
   const [showSessionTree, setShowSessionTree] = useState(false)
@@ -250,11 +217,6 @@ export function ChatView({
     Array<{ name: string; description?: string }>
   >([])
   const [extensionUiSnapshot, setExtensionUiSnapshot] = useState<ExtensionUiSnapshot | null>(null)
-  const eventSourceRef = useRef<EventSource | null>(null)
-  const eventCursorRef = useRef<{ sessionId: string | null; sequence: number }>({
-    sessionId: null,
-    sequence: 0,
-  })
   // Pending Stop-fallback timer (see ABORT_FALLBACK_TIMEOUT_MS). Cleared when the
   // run settles on its own (finishActivity) or the component unmounts.
   const abortFallbackTimerRef = useRef<number | null>(null)
@@ -596,8 +558,10 @@ export function ChatView({
         throw new Error(body.error ?? 'Unable to clear the session.')
       }
 
-      eventSourceRef.current?.close()
-      eventSourceRef.current = null
+      // The session event stream stays connected across a clear: the session id
+      // is unchanged and the server emits no frames for it, so tearing the
+      // EventSource down here would orphan the view from all future run frames
+      // (the "stuck on thinking until a page switch" bug).
       finishAllStreamingMarkdown()
       resetStreamingMarkdown()
       currentStreamingAssistantIdRef.current = null
@@ -820,7 +784,6 @@ export function ChatView({
 
   useEffect(() => {
     return () => {
-      eventSourceRef.current?.close()
       if (abortFallbackTimerRef.current !== null) {
         window.clearTimeout(abortFallbackTimerRef.current)
         abortFallbackTimerRef.current = null
@@ -915,9 +878,7 @@ export function ChatView({
   )
   const liveDisplayItems = useMemo(
     () =>
-      hasPersistedRun
-        ? []
-        : buildDisplayItems(streamMessages.filter((message) => message.content)),
+      hasPersistedRun ? [] : buildDisplayItems(streamMessages.filter((message) => message.content)),
     [hasPersistedRun, streamMessages],
   )
   const baseOutlineEntries = useMemo(
@@ -929,7 +890,10 @@ export function ChatView({
     [liveDisplayItems],
   )
   const messageOutlineEntries = useMemo(
-    () => (liveOutlineEntries.length > 0 ? [...baseOutlineEntries, ...liveOutlineEntries] : baseOutlineEntries),
+    () =>
+      liveOutlineEntries.length > 0
+        ? [...baseOutlineEntries, ...liveOutlineEntries]
+        : baseOutlineEntries,
     [baseOutlineEntries, liveOutlineEntries],
   )
 
@@ -1106,239 +1070,188 @@ export function ChatView({
     [flushStreamingMarkdown],
   )
 
-  // Single session-scoped event stream. It stays connected for the lifetime of
-  // the active session (not a single run) and drives every run-state and
-  // streaming update through the unified `frame`/`state` messages.
+  // A new session starts with no extension-UI state; the stream re-pushes the
+  // current snapshot on connect if the broker already has one.
   useEffect(() => {
-    const activeSessionId = activeSession?.id
-    if (!activeSessionId) return
-
-    // A new session starts with no extension-UI state; the stream re-pushes the
-    // current snapshot on connect if the broker already has one.
     setExtensionUiSnapshot(null)
+  }, [activeSession?.id])
 
-    const handlePiEvent = (event: PiRunEvent) => {
-      switch (event.type) {
-        case 'assistant_message_start': {
-          startStreamingAssistant(event.messageId)
-          break
+  // Frame handlers for the session event stream. The connection lifecycle lives
+  // in useSessionEventStream (a self-healing transport); these only translate
+  // frames into view state. The hook reads them through a ref, so their
+  // per-render identity never tears the connection down.
+  const handlePiEvent = (event: PiRunEvent) => {
+    switch (event.type) {
+      case 'assistant_message_start': {
+        startStreamingAssistant(event.messageId)
+        break
+      }
+      case 'assistant_message_end': {
+        endStreamingAssistant(event.messageId)
+        break
+      }
+      case 'assistant_text_end': {
+        const messageId = event.messageId ?? currentStreamingAssistantIdRef.current
+        if (!messageId) return
+        sealStreamingMarkdownSegment(messageId, event.contentIndex ?? 0, event.content)
+        break
+      }
+      case 'message_delta': {
+        const content = event.content ?? ''
+        if (!content) return
+        setStreamPhase('streaming')
+        appendStreamingAssistantDelta(content, event.messageId, event.contentIndex ?? 0)
+        break
+      }
+      case 'thinking_delta': {
+        setStreamPhase('thinking')
+        appendStreamProcessMessage('thinking', event.content ?? '', 'Thinking')
+        break
+      }
+      case 'tool_call_delta': {
+        setStreamPhase('thinking')
+        appendStreamProcessMessage('tool_call', event.content ?? '', event.title ?? 'Tool call')
+        break
+      }
+      case 'tool_result_delta': {
+        setStreamPhase('thinking')
+        appendStreamProcessMessage('tool_result', event.content ?? '', event.title ?? 'Tool result')
+        break
+      }
+      case 'bash_output': {
+        setStreamPhase('thinking')
+        appendStreamProcessMessage('bash', event.content ?? '', event.stream ?? 'stderr')
+        break
+      }
+      case 'usage': {
+        const assistantId = event.messageId ?? latestStreamingAssistantIdRef.current
+        if (!assistantId || !event.usage) return
+        const usage = {
+          input: event.usage.input ?? 0,
+          output: event.usage.output ?? 0,
+          cacheRead: event.usage.cacheRead ?? 0,
+          cacheWrite: event.usage.cacheWrite ?? 0,
+          cost: event.usage.cost,
         }
-        case 'assistant_message_end': {
-          endStreamingAssistant(event.messageId)
-          break
-        }
-        case 'assistant_text_end': {
-          const messageId = event.messageId ?? currentStreamingAssistantIdRef.current
-          if (!messageId) return
-          sealStreamingMarkdownSegment(messageId, event.contentIndex ?? 0, event.content)
-          break
-        }
-        case 'message_delta': {
-          const content = event.content ?? ''
-          if (!content) return
-          setStreamPhase('streaming')
-          appendStreamingAssistantDelta(content, event.messageId, event.contentIndex ?? 0)
-          break
-        }
-        case 'thinking_delta': {
-          setStreamPhase('thinking')
-          appendStreamProcessMessage('thinking', event.content ?? '', 'Thinking')
-          break
-        }
-        case 'tool_call_delta': {
-          setStreamPhase('thinking')
-          appendStreamProcessMessage('tool_call', event.content ?? '', event.title ?? 'Tool call')
-          break
-        }
-        case 'tool_result_delta': {
-          setStreamPhase('thinking')
-          appendStreamProcessMessage(
-            'tool_result',
-            event.content ?? '',
-            event.title ?? 'Tool result',
+        setStreamMessages((current) =>
+          current.map((message) =>
+            message.id === assistantId
+              ? { ...message, tokens: event.usage.totalTokens, usage }
+              : message,
+          ),
+        )
+        break
+      }
+      case 'error': {
+        // `activity_end` remains the authoritative signal for a failed run;
+        // surface the SDK error message eagerly so the user sees it sooner.
+        finishAllStreamingMarkdown()
+        setStreamError(event.message ?? 'pi run failed.')
+        break
+      }
+      case 'done': {
+        // Ignore SDK `done`; the run truly ends on the `activity_end` frame.
+        break
+      }
+    }
+  }
+
+  const beginActivity = (nextActivityId: string) => {
+    setStreamMessages([])
+    resetStreamingMarkdown()
+    currentStreamingAssistantIdRef.current = null
+    latestStreamingAssistantIdRef.current = null
+    setStreamStartedAt(Date.now())
+    setStreamDone(false)
+    setStreamError(null)
+    setStreamPhase('thinking')
+    setActivityId(nextActivityId)
+    setSdkSessionRunning(true)
+    setSdkSessionQueueReady(true)
+  }
+
+  const finishActivity = (error?: string) => {
+    // The run settled on its own (activity_end arrived) — cancel any pending
+    // Stop-fallback so it can't fire a spurious reconnect after the fact.
+    if (abortFallbackTimerRef.current !== null) {
+      window.clearTimeout(abortFallbackTimerRef.current)
+      abortFallbackTimerRef.current = null
+    }
+    finishAllStreamingMarkdown()
+    // Settle any still-'streaming' rows to 'now'. Process rows (thinking/tool/
+    // bash) never get their timestamp flipped elsewhere — only assistant rows do,
+    // on assistant_message_end — so the turn-level "Working" shimmer (gated on
+    // `messages.some(m => m.timestamp === 'streaming')`) would keep animating
+    // until the persisted-run effect eventually clears streamMessages. Flip them
+    // here so the shimmer stops the instant the run ends, not a refresh later.
+    setStreamMessages((current) =>
+      current.some((message) => message.timestamp === 'streaming')
+        ? current.map((message) =>
+            message.timestamp === 'streaming' ? { ...message, timestamp: 'now' } : message,
           )
-          break
-        }
-        case 'bash_output': {
-          setStreamPhase('thinking')
-          appendStreamProcessMessage('bash', event.content ?? '', event.stream ?? 'stderr')
-          break
-        }
-        case 'usage': {
-          const assistantId = event.messageId ?? latestStreamingAssistantIdRef.current
-          if (!assistantId || !event.usage) return
-          const usage = {
-            input: event.usage.input ?? 0,
-            output: event.usage.output ?? 0,
-            cacheRead: event.usage.cacheRead ?? 0,
-            cacheWrite: event.usage.cacheWrite ?? 0,
-            cost: event.usage.cost,
-          }
-          setStreamMessages((current) =>
-            current.map((message) =>
-              message.id === assistantId
-                ? { ...message, tokens: event.usage.totalTokens, usage }
-                : message,
-            ),
-          )
-          break
-        }
-        case 'error': {
-          // `activity_end` remains the authoritative signal for a failed run;
-          // surface the SDK error message eagerly so the user sees it sooner.
-          finishAllStreamingMarkdown()
-          setStreamError(event.message ?? 'pi run failed.')
-          break
-        }
-        case 'done': {
-          // Ignore SDK `done`; the run truly ends on the `activity_end` frame.
-          break
-        }
-      }
-    }
-
-    const beginActivity = (nextActivityId: string) => {
-      setStreamMessages([])
-      resetStreamingMarkdown()
-      currentStreamingAssistantIdRef.current = null
-      latestStreamingAssistantIdRef.current = null
-      setStreamStartedAt(Date.now())
-      setStreamDone(false)
-      setStreamError(null)
-      setStreamPhase('thinking')
-      setActivityId(nextActivityId)
-      setSdkSessionRunning(true)
-      setSdkSessionQueueReady(true)
-    }
-
-    const finishActivity = (error?: string) => {
-      // The run settled on its own (activity_end arrived) — cancel any pending
-      // Stop-fallback so it can't fire a spurious reconnect after the fact.
-      if (abortFallbackTimerRef.current !== null) {
-        window.clearTimeout(abortFallbackTimerRef.current)
-        abortFallbackTimerRef.current = null
-      }
-      finishAllStreamingMarkdown()
-      // Settle any still-'streaming' rows to 'now'. Process rows (thinking/tool/
-      // bash) never get their timestamp flipped elsewhere — only assistant rows do,
-      // on assistant_message_end — so the turn-level "Working" shimmer (gated on
-      // `messages.some(m => m.timestamp === 'streaming')`) would keep animating
-      // until the persisted-run effect eventually clears streamMessages. Flip them
-      // here so the shimmer stops the instant the run ends, not a refresh later.
-      setStreamMessages((current) =>
-        current.some((message) => message.timestamp === 'streaming')
-          ? current.map((message) =>
-              message.timestamp === 'streaming' ? { ...message, timestamp: 'now' } : message,
-            )
-          : current,
-      )
-      setActivityId(null)
-      setSdkSessionRunning(false)
-      setSdkSessionQueueReady(false)
-      setAbortingRun(false)
-      if (error) {
-        setStreamError(error)
-        setStreamPhase('idle')
-        setStreamDone(false)
-      } else {
-        setStreamPhase('idle')
-        setStreamDone(true)
-      }
-      // No router.refresh() here: the streamDone effect owns the single post-run
-      // refresh (see that effect), so the run ends with exactly one refresh and
-      // the history list is reconciled once, not twice.
-    }
-
-    const handleFrame = (frame: RunStreamFrame) => {
-      switch (frame.kind) {
-        case 'state': {
-          if (frame.running) {
-            setSdkSessionRunning(true)
-            setSdkSessionQueueReady(true)
-            if (frame.activityId) setActivityId(frame.activityId)
-            setStreamPhase((phase) => (phase === 'idle' ? 'thinking' : phase))
-          } else {
-            setSdkSessionRunning(false)
-            setSdkSessionQueueReady(false)
-            setActivityId(null)
-            setStreamPhase('idle')
-          }
-          break
-        }
-        case 'activity_start': {
-          beginActivity(frame.activityId)
-          break
-        }
-        case 'activity_end': {
-          finishActivity(frame.status === 'failed' ? (frame.error ?? 'pi run failed.') : undefined)
-          break
-        }
-        case 'pi': {
-          handlePiEvent(frame.event)
-          break
-        }
-      }
-    }
-
-    if (eventCursorRef.current.sessionId !== activeSessionId) {
-      eventCursorRef.current = { sessionId: activeSessionId, sequence: 0 }
-    }
-    const cursor = eventCursorRef.current.sequence
-    const source = new EventSource(
-      `/api/sessions/${encodeURIComponent(activeSessionId)}/events${cursor > 0 ? `?after=${cursor}` : ''}`,
+        : current,
     )
-    eventSourceRef.current = source
+    setActivityId(null)
+    setSdkSessionRunning(false)
+    setSdkSessionQueueReady(false)
+    setAbortingRun(false)
+    if (error) {
+      setStreamError(error)
+      setStreamPhase('idle')
+      setStreamDone(false)
+    } else {
+      setStreamPhase('idle')
+      setStreamDone(true)
+    }
+    // No router.refresh() here: the streamDone effect owns the single post-run
+    // refresh (see that effect), so the run ends with exactly one refresh and
+    // the history list is reconciled once, not twice.
+  }
 
-    const onFrameMessage = (event: Event) => {
-      const messageEvent = event as MessageEvent
-      const sequence = Number(messageEvent.lastEventId)
-      if (Number.isInteger(sequence) && sequence > eventCursorRef.current.sequence) {
-        eventCursorRef.current = { sessionId: activeSessionId, sequence }
+  const handleFrame = (frame: RunStreamFrame) => {
+    switch (frame.kind) {
+      case 'state': {
+        if (frame.running) {
+          setSdkSessionRunning(true)
+          setSdkSessionQueueReady(true)
+          if (frame.activityId) setActivityId(frame.activityId)
+          setStreamPhase((phase) => (phase === 'idle' ? 'thinking' : phase))
+        } else {
+          setSdkSessionRunning(false)
+          setSdkSessionQueueReady(false)
+          setActivityId(null)
+          setStreamPhase('idle')
+        }
+        break
       }
-      const data = messageEvent.data
-      if (typeof data !== 'string' || !data) return
-      try {
-        handleFrame(JSON.parse(data) as RunStreamFrame)
-      } catch {
-        // Ignore malformed frames; the stream stays open for the next message.
+      case 'activity_start': {
+        beginActivity(frame.activityId)
+        break
+      }
+      case 'activity_end': {
+        finishActivity(frame.status === 'failed' ? (frame.error ?? 'pi run failed.') : undefined)
+        break
+      }
+      case 'pi': {
+        handlePiEvent(frame.event)
+        break
       }
     }
+  }
 
-    // Extension-UI snapshots ride the same stream on their own event. They are
-    // self-contained (the broker always sends its full current snapshot), so we
-    // just replace the held snapshot; the host applies one-shot side effects.
-    const onExtensionUiMessage = (event: Event) => {
-      const data = (event as MessageEvent).data
-      if (typeof data !== 'string' || !data) return
-      try {
-        setExtensionUiSnapshot(JSON.parse(data) as ExtensionUiSnapshot)
-      } catch {
-        // Ignore malformed frames; the stream stays open for the next message.
-      }
-    }
-
-    source.addEventListener('frame', onFrameMessage)
-    source.addEventListener('state', onFrameMessage)
-    source.addEventListener('extension_ui', onExtensionUiMessage)
-
-    return () => {
-      source.removeEventListener('frame', onFrameMessage)
-      source.removeEventListener('state', onFrameMessage)
-      source.removeEventListener('extension_ui', onExtensionUiMessage)
-      source.close()
-      if (eventSourceRef.current === source) eventSourceRef.current = null
-    }
-  }, [
+  // Single self-healing session event stream. It stays connected for the
+  // lifetime of the active session (not a single run); fatal closes, silent
+  // half-open links, heartbeat liveness, and cursor replay on reconnect are all
+  // owned by the transport. Extension-UI snapshots ride the same connection:
+  // they are self-contained (the broker always sends its full current
+  // snapshot), so we just replace the held snapshot.
+  const { status: eventStreamStatus, reconnect: reconnectEventStream } = useSessionEventStream(
     activeSession?.id,
-    appendStreamProcessMessage,
-    appendStreamingAssistantDelta,
-    endStreamingAssistant,
-    finishAllStreamingMarkdown,
-    sealStreamingMarkdownSegment,
-    startStreamingAssistant,
-    resetStreamingMarkdown,
-    eventStreamNonce,
-  ])
+    {
+      onFrame: handleFrame,
+      onExtensionUi: (snapshot) => setExtensionUiSnapshot(snapshot as ExtensionUiSnapshot),
+    },
+  )
 
   const submit = form.handleSubmit(async (values) => {
     if (!activeSession || !activeAgent) return
@@ -1503,15 +1416,14 @@ export function ChatView({
     // fires only once the agent run truly goes idle. That can lag badly — or never
     // arrive — when the run is wedged on an operation slow to honor the abort, or
     // when the SDK drops the abort during its prompt preflight (isBusy() false).
-    // Arm a fallback: if we're still "Stopping" after the window, reconnect the
-    // event stream (replays the missed activity_end and re-pushes the true running
-    // state) and refresh history — automating the manual page switch that was, so
-    // far, the only escape from a stuck "Stopping".
+    // Arm a fallback: if we're still "Stopping" after the window, force the
+    // transport to rebuild the stream (replaying the missed activity_end and
+    // re-pushing the true running state) and refresh history.
     if (abortFallbackTimerRef.current !== null) window.clearTimeout(abortFallbackTimerRef.current)
     abortFallbackTimerRef.current = window.setTimeout(() => {
       abortFallbackTimerRef.current = null
       setAbortingRun(false)
-      setEventStreamNonce((nonce) => nonce + 1)
+      reconnectEventStream()
       router.refresh()
     }, ABORT_FALLBACK_TIMEOUT_MS)
     try {
@@ -1906,7 +1818,21 @@ export function ChatView({
         </div>
 
         {/* messages */}
-        <div className="relative min-h-0 flex-1">
+        {/* --composer-overlay-height lets descendants (the user-message edit
+            card) reserve scroll space for the composer overlay, which floats
+            above the scroll viewport and is invisible to scrollIntoView. */}
+        <div
+          className="relative min-h-0 flex-1"
+          style={{ '--composer-overlay-height': `${composerOverlayHeight}px` } as CSSProperties}
+        >
+          {eventStreamStatus === 'reconnecting' && (
+            <div className="pointer-events-none absolute top-2 left-1/2 z-10 -translate-x-1/2">
+              <div className="flex items-center gap-1.5 border border-border-strong bg-card px-2.5 py-1 font-mono text-[10px] tracking-wide text-muted-foreground uppercase shadow-sm">
+                <Circle className="size-2 animate-pulse fill-current" />
+                Reconnecting
+              </div>
+            </div>
+          )}
           <ScrollArea
             className="h-full min-h-0"
             viewportClassName="px-5 py-6 xl:pr-14"
@@ -3427,10 +3353,24 @@ function UserMessage({
   const [draft, setDraft] = useState(message.content)
   const [submitting, setSubmitting] = useState(false)
   const [copied, setCopied] = useState(false)
+  const editCardRef = useRef<HTMLDivElement>(null)
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     if (!isEditing) setDraft(message.content)
   }, [isEditing, message.content])
+
+  useEffect(() => {
+    if (isEditing) editTextareaRef.current?.focus({ preventScroll: true })
+  }, [isEditing])
+
+  // The composer floats over the scroll viewport, so the browser would happily
+  // leave the edit card's action row underneath it. The card's
+  // scroll-margin-bottom covers the overlay; re-check on draft growth too so
+  // typing that adds rows keeps the buttons above the composer's top edge.
+  useEffect(() => {
+    if (isEditing) editCardRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [isEditing, draft])
 
   const copyMessage = async () => {
     const ok = await copyTextToClipboard(message.content)
@@ -3498,12 +3438,15 @@ function UserMessage({
           </AttachmentGroup>
         )}
         {isEditing ? (
-          <div className="w-full max-w-[85%] rounded-md bg-secondary px-4 pt-3.5 pb-3 shadow-sm">
+          <div
+            ref={editCardRef}
+            className="w-full max-w-[85%] scroll-mb-[calc(var(--composer-overlay-height,112px)+8px)] rounded-md bg-secondary px-4 pt-3.5 pb-3 shadow-sm"
+          >
             <textarea
+              ref={editTextareaRef}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              className="scrollbar-thin min-h-20 w-full resize-none bg-transparent text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60"
-              autoFocus
+              className="min-h-20 w-full resize-none scrollbar-thin bg-transparent text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60"
               disabled={submitting}
               rows={Math.min(12, Math.max(3, draft.split('\n').length))}
               onKeyDown={(event) => {
