@@ -4,7 +4,6 @@ import type { ChatMessage } from '@/lib/types'
 import {
   hasPersistedAssistantResponse,
   hasPersistedUserMessage,
-  selectPersistedHistory,
 } from './stream-lifecycle'
 
 function message(id: string, type: ChatMessage['type']): ChatMessage {
@@ -64,60 +63,4 @@ test('matches an identical user message persisted during the current run', () =>
   const optimistic = { ...message('optimistic', 'user'), content: 'repeat me' }
 
   assert.equal(hasPersistedUserMessage([existing, persisted], 1, optimistic), true)
-})
-
-test('keeps the full history when no live tail is on screen', () => {
-  const messages = [message('ask', 'user'), message('thinking', 'thinking')]
-
-  assert.deepEqual(selectPersistedHistory(messages, 0, false), messages)
-})
-
-test('keeps the array identity when the live run has persisted nothing yet', () => {
-  const messages = [message('old-answer', 'assistant'), message('ask', 'user')]
-
-  assert.equal(selectPersistedHistory(messages, 1, true), messages)
-})
-
-test('drops the live run half-written by the SDK while its tail streams', () => {
-  const messages = [
-    message('old-ask', 'user'),
-    message('old-answer', 'assistant'),
-    message('ask', 'user'),
-    message('thinking', 'thinking'),
-    message('tool', 'tool_call'),
-  ]
-
-  assert.deepEqual(
-    selectPersistedHistory(messages, 2, true).map((item) => item.id),
-    ['old-ask', 'old-answer', 'ask'],
-  )
-})
-
-test('drops the live run for a view that attached mid-run', () => {
-  // A page loaded mid-run records a run-start index past the already-written
-  // part of the running turn; the last user message is the real boundary.
-  const messages = [
-    message('ask', 'user'),
-    message('thinking', 'thinking'),
-    message('tool', 'tool_call'),
-  ]
-
-  assert.deepEqual(
-    selectPersistedHistory(messages, messages.length, true).map((item) => item.id),
-    ['ask'],
-  )
-})
-
-test('keeps a follow-up user message steered into the running turn', () => {
-  const messages = [
-    message('ask', 'user'),
-    message('thinking', 'thinking'),
-    message('steer', 'user'),
-    message('tool', 'tool_call'),
-  ]
-
-  assert.deepEqual(
-    selectPersistedHistory(messages, 1, true).map((item) => item.id),
-    ['ask', 'steer'],
-  )
 })

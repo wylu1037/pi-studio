@@ -162,17 +162,55 @@ export function readSdkSessionTree(filePath: string) {
   return { roots, leafId }
 }
 
-export function readSdkSessionContext(filePath: string, leafId?: string | null) {
+export function readSdkSessionContext(
+  filePath: string,
+  leafId?: string | null,
+  options?: { liveRunBoundary?: number },
+) {
   if (!existsSync(filePath)) return null
   const manager = SessionManager.open(filePath)
   const entries = manager.getEntries()
   const context = buildSessionContext(entries, leafId ?? manager.getLeafId())
   return {
     leafId: leafId ?? manager.getLeafId(),
-    messages: context.messages.flatMap(mapMessage),
+    messages: mapContextMessages(context.messages, options?.liveRunBoundary),
     model: context.model,
     thinkingLevel: context.thinkingLevel,
   }
+}
+
+/**
+ * Map SDK context messages to chat messages, optionally trimming a live run.
+ *
+ * `liveRunBoundary` is the context-message count sampled when the currently
+ * running prompt started (see `SessionRunController.liveRunMessageBoundary`).
+ * The SDK appends the running turn's messages to the session file as they
+ * complete, so a page render mid-run would present that partial turn as
+ * settled history while the client renders the very same turn from the live
+ * event stream — painting it twice. Messages at or past the boundary are
+ * therefore dropped, except user messages: the run's own prompt and any
+ * mid-run steers anchor the turn and are never part of the streamed tail.
+ */
+export function mapContextMessages(
+  messages: ReturnType<typeof buildSessionContext>['messages'],
+  liveRunBoundary?: number,
+): ChatMessage[] {
+  return messages.flatMap((message, index) =>
+    liveRunBoundary !== undefined && index >= liveRunBoundary && message.role !== 'user'
+      ? []
+      : mapMessage(message, index),
+  )
+}
+
+/**
+ * Number of context messages currently persisted along the session's active
+ * path. Sampled right before a run starts so a concurrent page render can tell
+ * the settled history apart from the running turn's incrementally written tail.
+ */
+export function readSdkSessionMessageCount(filePath: string) {
+  if (!existsSync(filePath)) return 0
+  const manager = SessionManager.open(filePath)
+  return buildSessionContext(manager.getEntries(), manager.getLeafId()).messages.length
 }
 
 export function hydrateSessionSummariesFromSdk(sessions: AgentSessionSummary[]) {

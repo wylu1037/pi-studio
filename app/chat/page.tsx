@@ -53,8 +53,14 @@ export default async function ChatPage({
   let messages = activeSession ? listSessionMessages(activeSession.id) : []
   let tree = activeSession ? getSessionTree(activeSession.id) : null
   if (activeSession) {
+    // If a run is live, keep its incrementally persisted tail out of history:
+    // the client renders that turn from the session event stream, and serving
+    // it here as well would paint the running turn twice.
+    const { peekSessionRunController } = await import('@/lib/chat/session-run-controller')
+    const liveRunBoundary =
+      peekSessionRunController(activeSession.id)?.liveRunMessageBoundary() ?? undefined
     const sdkTree = readSdkSessionTree(activeSession.filePath)
-    const sdkContext = readSdkSessionContext(activeSession.filePath)
+    const sdkContext = readSdkSessionContext(activeSession.filePath, undefined, { liveRunBoundary })
     tree = sdkTree?.roots[0] ?? tree
     messages = sdkContext?.messages ?? messages
   }

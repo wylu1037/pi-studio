@@ -112,7 +112,6 @@ import { buildPromptWithAttachments } from '@/lib/chat/attachments'
 import {
   hasPersistedAssistantResponse,
   hasPersistedUserMessage,
-  selectPersistedHistory,
 } from '@/lib/chat/stream-lifecycle'
 
 const SESSION_TREE_RECENT_NODE_LIMIT = 80
@@ -863,10 +862,6 @@ export function ChatView({
       acceptProcessMessages: !runProducedAssistantText,
     })
 
-  // A live tail is on screen: the current run's frames are being rendered from
-  // the event stream, so its incrementally persisted copy must not render too.
-  const hasLiveTail = !hasPersistedRun && streamMessages.some((message) => message.content)
-
   useEffect(() => {
     if (!hasPersistedRun) return
 
@@ -882,14 +877,7 @@ export function ChatView({
   }, [hasPersistedRun, resetStreamingMarkdown])
 
   const baseMessages = useMemo(() => {
-    // The SDK writes the session file as the run goes, so `sourceMessages` can
-    // already contain the turn the live tail is streaming. Strip that overlap.
-    const history = selectPersistedHistory(
-      sourceMessages,
-      sourceMessageCountAtRunStartRef.current,
-      hasLiveTail,
-    )
-    if (!optimisticMessage) return history
+    if (!optimisticMessage) return sourceMessages
 
     const hasPersistedOptimisticMessage = hasPersistedUserMessage(
       sourceMessages,
@@ -897,8 +885,8 @@ export function ChatView({
       optimisticMessage,
     )
 
-    return hasPersistedOptimisticMessage ? history : [...history, optimisticMessage]
-  }, [hasLiveTail, optimisticMessage, sourceMessages])
+    return hasPersistedOptimisticMessage ? sourceMessages : [...sourceMessages, optimisticMessage]
+  }, [optimisticMessage, sourceMessages])
 
   // `displayMessages` (persisted + optimistic + live stream) stays defined for
   // the cheap consumers below (context meter, empty-state check, scroll length).

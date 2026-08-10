@@ -4,6 +4,7 @@ import {
   defaultPiSessionDir,
   syncAgentRuntime,
 } from '@/lib/chat/pi-adapter'
+import { readSdkSessionMessageCount } from '@/lib/chat/session-branches'
 import { getSession, resolveAgentRunConfig, updateSessionFilePath } from '@/lib/db/repository'
 
 import type { RunActivityStatus } from '@/lib/chat/session-run-controller'
@@ -117,13 +118,25 @@ export async function startSessionPrompt(input: {
     studioSession.inner.setThinkingLevel(thinkingLevel as never)
   }
 
-  const { activityId, runId, completion } = studioSession.runController.prompt(input.prompt, {
-    agentId: config.agent.id,
-    providerId: input.providerId,
-    modelId: model,
-    thinkingLevel,
-    cwd,
-  })
+  const { activityId, runId, completion } = studioSession.runController.prompt(
+    input.prompt,
+    {
+      agentId: config.agent.id,
+      providerId: input.providerId,
+      modelId: model,
+      thinkingLevel,
+      cwd,
+    },
+    {
+      // Sampled before `prompt()` appends anything: marks where this run's
+      // content begins in the session file, so a page render that lands mid-run
+      // can keep the turn's incrementally persisted tail out of history (the
+      // client renders that turn live from the event stream).
+      contextMessageCountAtStart: readSdkSessionMessageCount(
+        studioSession.inner.sessionFile ?? session.filePath,
+      ),
+    },
+  )
 
   return { status: 'started', activityId, runId, completion }
 }

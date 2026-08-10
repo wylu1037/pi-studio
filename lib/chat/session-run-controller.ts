@@ -87,6 +87,17 @@ export class SessionRunController {
   private counter = 0
   /** Resolves when the current activity reaches a terminal status. */
   private completionResolver: ((status: RunActivityStatus) => void) | null = null
+  /**
+   * How many context messages the session file held when the current prompt
+   * activity started (sampled before `prompt()` writes the user entry). While
+   * the run is live, everything the file gains at or past this index is the
+   * running turn's partial content — the page render uses this to keep that
+   * content out of "history", because the client renders the same turn from
+   * the live event stream. Null for activities not started via `prompt()`
+   * (externally driven runs picked up by `sync()`), where the boundary is
+   * unknown and no trimming happens.
+   */
+  private contextMessageCountAtStart: number | null = null
 
   private sequence = 0
   private readonly buffer: SequencedFrame[] = []
@@ -190,6 +201,9 @@ export class SessionRunController {
       this.activityKind = pendingKind
       this.startedAt = new Date().toISOString()
       this.firstAssistantSeen = false
+      // Not started through `prompt()`, so where the run began in the session
+      // file is unknown; leave the boundary unset rather than guessing.
+      this.contextMessageCountAtStart = null
       this.emit({
         kind: 'activity_start',
         activityId: this.activityId,
@@ -217,6 +231,7 @@ export class SessionRunController {
     this.startedAt = null
     this.firstAssistantSeen = false
     this.abortRequested = false
+    this.contextMessageCountAtStart = null
     this.emit({ kind: 'activity_end', activityId, status, ...(error ? { error } : {}) })
     const resolve = this.completionResolver
     this.completionResolver = null
@@ -258,6 +273,18 @@ export class SessionRunController {
     }
   }
 
+  /**
+   * Where the currently running prompt began in the session file, or null when
+   * no run is live (or the boundary is unknown for a non-prompt activity).
+   * Everything the file holds at or past this context-message index belongs to
+   * the running turn; a server render must not present it as settled history —
+   * the client is already rendering that same turn from the live event stream.
+   */
+  liveRunMessageBoundary(): number | null {
+    if (!this.activityId || this.contextMessageCountAtStart === null) return null
+    return this.contextMessageCountAtStart
+  }
+
   // --- Interactions ---------------------------------------------------------
 
   /**
@@ -268,6 +295,7 @@ export class SessionRunController {
   prompt(
     text: string,
     accounting: PromptAccounting,
+    options?: { contextMessageCountAtStart?: number },
   ): { activityId: string; runId: string; completion: Promise<RunActivityStatus> } {
     if (!this.inner) throw new Error('No SDK session bound to run controller')
     const run = createRun({
@@ -287,6 +315,7 @@ export class SessionRunController {
     this.activityKind = 'prompt'
     this.startedAt = new Date().toISOString()
     this.firstAssistantSeen = false
+    this.contextMessageCountAtStart = options?.contextMessageCountAtStart ?? null
     markRun(run.id, 'running')
     this.emit({
       kind: 'activity_start',
