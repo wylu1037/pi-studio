@@ -7,6 +7,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from 'react'
@@ -57,10 +58,7 @@ import {
 } from '@/components/chat-composer'
 import { MarkdownContent } from '@/components/markdown-content'
 import { StreamingMarkdownContent } from '@/components/streaming-markdown-content'
-import {
-  useStreamingMarkdown,
-  type StreamingContentBatch,
-} from '@/components/use-streaming-markdown'
+import { useStreamingMarkdown } from '@/components/use-streaming-markdown'
 import { WorkspaceExplorer } from '@/components/workspace-explorer'
 import { ExtensionUiHost, type ExtensionUiSnapshot } from '@/components/extension-ui-host'
 import { ChatAvatar } from '@/components/chat-avatar'
@@ -120,7 +118,16 @@ import { cn } from '@/lib/utils'
 import { useChatAttachments } from '@/components/use-chat-attachments'
 import { ImageAttachmentPreview, isImageAttachment } from '@/components/image-attachment-preview'
 import { buildPromptWithAttachments } from '@/lib/chat/attachments'
-import { hasPersistedAssistantResponse, hasPersistedUserMessage } from '@/lib/chat/stream-lifecycle'
+import { hasPersistedUserMessage } from '@/lib/chat/stream-lifecycle'
+import {
+  createInitialRunStreamState,
+  runStreamReducer,
+  selectCanQueueMessage,
+  selectHasPersistedRun,
+  selectIsRunningRun,
+  selectIsStartingRun,
+  selectIsWaiting,
+} from '@/lib/chat/run-stream-reducer'
 
 const SESSION_TREE_RECENT_NODE_LIMIT = 80
 const INITIAL_VISIBLE_MESSAGE_LIMIT = 120
@@ -136,8 +143,6 @@ const MESSAGE_LIMIT_INCREMENT = 100
 // automating the manual "switch pages" that used to be the only way out.
 const ABORT_FALLBACK_TIMEOUT_MS = 8000
 const STREAM_ERROR_TIMEOUT_MS = 8000
-
-type StreamPhase = 'idle' | 'starting' | 'connecting' | 'thinking' | 'streaming'
 
 type StreamUsage = {
   input?: number
@@ -179,17 +184,24 @@ export function ChatView({
 }) {
   const router = useRouter()
   const { userAvatar } = useProfileSettings()
-  const [streamMessages, setStreamMessages] = useState<ChatMessage[]>([])
-  const [streamStartedAt, setStreamStartedAt] = useState<number | null>(null)
+  // All live-run state lives in one pure reducer (see
+  // docs/run-stream-reducer-design.md). The aliases below keep the historical
+  // names for the many read sites; every mutation is a dispatched action.
+  const [runStream, dispatchRunStream] = useReducer(
+    runStreamReducer,
+    messages.length,
+    createInitialRunStreamState,
+  )
+  const streamMessages = runStream.messages
+  const streamStartedAt = runStream.startedAt
+  const streamDone = runStream.done
+  const streamPhase = runStream.phase
+  const optimisticMessage = runStream.optimisticUserMessage
+  const activityId = runStream.activityId
+  const sdkSessionRunning = runStream.sdkRunning
+  const abortingRun = runStream.aborting
+  const streamError = runStream.error
   const [composerOverlayHeight, setComposerOverlayHeight] = useState(112)
-  const [streamDone, setStreamDone] = useState(false)
-  const [streamPhase, setStreamPhase] = useState<StreamPhase>('idle')
-  const [optimisticMessage, setOptimisticMessage] = useState<ChatMessage | null>(null)
-  const [activityId, setActivityId] = useState<string | null>(null)
-  const [sdkSessionRunning, setSdkSessionRunning] = useState(false)
-  const [sdkSessionQueueReady, setSdkSessionQueueReady] = useState(false)
-  const [abortingRun, setAbortingRun] = useState(false)
-  const [streamError, setStreamError] = useState<string | null>(null)
   const [queueingMessage, setQueueingMessage] = useState<'steer' | 'follow-up' | null>(null)
   const [showSessionTree, setShowSessionTree] = useState(false)
   const [showActiveContext, setShowActiveContext] = useState(false)
@@ -218,56 +230,8 @@ export function ChatView({
   >([])
   const [extensionUiSnapshot, setExtensionUiSnapshot] = useState<ExtensionUiSnapshot | null>(null)
   // Pending Stop-fallback timer (see ABORT_FALLBACK_TIMEOUT_MS). Cleared when the
-  // run settles on its own (finishActivity) or the component unmounts.
+  // activity settles on its own (an effect watches activityId) or on unmount.
   const abortFallbackTimerRef = useRef<number | null>(null)
-  const currentStreamingAssistantIdRef = useRef<string | null>(null)
-  const latestStreamingAssistantIdRef = useRef<string | null>(null)
-  const streamMessageSequenceRef = useRef(0)
-  const sourceMessageCountAtRunStartRef = useRef(messages.length)
-  const pendingSourceCountRef = useRef<number | null>(null)
-
-  const applyStreamingContentBatch = useCallback((batch: StreamingContentBatch) => {
-    if (batch.length === 0) return
-    setStreamMessages((current) => {
-      const next = [...current]
-      for (const delta of batch) {
-        const index = next.findIndex((message) => message.id === delta.messageId)
-        if (index >= 0) {
-          const message = next[index]
-          next[index] = { ...message, content: message.content + delta.content }
-        } else {
-          next.push({
-            id: delta.messageId,
-            type: 'assistant',
-            content: delta.content,
-            timestamp: 'streaming',
-          })
-        }
-      }
-      return next
-    })
-  }, [])
-
-  const replaceStreamingContent = useCallback((messageId: string, content: string) => {
-    if (!content) return
-    setStreamMessages((current) => {
-      const existing = current.find((message) => message.id === messageId)
-      if (existing) {
-        return current.map((message) =>
-          message.id === messageId ? { ...message, content } : message,
-        )
-      }
-      return [
-        ...current,
-        {
-          id: messageId,
-          type: 'assistant',
-          content,
-          timestamp: 'streaming',
-        },
-      ]
-    })
-  }, [])
 
   const {
     snapshots: streamingMarkdownSnapshots,
@@ -279,8 +243,11 @@ export function ChatView({
     flush: flushStreamingMarkdown,
     reset: resetStreamingMarkdown,
   } = useStreamingMarkdown({
-    onFlushContent: applyStreamingContentBatch,
-    onReplaceContent: replaceStreamingContent,
+    // The rAF-batched pipeline's output rejoins the reducer as actions; the
+    // reducer owns the assistant-row upserts (dispatch identity is stable).
+    onFlushContent: (batch) => dispatchRunStream({ type: 'content_flushed', batch }),
+    onReplaceContent: (messageId, content) =>
+      dispatchRunStream({ type: 'content_replaced', messageId, content }),
   })
 
   const handleAttachmentError = useCallback((message: string) => {
@@ -564,21 +531,8 @@ export function ChatView({
       // (the "stuck on thinking until a page switch" bug).
       finishAllStreamingMarkdown()
       resetStreamingMarkdown()
-      currentStreamingAssistantIdRef.current = null
-      latestStreamingAssistantIdRef.current = null
-      streamMessageSequenceRef.current = 0
-      sourceMessageCountAtRunStartRef.current = 0
       shouldFollowMessagesRef.current = true
-      setStreamMessages([])
-      setStreamStartedAt(null)
-      setStreamDone(false)
-      setStreamPhase('idle')
-      setOptimisticMessage(null)
-      setActivityId(null)
-      setSdkSessionRunning(false)
-      setSdkSessionQueueReady(false)
-      setAbortingRun(false)
-      setStreamError(null)
+      dispatchRunStream({ type: 'session_reset' })
       setQueueingMessage(null)
       setSelectedNodeId(null)
       setBranchMessages(null)
@@ -816,40 +770,38 @@ export function ChatView({
   // the turn, which carries no usage and cannot be edited). When the live tail
   // holds no assistant text either, nothing is pending: a persisted process
   // message is enough to hand the turn over to history.
-  const runProducedAssistantText = streamMessages.some(
-    (message) => message.type === 'assistant' && message.content,
-  )
-  const hasPersistedRun =
-    streamDone &&
-    hasPersistedAssistantResponse(sourceMessages, sourceMessageCountAtRunStartRef.current, {
-      acceptProcessMessages: !runProducedAssistantText,
-    })
+  const hasPersistedRun = selectHasPersistedRun(runStream, sourceMessages)
 
   useEffect(() => {
     if (!hasPersistedRun) return
 
-    setStreamMessages([])
-    setStreamStartedAt(null)
-    setStreamDone(false)
-    setOptimisticMessage(null)
-    setStreamPhase('idle')
+    dispatchRunStream({ type: 'handover_completed' })
     setBranchMessages(null)
-    currentStreamingAssistantIdRef.current = null
-    latestStreamingAssistantIdRef.current = null
     resetStreamingMarkdown()
   }, [hasPersistedRun, resetStreamingMarkdown])
+
+  // The Stop fallback only guards a live activity; once it settles (the
+  // activity_end frame arrived), a pending fallback must not fire a spurious
+  // reconnect after the fact.
+  useEffect(() => {
+    if (runStream.activityId !== null) return
+    if (abortFallbackTimerRef.current !== null) {
+      window.clearTimeout(abortFallbackTimerRef.current)
+      abortFallbackTimerRef.current = null
+    }
+  }, [runStream.activityId])
 
   const baseMessages = useMemo(() => {
     if (!optimisticMessage) return sourceMessages
 
     const hasPersistedOptimisticMessage = hasPersistedUserMessage(
       sourceMessages,
-      sourceMessageCountAtRunStartRef.current,
+      runStream.sourceCountAtRunStart,
       optimisticMessage,
     )
 
     return hasPersistedOptimisticMessage ? sourceMessages : [...sourceMessages, optimisticMessage]
-  }, [optimisticMessage, sourceMessages])
+  }, [optimisticMessage, runStream.sourceCountAtRunStart, sourceMessages])
 
   // `displayMessages` (persisted + optimistic + live stream) stays defined for
   // the cheap consumers below (context meter, empty-state check, scroll length).
@@ -981,94 +933,17 @@ export function ChatView({
   // a stale failure notice doesn't linger over a subsequent successful run.
   useEffect(() => {
     if (!streamError) return
-    const timer = window.setTimeout(() => setStreamError(null), STREAM_ERROR_TIMEOUT_MS)
+    const timer = window.setTimeout(
+      () => dispatchRunStream({ type: 'error_dismissed' }),
+      STREAM_ERROR_TIMEOUT_MS,
+    )
     return () => window.clearTimeout(timer)
   }, [streamError])
 
-  const isStartingRun = streamPhase === 'starting' && !activityId
-  const isRunningRun = Boolean(activityId) || sdkSessionRunning
-  const canQueueMessage = isRunningRun && sdkSessionQueueReady && !abortingRun
-  const isWaiting =
-    !streamError &&
-    !hasPersistedRun &&
-    (streamPhase !== 'idle' || sdkSessionRunning) &&
-    streamMessages.length === 0
-
-  const startStreamingAssistant = useCallback(
-    (messageId?: string) => {
-      const id = messageId ?? `stream-assistant-${Date.now()}-${streamMessageSequenceRef.current++}`
-      currentStreamingAssistantIdRef.current = id
-      latestStreamingAssistantIdRef.current = id
-      beginStreamingMarkdownMessage(id)
-      return id
-    },
-    [beginStreamingMarkdownMessage],
-  )
-
-  const appendStreamingAssistantDelta = useCallback(
-    (content: string, messageId?: string, contentIndex = 0) => {
-      if (!content) return
-      const id = messageId ?? currentStreamingAssistantIdRef.current ?? startStreamingAssistant()
-      if (currentStreamingAssistantIdRef.current !== id) startStreamingAssistant(id)
-      appendStreamingMarkdownDelta(id, contentIndex, content)
-    },
-    [appendStreamingMarkdownDelta, startStreamingAssistant],
-  )
-
-  const endStreamingAssistant = useCallback(
-    (messageId?: string) => {
-      const id = messageId ?? currentStreamingAssistantIdRef.current
-      if (!id) return
-      finishStreamingMarkdownMessage(id)
-      setStreamMessages((current) =>
-        current.map((message) =>
-          message.id === id && message.timestamp === 'streaming'
-            ? { ...message, timestamp: 'now' }
-            : message,
-        ),
-      )
-      if (currentStreamingAssistantIdRef.current === id) {
-        currentStreamingAssistantIdRef.current = null
-      }
-    },
-    [finishStreamingMarkdownMessage],
-  )
-
-  const appendStreamProcessMessage = useCallback(
-    (
-      type: Extract<ChatMessageType, 'thinking' | 'tool_call' | 'tool_result' | 'bash'>,
-      content: string,
-      title?: string,
-    ) => {
-      if (!content) return
-      flushStreamingMarkdown()
-      setStreamMessages((current) => {
-        if (type === 'thinking') {
-          const last = current.at(-1)
-          if (last?.type === 'thinking') {
-            return [...current.slice(0, -1), { ...last, content: last.content + content }]
-          }
-        }
-
-        const last = current.at(-1)
-        if (last?.type === type && last.title === title && type === 'bash') {
-          return [...current.slice(0, -1), { ...last, content: last.content + content }]
-        }
-
-        return [
-          ...current,
-          {
-            id: `stream-${type}-${Date.now()}-${current.length}`,
-            type,
-            title,
-            content,
-            timestamp: 'streaming',
-          },
-        ]
-      })
-    },
-    [flushStreamingMarkdown],
-  )
+  const isStartingRun = selectIsStartingRun(runStream)
+  const isRunningRun = selectIsRunningRun(runStream)
+  const canQueueMessage = selectCanQueueMessage(runStream)
+  const isWaiting = selectIsWaiting(runStream, hasPersistedRun)
 
   // A new session starts with no extension-UI state; the stream re-pushes the
   // current snapshot on connect if the broker already has one.
@@ -1076,167 +951,57 @@ export function ChatView({
     setExtensionUiSnapshot(null)
   }, [activeSession?.id])
 
-  // Frame handlers for the session event stream. The connection lifecycle lives
-  // in useSessionEventStream (a self-healing transport); these only translate
-  // frames into view state. The hook reads them through a ref, so their
-  // per-render identity never tears the connection down.
-  const handlePiEvent = (event: PiRunEvent) => {
+  // Markdown-pipeline commands for a pi event. State transitions live in the
+  // reducer (dispatched from handleFrame); this issues only the imperative
+  // markdown work, addressed by the event's own message id. The server parser
+  // always assigns assistant message ids; the defensive id-less delta path is
+  // carried by the reducer directly, bypassing the pipeline.
+  const issuePiMarkdownCommands = (event: PiRunEvent) => {
     switch (event.type) {
       case 'assistant_message_start': {
-        startStreamingAssistant(event.messageId)
+        if (event.messageId) beginStreamingMarkdownMessage(event.messageId)
         break
       }
       case 'assistant_message_end': {
-        endStreamingAssistant(event.messageId)
+        if (event.messageId) finishStreamingMarkdownMessage(event.messageId)
         break
       }
       case 'assistant_text_end': {
-        const messageId = event.messageId ?? currentStreamingAssistantIdRef.current
-        if (!messageId) return
-        sealStreamingMarkdownSegment(messageId, event.contentIndex ?? 0, event.content)
+        sealStreamingMarkdownSegment(event.messageId, event.contentIndex ?? 0, event.content)
         break
       }
       case 'message_delta': {
-        const content = event.content ?? ''
-        if (!content) return
-        setStreamPhase('streaming')
-        appendStreamingAssistantDelta(content, event.messageId, event.contentIndex ?? 0)
-        break
-      }
-      case 'thinking_delta': {
-        setStreamPhase('thinking')
-        appendStreamProcessMessage('thinking', event.content ?? '', 'Thinking')
-        break
-      }
-      case 'tool_call_delta': {
-        setStreamPhase('thinking')
-        appendStreamProcessMessage('tool_call', event.content ?? '', event.title ?? 'Tool call')
-        break
-      }
-      case 'tool_result_delta': {
-        setStreamPhase('thinking')
-        appendStreamProcessMessage('tool_result', event.content ?? '', event.title ?? 'Tool result')
-        break
-      }
-      case 'bash_output': {
-        setStreamPhase('thinking')
-        appendStreamProcessMessage('bash', event.content ?? '', event.stream ?? 'stderr')
-        break
-      }
-      case 'usage': {
-        const assistantId = event.messageId ?? latestStreamingAssistantIdRef.current
-        if (!assistantId || !event.usage) return
-        const usage = {
-          input: event.usage.input ?? 0,
-          output: event.usage.output ?? 0,
-          cacheRead: event.usage.cacheRead ?? 0,
-          cacheWrite: event.usage.cacheWrite ?? 0,
-          cost: event.usage.cost,
+        if (event.messageId && event.content) {
+          appendStreamingMarkdownDelta(event.messageId, event.contentIndex ?? 0, event.content)
         }
-        setStreamMessages((current) =>
-          current.map((message) =>
-            message.id === assistantId
-              ? { ...message, tokens: event.usage.totalTokens, usage }
-              : message,
-          ),
-        )
+        break
+      }
+      case 'thinking_delta':
+      case 'tool_call_delta':
+      case 'tool_result_delta':
+      case 'bash_output': {
+        // Land pending markdown text before the reducer appends the process
+        // row, preserving row order within the same dispatch batch.
+        flushStreamingMarkdown()
         break
       }
       case 'error': {
-        // `activity_end` remains the authoritative signal for a failed run;
-        // surface the SDK error message eagerly so the user sees it sooner.
         finishAllStreamingMarkdown()
-        setStreamError(event.message ?? 'pi run failed.')
         break
       }
-      case 'done': {
-        // Ignore SDK `done`; the run truly ends on the `activity_end` frame.
+      default:
         break
-      }
     }
-  }
-
-  const beginActivity = (nextActivityId: string) => {
-    setStreamMessages([])
-    resetStreamingMarkdown()
-    currentStreamingAssistantIdRef.current = null
-    latestStreamingAssistantIdRef.current = null
-    setStreamStartedAt(Date.now())
-    setStreamDone(false)
-    setStreamError(null)
-    setStreamPhase('thinking')
-    setActivityId(nextActivityId)
-    setSdkSessionRunning(true)
-    setSdkSessionQueueReady(true)
-  }
-
-  const finishActivity = (error?: string) => {
-    // The run settled on its own (activity_end arrived) — cancel any pending
-    // Stop-fallback so it can't fire a spurious reconnect after the fact.
-    if (abortFallbackTimerRef.current !== null) {
-      window.clearTimeout(abortFallbackTimerRef.current)
-      abortFallbackTimerRef.current = null
-    }
-    finishAllStreamingMarkdown()
-    // Settle any still-'streaming' rows to 'now'. Process rows (thinking/tool/
-    // bash) never get their timestamp flipped elsewhere — only assistant rows do,
-    // on assistant_message_end — so the turn-level "Working" shimmer (gated on
-    // `messages.some(m => m.timestamp === 'streaming')`) would keep animating
-    // until the persisted-run effect eventually clears streamMessages. Flip them
-    // here so the shimmer stops the instant the run ends, not a refresh later.
-    setStreamMessages((current) =>
-      current.some((message) => message.timestamp === 'streaming')
-        ? current.map((message) =>
-            message.timestamp === 'streaming' ? { ...message, timestamp: 'now' } : message,
-          )
-        : current,
-    )
-    setActivityId(null)
-    setSdkSessionRunning(false)
-    setSdkSessionQueueReady(false)
-    setAbortingRun(false)
-    if (error) {
-      setStreamError(error)
-      setStreamPhase('idle')
-      setStreamDone(false)
-    } else {
-      setStreamPhase('idle')
-      setStreamDone(true)
-    }
-    // No router.refresh() here: the streamDone effect owns the single post-run
-    // refresh (see that effect), so the run ends with exactly one refresh and
-    // the history list is reconciled once, not twice.
   }
 
   const handleFrame = (frame: RunStreamFrame) => {
-    switch (frame.kind) {
-      case 'state': {
-        if (frame.running) {
-          setSdkSessionRunning(true)
-          setSdkSessionQueueReady(true)
-          if (frame.activityId) setActivityId(frame.activityId)
-          setStreamPhase((phase) => (phase === 'idle' ? 'thinking' : phase))
-        } else {
-          setSdkSessionRunning(false)
-          setSdkSessionQueueReady(false)
-          setActivityId(null)
-          setStreamPhase('idle')
-        }
-        break
-      }
-      case 'activity_start': {
-        beginActivity(frame.activityId)
-        break
-      }
-      case 'activity_end': {
-        finishActivity(frame.status === 'failed' ? (frame.error ?? 'pi run failed.') : undefined)
-        break
-      }
-      case 'pi': {
-        handlePiEvent(frame.event)
-        break
-      }
-    }
+    // Markdown commands first: their synchronous flushes re-enter the reducer
+    // as content actions and must precede this frame's own transition. Then the
+    // frame itself becomes one pure action; every run-state rule lives in
+    // runStreamReducer, not here.
+    if (frame.kind === 'pi') issuePiMarkdownCommands(frame.event)
+    else if (frame.kind === 'activity_end') finishAllStreamingMarkdown()
+    dispatchRunStream({ type: 'frame', frame, at: Date.now() })
   }
 
   // Single self-healing session event stream. It stays connected for the
@@ -1320,25 +1085,18 @@ export function ChatView({
       message: buildPromptWithAttachments(trimmedMessage, uploadedAttachments),
     }
     if (!postApiSessionsIdRunsMutationRequestSchema.safeParse(payload).success) return
-    setSdkSessionQueueReady(false)
-    setStreamMessages([])
     resetStreamingMarkdown()
-    setStreamStartedAt(Date.now())
-    setStreamDone(false)
-    setStreamPhase('starting')
-    setAbortingRun(false)
-    setStreamError(null)
-    currentStreamingAssistantIdRef.current = null
-    latestStreamingAssistantIdRef.current = null
-    streamMessageSequenceRef.current = 0
-    sourceMessageCountAtRunStartRef.current = pendingSourceCountRef.current ?? sourceMessages.length
-    pendingSourceCountRef.current = null
-    setOptimisticMessage({
-      id: `optimistic-user-${Date.now()}`,
-      type: 'user',
-      content: trimmedMessage,
-      attachments: uploadedAttachments,
-      timestamp: 'sending',
+    dispatchRunStream({
+      type: 'prompt_submitted',
+      message: {
+        id: `optimistic-user-${Date.now()}`,
+        type: 'user',
+        content: trimmedMessage,
+        attachments: uploadedAttachments,
+        timestamp: 'sending',
+      },
+      sourceCount: sourceMessages.length,
+      at: Date.now(),
     })
     followMessagesToBottom()
     try {
@@ -1351,33 +1109,27 @@ export function ChatView({
         runId?: string | null
       }
       if (run.status !== 'started') {
-        setStreamPhase('idle')
-        setActivityId(null)
-        setAbortingRun(false)
-        setOptimisticMessage(null)
-        setStreamStartedAt(null)
         if (run.status === 'already-running') {
-          setSdkSessionRunning(true)
-          setSdkSessionQueueReady(true)
-          setStreamError(null)
+          dispatchRunStream({ type: 'prompt_rejected', error: null, alreadyRunning: true })
           showToast({
             tone: 'warning',
             title: 'Agent is processing',
             message: 'Use Steer now or Follow up to queue this message.',
           })
         } else {
-          setStreamError(
-            run.status === 'session-not-found'
-              ? 'This session is no longer available.'
-              : run.status === 'agent-not-found'
-                ? 'The agent for this session is no longer available.'
-                : 'Unable to start pi run.',
-          )
+          dispatchRunStream({
+            type: 'prompt_rejected',
+            error:
+              run.status === 'session-not-found'
+                ? 'This session is no longer available.'
+                : run.status === 'agent-not-found'
+                  ? 'The agent for this session is no longer available.'
+                  : 'Unable to start pi run.',
+          })
         }
         return
       }
-      setActivityId(run.activityId ?? null)
-      setSdkSessionRunning(true)
+      dispatchRunStream({ type: 'prompt_started', activityId: run.activityId ?? null })
       clearAttachments()
       form.reset({
         message: '',
@@ -1387,22 +1139,15 @@ export function ChatView({
       })
     } catch (error) {
       const message = errorMessage(error, 'Unable to start pi run.')
-      setStreamPhase('idle')
-      setActivityId(null)
-      setAbortingRun(false)
-      setOptimisticMessage(null)
-      setStreamStartedAt(null)
       if (/already processing|streamingBehavior/i.test(message)) {
-        setSdkSessionRunning(true)
-        setSdkSessionQueueReady(true)
-        setStreamError(null)
+        dispatchRunStream({ type: 'prompt_rejected', error: null, alreadyRunning: true })
         showToast({
           tone: 'warning',
           title: 'Agent is processing',
           message: 'Use Steer now or Follow up to queue this message.',
         })
       } else {
-        setStreamError(message)
+        dispatchRunStream({ type: 'prompt_rejected', error: message })
       }
       return
     }
@@ -1411,7 +1156,7 @@ export function ChatView({
   const abort = async () => {
     if (abortingRun) return
     if (!isRunningRun || !activeSession) return
-    setAbortingRun(true)
+    dispatchRunStream({ type: 'abort_requested' })
     // The abort's UI settle rides entirely on the SSE `activity_end` frame, which
     // fires only once the agent run truly goes idle. That can lag badly — or never
     // arrive — when the run is wedged on an operation slow to honor the abort, or
@@ -1422,7 +1167,7 @@ export function ChatView({
     if (abortFallbackTimerRef.current !== null) window.clearTimeout(abortFallbackTimerRef.current)
     abortFallbackTimerRef.current = window.setTimeout(() => {
       abortFallbackTimerRef.current = null
-      setAbortingRun(false)
+      dispatchRunStream({ type: 'abort_fallback_fired' })
       reconnectEventStream()
       router.refresh()
     }, ABORT_FALLBACK_TIMEOUT_MS)
@@ -1436,8 +1181,10 @@ export function ChatView({
         abortFallbackTimerRef.current = null
       }
       finishAllStreamingMarkdown()
-      setAbortingRun(false)
-      setStreamError(error instanceof Error ? error.message : 'Unable to abort pi run.')
+      dispatchRunStream({
+        type: 'abort_failed',
+        error: error instanceof Error ? error.message : 'Unable to abort pi run.',
+      })
     }
   }
 
@@ -1451,7 +1198,7 @@ export function ChatView({
     )
       return
     setQueueingMessage(behavior)
-    setStreamError(null)
+    dispatchRunStream({ type: 'error_dismissed' })
     try {
       const uploadedAttachments = attachments.length > 0 ? await uploadAllAttachments() : []
       if (!uploadedAttachments) return
@@ -1474,7 +1221,7 @@ export function ChatView({
       })
     } catch (error) {
       const message = errorMessage(error, `Unable to queue ${behavior} message.`)
-      setStreamError(message)
+      dispatchRunStream({ type: 'stream_error_raised', error: message })
       showToast({
         tone: 'error',
         title: behavior === 'steer' ? 'Unable to steer run' : 'Unable to queue follow-up',
@@ -1579,7 +1326,10 @@ export function ChatView({
         }
         setSelectedNodeId(entry.parentId)
         setBranchMessages(contextBody.messages)
-        pendingSourceCountRef.current = contextBody.messages.length
+        dispatchRunStream({
+          type: 'branch_context_staged',
+          sourceCount: contextBody.messages.length,
+        })
       } catch (error) {
         showToast({
           tone: 'error',
