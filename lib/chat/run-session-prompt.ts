@@ -4,7 +4,6 @@ import {
   defaultPiSessionDir,
   syncAgentRuntime,
 } from '@/lib/chat/pi-adapter'
-import { readSdkSessionMessageCount } from '@/lib/chat/session-branches'
 import { getSession, resolveAgentRunConfig, updateSessionFilePath } from '@/lib/db/repository'
 
 import type { RunActivityStatus } from '@/lib/chat/session-run-controller'
@@ -14,6 +13,7 @@ export type StartSessionPromptResult =
   | { status: 'session-not-found' }
   | { status: 'agent-not-found' }
   | { status: 'already-running' }
+  | { status: 'branch-failed' }
 
 /**
  * Prepare a session (runtime sync, model selection) and start a prompt through
@@ -29,6 +29,13 @@ export async function startSessionPrompt(input: {
   providerId?: string
   modelId?: string
   thinkingLevel?: string
+  /**
+   * Branch anchor for edit-and-resend: attach the prompt under this entry
+   * (`null` = the session root) instead of the current leaf. Applied
+   * idempotently right before the prompt so it survives SDK session rebuilds
+   * between the client staging the branch and the run starting.
+   */
+  branchParentEntryId?: string | null
 }): Promise<StartSessionPromptResult> {
   const session = getSession(input.sessionId)
   if (!session) return { status: 'session-not-found' }
@@ -118,6 +125,25 @@ export async function startSessionPrompt(input: {
     studioSession.inner.setThinkingLevel(thinkingLevel as never)
   }
 
+  // Land the branch anchor on the instance that will run the prompt. The
+  // client's earlier /navigate call moved an in-memory leaf pointer that a
+  // session rebuild (TTL, resource-signature change) silently resets to the
+  // file tail — which would degrade the edit-resend into a linear append.
+  // navigateTree is a no-op when the leaf is already there, so re-applying is
+  // free; a failure is surfaced instead of running from the wrong spot.
+  if (input.branchParentEntryId !== undefined) {
+    try {
+      if (input.branchParentEntryId === null) {
+        studioSession.inner.sessionManager.resetLeaf()
+      } else {
+        const navigation = await studioSession.inner.navigateTree(input.branchParentEntryId, {})
+        if (navigation.cancelled) return { status: 'branch-failed' }
+      }
+    } catch {
+      return { status: 'branch-failed' }
+    }
+  }
+
   const { activityId, runId, completion } = studioSession.runController.prompt(
     input.prompt,
     {
@@ -132,9 +158,13 @@ export async function startSessionPrompt(input: {
       // content begins in the session file, so a page render that lands mid-run
       // can keep the turn's incrementally persisted tail out of history (the
       // client renders that turn live from the event stream).
-      contextMessageCountAtStart: readSdkSessionMessageCount(
-        studioSession.inner.sessionFile ?? session.filePath,
-      ),
+      //
+      // Counted on the running instance's in-memory context — not by reopening
+      // the file, whose recovered leaf is always the file tail and disagrees
+      // with the in-memory leaf after a branch navigation (the boundary would
+      // overshoot and leak the running turn into history).
+      contextMessageCountAtStart:
+        studioSession.inner.sessionManager.buildSessionContext().messages.length,
     },
   )
 

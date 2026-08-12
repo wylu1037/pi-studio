@@ -721,6 +721,14 @@ export const StartRunSchema = z.object({
   providerId: z.string().optional(),
   modelId: z.string().optional(),
   thinkingLevel: ThinkingLevelSchema.default('medium'),
+  /**
+   * Branch anchor for edit-and-resend: the prompt is attached under this entry
+   * (a new branch) instead of the current leaf. `null` branches from the session
+   * root (re-editing the first message); omitted means "continue at the leaf".
+   * Applied idempotently right before the prompt, so it holds even when the SDK
+   * session was rebuilt after the client staged the branch.
+   */
+  branchParentEntryId: z.string().nullable().optional(),
 })
 
 export const RunSchema = z.object({
@@ -740,7 +748,13 @@ export const RunSchema = z.object({
 })
 
 export const StartRunResultSchema = z.object({
-  status: z.enum(['started', 'session-not-found', 'agent-not-found', 'already-running']),
+  status: z.enum([
+    'started',
+    'session-not-found',
+    'agent-not-found',
+    'already-running',
+    'branch-failed',
+  ]),
   activityId: z.string().nullable().optional(),
   runId: z.string().nullable().optional(),
 })

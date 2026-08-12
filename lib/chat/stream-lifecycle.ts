@@ -35,22 +35,17 @@ export function hasPersistedAssistantResponse(
   return trailing.some((message) => PROCESS_MESSAGE_TYPES.has(message.type))
 }
 
-export function hasPersistedUserMessage(
-  messages: ChatMessage[],
-  runStartIndex: number,
-  optimisticMessage: ChatMessage,
-) {
+/**
+ * Whether the current run's prompt has been persisted past the run boundary.
+ *
+ * Positional, not content-based: the run's own prompt is always the first user
+ * message the SDK writes after the boundary, so any persisted user message
+ * there means the optimistic copy is redundant. Matching by content instead
+ * would misfire when an edited message is re-sent verbatim — the identical
+ * pre-boundary original must never count, and format drift (attachment
+ * expansion, trimming) must not keep the optimistic row pinned.
+ */
+export function hasPersistedUserMessage(messages: ChatMessage[], runStartIndex: number) {
   const startIndex = Math.max(0, Math.min(runStartIndex, messages.length))
-  return messages.slice(startIndex).some(
-    (message) =>
-      message.type === 'user' &&
-      message.content === optimisticMessage.content &&
-      haveSameAttachments(message.attachments, optimisticMessage.attachments),
-  )
-}
-
-function haveSameAttachments(left: ChatMessage['attachments'], right: ChatMessage['attachments']) {
-  if (!left?.length && !right?.length) return true
-  if (!left || !right || left.length !== right.length) return false
-  return left.every((attachment, index) => attachment.path === right[index]?.path)
+  return messages.slice(startIndex).some((message) => message.type === 'user')
 }

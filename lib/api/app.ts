@@ -2343,6 +2343,7 @@ api.openapi(
       providerId: body.providerId,
       modelId: body.modelId,
       thinkingLevel: body.thinkingLevel,
+      branchParentEntryId: body.branchParentEntryId,
     })
     // Always 200 with a discriminated status so the client can branch on the
     // outcome. The unified event stream carries the run's frames; the activityId

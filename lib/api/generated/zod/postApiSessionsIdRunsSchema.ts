@@ -13,7 +13,7 @@ export const postApiSessionsIdRunsPathParamsSchema = z.object({
  * @description OK
  */
 export const postApiSessionsIdRuns200Schema = z.object({
-    "status": z.enum(["started", "session-not-found", "agent-not-found", "already-running"]),
+    "status": z.enum(["started", "session-not-found", "agent-not-found", "already-running", "branch-failed"]),
 "activityId": z.string().nullish(),
 "runId": z.string().nullish()
     })
@@ -25,7 +25,8 @@ export const postApiSessionsIdRunsMutationRequestSchema = z.object({
     "message": z.string().min(1),
 "providerId": z.optional(z.string()),
 "modelId": z.optional(z.string()),
-"thinkingLevel": z.optional(z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]).default("medium"))
+"thinkingLevel": z.optional(z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]).default("medium")),
+"branchParentEntryId": z.string().nullish()
     })
 
 export const postApiSessionsIdRunsMutationResponseSchema = z.lazy(() => postApiSessionsIdRuns200Schema)

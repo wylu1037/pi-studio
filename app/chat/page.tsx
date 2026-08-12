@@ -16,6 +16,15 @@ import {
 
 export const dynamic = 'force-dynamic'
 
+function treeContainsEntry(
+  node: { id: string; children: { id: string; children: unknown[] }[] },
+  entryId: string | null,
+): boolean {
+  if (!entryId) return false
+  if (node.id === entryId) return true
+  return node.children.some((child) => treeContainsEntry(child as typeof node, entryId))
+}
+
 export default async function ChatPage({
   searchParams,
 }: {
@@ -61,7 +70,13 @@ export default async function ChatPage({
       peekSessionRunController(activeSession.id)?.liveRunMessageBoundary() ?? undefined
     const sdkTree = readSdkSessionTree(activeSession.filePath)
     const sdkContext = readSdkSessionContext(activeSession.filePath, undefined, { liveRunBoundary })
-    tree = sdkTree?.roots[0] ?? tree
+    // A root-message edit branches from the session root, creating a second
+    // root — pick the root holding the current leaf so the active branch stays
+    // visible in the tree UI instead of always showing the first root.
+    tree =
+      sdkTree?.roots.find((root) => treeContainsEntry(root, sdkTree.leafId)) ??
+      sdkTree?.roots[0] ??
+      tree
     messages = sdkContext?.messages ?? messages
   }
 

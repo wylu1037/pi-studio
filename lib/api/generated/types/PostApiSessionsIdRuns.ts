@@ -15,7 +15,8 @@ export const postApiSessionsIdRuns200StatusEnum = {
     started: "started",
     "session-not-found": "session-not-found",
     "agent-not-found": "agent-not-found",
-    "already-running": "already-running"
+    "already-running": "already-running",
+    "branch-failed": "branch-failed"
 } as const;
 
 export type PostApiSessionsIdRuns200StatusEnumKey = (typeof postApiSessionsIdRuns200StatusEnum)[keyof typeof postApiSessionsIdRuns200StatusEnum];
@@ -72,6 +73,10 @@ export type PostApiSessionsIdRunsMutationRequest = {
      * @type string | undefined
     */
     thinkingLevel?: PostApiSessionsIdRunsMutationRequestThinkingLevelEnumKey;
+    /**
+     * @type string
+    */
+    branchParentEntryId?: string | null;
 };
 
 export type PostApiSessionsIdRunsMutationResponse = PostApiSessionsIdRuns200;

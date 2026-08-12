@@ -797,7 +797,6 @@ export function ChatView({
     const hasPersistedOptimisticMessage = hasPersistedUserMessage(
       sourceMessages,
       runStream.sourceCountAtRunStart,
-      optimisticMessage,
     )
 
     return hasPersistedOptimisticMessage ? sourceMessages : [...sourceMessages, optimisticMessage]
@@ -1018,7 +1017,13 @@ export function ChatView({
     },
   )
 
-  const submit = form.handleSubmit(async (values) => {
+  // The submit body lives outside `form.handleSubmit` so edit-resend can pass
+  // the branch anchor directly — threading it through state would hit the same
+  // stale-closure trap the staged source count exists to avoid.
+  const submitPrompt = async (
+    values: ComposerValues,
+    options?: { branchParentEntryId?: string | null },
+  ) => {
     if (!activeSession || !activeAgent) return
     if (values.message.trim().toLowerCase() === '/new-session') {
       await createNewSession()
@@ -1083,6 +1088,9 @@ export function ChatView({
     const payload = {
       ...values,
       message: buildPromptWithAttachments(trimmedMessage, uploadedAttachments),
+      ...(options?.branchParentEntryId !== undefined
+        ? { branchParentEntryId: options.branchParentEntryId }
+        : {}),
     }
     if (!postApiSessionsIdRunsMutationRequestSchema.safeParse(payload).success) return
     resetStreamingMarkdown()
@@ -1104,7 +1112,8 @@ export function ChatView({
       // arrive through it. Starting a run only kicks off the activity; the
       // activity_start/state frames advance the stream phase from here.
       const run = (await postApiSessionsIdRuns(activeSession.id, payload)) as unknown as {
-        status: 'started' | 'session-not-found' | 'agent-not-found' | 'already-running'
+        status:
+          'started' | 'session-not-found' | 'agent-not-found' | 'already-running' | 'branch-failed'
         activityId?: string | null
         runId?: string | null
       }
@@ -1124,7 +1133,9 @@ export function ChatView({
                 ? 'This session is no longer available.'
                 : run.status === 'agent-not-found'
                   ? 'The agent for this session is no longer available.'
-                  : 'Unable to start pi run.',
+                  : run.status === 'branch-failed'
+                    ? 'Unable to branch from the edited message.'
+                    : 'Unable to start pi run.',
           })
         }
         return
@@ -1137,6 +1148,7 @@ export function ChatView({
         modelId: values.modelId,
         thinkingLevel: values.thinkingLevel,
       })
+      return true
     } catch (error) {
       const message = errorMessage(error, 'Unable to start pi run.')
       if (/already processing|streamingBehavior/i.test(message)) {
@@ -1151,7 +1163,9 @@ export function ChatView({
       }
       return
     }
-  })
+  }
+
+  const submit = form.handleSubmit((values) => submitPrompt(values))
 
   const abort = async () => {
     if (abortingRun) return
@@ -1301,21 +1315,26 @@ export function ChatView({
     const userMessages = displayMessages.filter((item) => item.type === 'user')
     const userIndex = userMessages.findIndex((item) => item.id === message.id)
     const entry = userIndex >= 0 ? findUserTreeNodeByIndex(tree, userIndex) : null
+    if (!entry) {
+      showToast({
+        tone: 'error',
+        title: 'Edit message',
+        message: 'Unable to locate this message in the session tree.',
+      })
+      return
+    }
 
-    if (entry?.parentId) {
+    // The branch anchor rides in the run request itself and is applied
+    // server-side right before the prompt (see startSessionPrompt). A separate
+    // /navigate call would only move an in-memory leaf pointer that a session
+    // rebuild silently resets — degrading the edit into a linear append while
+    // the UI shows the branch view.
+    const branchParentEntryId = entry.parentId
+
+    if (branchParentEntryId) {
       try {
-        const navigateResponse = await fetch(`/api/sessions/${activeSession.id}/navigate`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ entryId: entry.parentId }),
-        })
-        const navigateBody = (await navigateResponse.json()) as { error?: string }
-        if (!navigateResponse.ok) {
-          throw new Error(navigateBody.error ?? 'Unable to branch from this message.')
-        }
-
         const contextResponse = await fetch(
-          `/api/sessions/${encodeURIComponent(activeSession.id)}/context?leafId=${encodeURIComponent(entry.parentId)}`,
+          `/api/sessions/${encodeURIComponent(activeSession.id)}/context?leafId=${encodeURIComponent(branchParentEntryId)}`,
         )
         const contextBody = (await contextResponse.json()) as {
           messages?: ChatMessage[]
@@ -1324,7 +1343,7 @@ export function ChatView({
         if (!contextResponse.ok || !contextBody.messages) {
           throw new Error(contextBody.error ?? 'Unable to load branch context.')
         }
-        setSelectedNodeId(entry.parentId)
+        setSelectedNodeId(branchParentEntryId)
         setBranchMessages(contextBody.messages)
         dispatchRunStream({
           type: 'branch_context_staged',
@@ -1338,11 +1357,26 @@ export function ChatView({
         })
         return
       }
+    } else {
+      // Re-editing the root message: the branch prefix is empty.
+      setSelectedNodeId(null)
+      setBranchMessages([])
+      dispatchRunStream({ type: 'branch_context_staged', sourceCount: 0 })
     }
 
     clearAttachments()
     form.setValue('message', trimmed, { shouldDirty: true })
-    await submit()
+    const started = await submitPrompt(
+      { ...form.getValues(), message: trimmed },
+      { branchParentEntryId },
+    )
+    if (started) {
+      showToast({
+        tone: 'info',
+        title: 'Edit message',
+        message: 'Started a new branch from here. The previous version stays in the session tree.',
+      })
+    }
   }
 
   const totalTreeNodes = countTreeNodes(tree)

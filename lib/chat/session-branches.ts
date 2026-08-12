@@ -202,17 +202,6 @@ export function mapContextMessages(
   )
 }
 
-/**
- * Number of context messages currently persisted along the session's active
- * path. Sampled right before a run starts so a concurrent page render can tell
- * the settled history apart from the running turn's incrementally written tail.
- */
-export function readSdkSessionMessageCount(filePath: string) {
-  if (!existsSync(filePath)) return 0
-  const manager = SessionManager.open(filePath)
-  return buildSessionContext(manager.getEntries(), manager.getLeafId()).messages.length
-}
-
 export function hydrateSessionSummariesFromSdk(sessions: AgentSessionSummary[]) {
   return sessions.map((session) => {
     const context = readSdkSessionContext(session.filePath)
