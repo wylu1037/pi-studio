@@ -23,6 +23,18 @@ import type { PiRunEvent, RunStreamFrame } from './session-event-stream'
 
 export type RunStreamPhase = 'idle' | 'starting' | 'thinking' | 'streaming'
 
+/**
+ * An in-flight SDK auto-retry. `attempt` is 0 between `retry_pending` and the
+ * `retry_scheduled` that carries the counters, so the UI shows a bare
+ * "Reconnecting" until the numbers land.
+ */
+export interface RunStreamRetry {
+  attempt: number
+  maxAttempts: number
+  /** The transient error being retried; surfaced on demand behind the notice. */
+  message: string
+}
+
 type ProcessMessageType = Extract<
   ChatMessage['type'],
   'thinking' | 'tool_call' | 'tool_result' | 'bash'
@@ -43,6 +55,12 @@ export interface RunStreamState {
   queueReady: boolean
   aborting: boolean
   error: string | null
+  /**
+   * Non-null while the SDK is auto-retrying a transient failure. Mutually
+   * exclusive with `error`: a retry supersedes the error block it replaces, and
+   * the error only comes back if the retry budget runs out.
+   */
+  retry: RunStreamRetry | null
   /** Run finished; the post-run history refresh/handover is pending. */
   done: boolean
   startedAt: number | null
@@ -70,6 +88,7 @@ export function createInitialRunStreamState(sourceCount: number): RunStreamState
     queueReady: false,
     aborting: false,
     error: null,
+    retry: null,
     done: false,
     startedAt: null,
     messages: [],
@@ -113,6 +132,7 @@ export function runStreamReducer(state: RunStreamState, action: RunStreamAction)
         queueReady: false,
         aborting: false,
         error: null,
+        retry: null,
         done: false,
         startedAt: action.at,
         messages: [],
@@ -133,6 +153,7 @@ export function runStreamReducer(state: RunStreamState, action: RunStreamAction)
         phase: 'idle' as const,
         activityId: null,
         aborting: false,
+        retry: null,
         optimisticUserMessage: null,
         startedAt: null,
       }
@@ -164,6 +185,7 @@ export function runStreamReducer(state: RunStreamState, action: RunStreamAction)
         ...state,
         phase: 'idle',
         done: false,
+        retry: null,
         startedAt: null,
         messages: [],
         optimisticUserMessage: null,
@@ -238,6 +260,7 @@ function reduceFrame(state: RunStreamState, frame: RunStreamFrame, at: number): 
         sdkRunning: true,
         queueReady: true,
         error: null,
+        retry: null,
         done: false,
         startedAt: at,
         messages: [],
@@ -257,6 +280,9 @@ function reduceFrame(state: RunStreamState, frame: RunStreamFrame, at: number): 
         queueReady: false,
         aborting: false,
         messages: settleStreamingRows(state.messages),
+        // The activity is over, so no retry can still be pending: a failure that
+        // outlived the retry budget belongs in the error block after all.
+        retry: null,
         error: failed ? (frame.error ?? 'pi run failed.') : state.error,
         done: !failed,
       }
@@ -365,6 +391,39 @@ function reducePiEvent(state: RunStreamState, event: PiRunEvent): RunStreamState
       // SDK message eagerly just shows it sooner.
       return { ...state, error: event.message ?? 'pi run failed.' }
 
+    case 'retry_pending': {
+      // Arrives right behind the `error` for the same failed turn. Move the
+      // message into the retry notice so the error block never settles in.
+      if (state.retry) return state
+      return {
+        ...state,
+        error: null,
+        retry: { attempt: 0, maxAttempts: 0, message: state.error ?? 'pi run failed.' },
+      }
+    }
+
+    case 'retry_scheduled':
+      return {
+        ...state,
+        error: null,
+        retry: {
+          attempt: event.attempt,
+          maxAttempts: event.maxAttempts,
+          message: event.message || state.retry?.message || 'pi run failed.',
+        },
+      }
+
+    case 'retry_finished': {
+      if (event.success) return { ...state, retry: null, error: null }
+      // Budget exhausted (or the backoff was cancelled): hand the failure back
+      // to the error block, keeping the last message we know about.
+      return {
+        ...state,
+        retry: null,
+        error: event.finalError ?? state.retry?.message ?? state.error,
+      }
+    }
+
     case 'done':
       return state
   }
@@ -456,6 +515,7 @@ export const selectHasPersistedRun = (state: RunStreamState, sourceMessages: Cha
 
 export const selectIsWaiting = (state: RunStreamState, hasPersistedRun: boolean) =>
   !state.error &&
+  !state.retry &&
   !hasPersistedRun &&
   (state.phase !== 'idle' || state.sdkRunning) &&
   state.messages.length === 0

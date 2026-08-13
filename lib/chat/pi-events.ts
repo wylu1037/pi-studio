@@ -40,6 +40,21 @@ export type PiRunEvent =
   | { type: 'bash_output'; stream: 'stdout' | 'stderr'; content: string }
   | { type: 'usage'; usage: PiUsage; messageId?: string }
   | { type: 'error'; message: string }
+  /**
+   * The SDK classified the failed turn as transient and is about to schedule a
+   * retry (`agent_end.willRetry`). It arrives immediately after the `error` it
+   * supersedes, so the UI can swap the error block for a reconnecting notice
+   * before `retry_scheduled` supplies the attempt counters.
+   */
+  | { type: 'retry_pending' }
+  | {
+      type: 'retry_scheduled'
+      attempt: number
+      maxAttempts: number
+      delayMs: number
+      message: string
+    }
+  | { type: 'retry_finished'; success: boolean; attempt: number; finalError?: string }
   | { type: 'done'; exitCode: number | null }
 
 export interface PiRunEventParserOptions {
@@ -85,6 +100,36 @@ function parseSdkEventWithState(event: unknown, state?: PiRunEventParserState): 
   const payload = asRecord(event)
   if (!payload) return []
   const type = String(payload.type ?? '')
+
+  // Auto-retry lifecycle. The SDK emits these around a transient turn failure,
+  // after the `error` the failed assistant message already produced.
+  if (type === 'agent_end') {
+    return payload.willRetry === true ? [{ type: 'retry_pending' }] : []
+  }
+
+  if (type === 'auto_retry_start') {
+    return [
+      {
+        type: 'retry_scheduled',
+        attempt: numberValue(payload.attempt),
+        maxAttempts: numberValue(payload.maxAttempts),
+        delayMs: numberValue(payload.delayMs),
+        message: stringValue(payload.errorMessage) ?? 'The model run failed.',
+      },
+    ]
+  }
+
+  if (type === 'auto_retry_end') {
+    const finalError = stringValue(payload.finalError)
+    return [
+      {
+        type: 'retry_finished',
+        success: payload.success === true,
+        attempt: numberValue(payload.attempt),
+        ...(finalError ? { finalError } : {}),
+      },
+    ]
+  }
 
   if (type === 'message_start') {
     const message = asRecord(payload.message)

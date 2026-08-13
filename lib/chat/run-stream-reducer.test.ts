@@ -361,3 +361,128 @@ test('replaying the same action sequence twice yields identical states', () => {
   const second = replay(createInitialRunStreamState(2), actions)
   assert.deepEqual(first, second, 'the reducer is deterministic — no wall clock, no refs')
 })
+
+// --- Auto-retry --------------------------------------------------------------
+
+const transientError = frame({
+  kind: 'pi',
+  event: { type: 'error', message: 'Connection error.' },
+})
+
+const retryPending = frame({ kind: 'pi', event: { type: 'retry_pending' } })
+
+function retryScheduled(attempt: number, maxAttempts = 5): RunStreamAction {
+  return frame({
+    kind: 'pi',
+    event: {
+      type: 'retry_scheduled',
+      attempt,
+      maxAttempts,
+      delayMs: 1000,
+      message: 'Connection error.',
+    },
+  })
+}
+
+function runningWithError() {
+  return replay(createInitialRunStreamState(3), [
+    submitted(3),
+    activityStart,
+    assistantStart,
+    transientError,
+  ])
+}
+
+test('a pending retry takes the error over, carrying its message', () => {
+  const state = runStreamReducer(runningWithError(), retryPending)
+
+  assert.equal(state.error, null, 'the error block yields to the retry notice')
+  assert.deepEqual(state.retry, { attempt: 0, maxAttempts: 0, message: 'Connection error.' })
+  assert.equal(selectIsWaiting(state, false), false, 'the notice replaces the waiting bubble')
+})
+
+test('retry_scheduled fills in the attempt counters', () => {
+  const state = replay(runningWithError(), [retryPending, retryScheduled(1)])
+  assert.deepEqual(state.retry, { attempt: 1, maxAttempts: 5, message: 'Connection error.' })
+
+  const second = runStreamReducer(state, retryScheduled(2))
+  assert.deepEqual(second.retry, { attempt: 2, maxAttempts: 5, message: 'Connection error.' })
+  assert.equal(second.error, null)
+})
+
+test('retry_scheduled without a preceding retry_pending still opens the notice', () => {
+  const state = replay(runningWithError(), [retryScheduled(1)])
+  assert.equal(state.error, null)
+  assert.equal(state.retry?.attempt, 1)
+})
+
+test('a succeeding retry clears both the notice and the error', () => {
+  const state = replay(runningWithError(), [
+    retryPending,
+    retryScheduled(1),
+    frame({ kind: 'pi', event: { type: 'retry_finished', success: true, attempt: 1 } }),
+  ])
+
+  assert.equal(state.retry, null)
+  assert.equal(state.error, null)
+})
+
+test('an exhausted retry budget hands the failure back to the error block', () => {
+  const state = replay(runningWithError(), [
+    retryPending,
+    retryScheduled(5),
+    frame({
+      kind: 'pi',
+      event: {
+        type: 'retry_finished',
+        success: false,
+        attempt: 5,
+        finalError: 'Connection error.',
+      },
+    }),
+  ])
+
+  assert.equal(state.retry, null)
+  assert.equal(state.error, 'Connection error.')
+})
+
+test('a retry_finished without a finalError falls back to the retried message', () => {
+  const state = replay(runningWithError(), [
+    retryPending,
+    retryScheduled(5),
+    frame({ kind: 'pi', event: { type: 'retry_finished', success: false, attempt: 5 } }),
+  ])
+
+  assert.equal(state.error, 'Connection error.')
+})
+
+test('activity_end drops a still-open retry notice for the real failure', () => {
+  const state = replay(runningWithError(), [
+    retryPending,
+    retryScheduled(5),
+    frame({
+      kind: 'activity_end',
+      activityId: 'act-1',
+      status: 'failed',
+      error: 'pi run failed.',
+    }),
+  ])
+
+  assert.equal(state.retry, null, 'a settled activity can no longer be retrying')
+  assert.equal(state.error, 'pi run failed.')
+})
+
+test('a new activity clears a retry left over from the previous one', () => {
+  const state = replay(runningWithError(), [
+    retryPending,
+    frame({
+      kind: 'activity_start',
+      activityId: 'act-2',
+      activityKind: 'prompt',
+      startedAt: '2026-08-10T00:01:00.000Z',
+    }),
+  ])
+
+  assert.equal(state.retry, null)
+  assert.equal(state.error, null)
+})

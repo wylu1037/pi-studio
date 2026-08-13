@@ -46,6 +46,7 @@ import {
   Pencil,
   Copy,
   Check,
+  RotateCcw,
   MessageSquare,
   type LucideIcon,
 } from 'lucide-react'
@@ -127,6 +128,7 @@ import {
   selectIsRunningRun,
   selectIsStartingRun,
   selectIsWaiting,
+  type RunStreamRetry,
 } from '@/lib/chat/run-stream-reducer'
 
 const SESSION_TREE_RECENT_NODE_LIMIT = 80
@@ -143,6 +145,11 @@ const MESSAGE_LIMIT_INCREMENT = 100
 // automating the manual "switch pages" that used to be the only way out.
 const ABORT_FALLBACK_TIMEOUT_MS = 8000
 const STREAM_ERROR_TIMEOUT_MS = 8000
+// The SDK emits a failed turn's `error` a beat before the `retry_pending` that
+// supersedes it. While the run is still live that retry may still be on the
+// wire, so the error block waits this long rather than flashing and being
+// swapped out. A settled run can never retry, and clears the hold immediately.
+const STREAM_ERROR_RETRY_GRACE_MS = 400
 
 type StreamUsage = {
   input?: number
@@ -201,6 +208,7 @@ export function ChatView({
   const sdkSessionRunning = runStream.sdkRunning
   const abortingRun = runStream.aborting
   const streamError = runStream.error
+  const streamRetry = runStream.retry
   const [composerOverlayHeight, setComposerOverlayHeight] = useState(112)
   const [queueingMessage, setQueueingMessage] = useState<'steer' | 'follow-up' | null>(null)
   const [showSessionTree, setShowSessionTree] = useState(false)
@@ -944,6 +952,22 @@ export function ChatView({
   const canQueueMessage = selectCanQueueMessage(runStream)
   const isWaiting = selectIsWaiting(runStream, hasPersistedRun)
 
+  // Hold a live run's error back for one grace window so an auto-retry that is
+  // still in flight can claim it (see STREAM_ERROR_RETRY_GRACE_MS). The hold
+  // lifts the moment the run settles, so an unretryable failure shows at once.
+  const [errorHoldLifted, setErrorHoldLifted] = useState(true)
+  useEffect(() => {
+    if (!streamError || !isRunningRun) {
+      setErrorHoldLifted(true)
+      return
+    }
+    setErrorHoldLifted(false)
+    const timer = window.setTimeout(() => setErrorHoldLifted(true), STREAM_ERROR_RETRY_GRACE_MS)
+    return () => window.clearTimeout(timer)
+  }, [streamError, isRunningRun])
+
+  const showStreamError = Boolean(streamError) && !streamRetry && errorHoldLifted
+
   // A new session starts with no extension-UI state; the stream re-pushes the
   // current snapshot on connect if the broker already has one.
   useEffect(() => {
@@ -1307,10 +1331,19 @@ export function ChatView({
     }
   }
 
-  const resubmitEditedUserMessage = async (message: ChatMessage, content: string) => {
+  // Branching is silent on success — the new branch is its own confirmation.
+  // `intent` only titles the failure toasts: retrying is an edit that happens to
+  // keep the original text, so it branches from the same parent entry either way.
+  const resubmitEditedUserMessage = async (
+    message: ChatMessage,
+    content: string,
+    intent: 'edit' | 'retry' = 'edit',
+  ) => {
     if (!activeSession || !activeAgent || isRunningRun || clearingSession) return
     const trimmed = content.trim()
     if (!trimmed) return
+
+    const toastTitle = intent === 'retry' ? 'Retry message' : 'Edit message'
 
     const userMessages = displayMessages.filter((item) => item.type === 'user')
     const userIndex = userMessages.findIndex((item) => item.id === message.id)
@@ -1318,7 +1351,7 @@ export function ChatView({
     if (!entry) {
       showToast({
         tone: 'error',
-        title: 'Edit message',
+        title: toastTitle,
         message: 'Unable to locate this message in the session tree.',
       })
       return
@@ -1352,7 +1385,7 @@ export function ChatView({
       } catch (error) {
         showToast({
           tone: 'error',
-          title: 'Edit message',
+          title: toastTitle,
           message: error instanceof Error ? error.message : 'Unable to branch from this message.',
         })
         return
@@ -1366,17 +1399,11 @@ export function ChatView({
 
     clearAttachments()
     form.setValue('message', trimmed, { shouldDirty: true })
-    const started = await submitPrompt(
-      { ...form.getValues(), message: trimmed },
-      { branchParentEntryId },
-    )
-    if (started) {
-      showToast({
-        tone: 'info',
-        title: 'Edit message',
-        message: 'Started a new branch from here. The previous version stays in the session tree.',
-      })
-    }
+    await submitPrompt({ ...form.getValues(), message: trimmed }, { branchParentEntryId })
+  }
+
+  const retryUserMessage = async (message: ChatMessage) => {
+    await resubmitEditedUserMessage(message, message.content, 'retry')
   }
 
   const totalTreeNodes = countTreeNodes(tree)
@@ -1660,6 +1687,7 @@ export function ChatView({
                       mediaSessionId={activeSession.id}
                       canEdit={!isRunningRun && !clearingSession}
                       onResubmit={resubmitEditedUserMessage}
+                      onRetry={retryUserMessage}
                     />
                   </div>
                 )
@@ -1701,12 +1729,13 @@ export function ChatView({
                       mediaSessionId={activeSession.id}
                       canEdit={!isRunningRun && !clearingSession}
                       onResubmit={resubmitEditedUserMessage}
+                      onRetry={retryUserMessage}
                     />
                   </div>
                 )
               })}
               {isWaiting && <WaitingBubble agentAvatar={activeAgent.icon} />}
-              {displayMessages.length === 0 && !isWaiting && !streamError && (
+              {displayMessages.length === 0 && !isWaiting && !streamError && !streamRetry && (
                 <EmptyConversationState
                   agentName={activeAgent.name}
                   modelName={activeModelName}
@@ -1717,7 +1746,10 @@ export function ChatView({
                   }}
                 />
               )}
-              {streamError && (
+              {streamRetry && (
+                <ChatRetryNotice retry={streamRetry} agentAvatar={activeAgent.icon} />
+              )}
+              {showStreamError && streamError && (
                 <StandaloneMessage
                   message={{
                     id: 'stream-error',
@@ -3071,12 +3103,14 @@ const StandaloneMessage = memo(function StandaloneMessage({
   mediaSessionId,
   canEdit = false,
   onResubmit,
+  onRetry,
 }: {
   message: ChatMessage
   userAvatar?: string
   mediaSessionId?: string
   canEdit?: boolean
   onResubmit?: (message: ChatMessage, content: string) => Promise<void> | void
+  onRetry?: (message: ChatMessage) => Promise<void> | void
 }) {
   switch (message.type) {
     case 'user':
@@ -3087,6 +3121,7 @@ const StandaloneMessage = memo(function StandaloneMessage({
           mediaSessionId={mediaSessionId}
           canEdit={canEdit}
           onResubmit={onResubmit}
+          onRetry={onRetry}
         />
       )
     case 'error':
@@ -3126,12 +3161,14 @@ function UserMessage({
   mediaSessionId,
   canEdit = false,
   onResubmit,
+  onRetry,
 }: {
   message: ChatMessage
   userAvatar?: string
   mediaSessionId?: string
   canEdit?: boolean
   onResubmit?: (message: ChatMessage, content: string) => Promise<void> | void
+  onRetry?: (message: ChatMessage) => Promise<void> | void
 }) {
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
@@ -3175,6 +3212,16 @@ function UserMessage({
     try {
       await onResubmit(message, trimmed)
       setIsEditing(false)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const retry = async () => {
+    if (!onRetry || submitting) return
+    setSubmitting(true)
+    try {
+      await onRetry(message)
     } finally {
       setSubmitting(false)
     }
@@ -3284,9 +3331,19 @@ function UserMessage({
               >
                 {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
               </MessageActionIconButton>
+              {canEdit && onRetry && message.content.trim() ? (
+                <MessageActionIconButton
+                  label="Retry"
+                  disabled={submitting}
+                  onClick={() => void retry()}
+                >
+                  <RotateCcw className="size-3" />
+                </MessageActionIconButton>
+              ) : null}
               {canEdit && onResubmit ? (
                 <MessageActionIconButton
                   label="Edit"
+                  disabled={submitting}
                   onClick={() => {
                     setDraft(message.content)
                     setIsEditing(true)
@@ -3471,6 +3528,44 @@ function parseChatError(rawInput: string): ParsedChatError {
   }
 }
 
+/**
+ * Transient-failure notice shown in place of the error block while the SDK
+ * auto-retries the turn. It takes over the waiting bubble's slot, so it wears
+ * the same shape (avatar, indent, shimmer label) and only swaps the Thinking
+ * dots for the attempt counter. The error itself is not lost — it sits one
+ * disclosure away, like ChatErrorCallout's details.
+ */
+function ChatRetryNotice({ retry, agentAvatar }: { retry: RunStreamRetry; agentAvatar?: string }) {
+  const parsed = useMemo(() => parseChatError(retry.message), [retry.message])
+  const counter = retry.maxAttempts > 0 ? `${retry.attempt}/${retry.maxAttempts}` : null
+
+  return (
+    <Message>
+      <MessageAvatar className="bg-transparent">
+        <ChatAvatar preset={agentAvatar} role="assistant" />
+      </MessageAvatar>
+      <MessageContent className="min-h-8 justify-center">
+        <details role="status" aria-live="polite" className="group/retry ml-3.5 min-w-0">
+          <summary
+            title="Show error details"
+            className="flex min-h-5 w-fit max-w-full cursor-pointer list-none items-center gap-2 font-mono text-xs"
+          >
+            <ShimmerText text="Reconnecting" />
+            {counter ? <span className="text-muted-foreground/60">{counter}</span> : null}
+            <ChevronRight
+              className="size-3 shrink-0 text-muted-foreground/60 transition-transform group-open/retry:rotate-90"
+              aria-hidden
+            />
+          </summary>
+          <pre className="mt-2 max-h-40 overflow-auto font-mono text-[10px] leading-relaxed wrap-break-word whitespace-pre-wrap text-muted-foreground/70">
+            {parsed.raw || parsed.message}
+          </pre>
+        </details>
+      </MessageContent>
+    </Message>
+  )
+}
+
 function ChatErrorCallout({
   content,
   variant = 'standalone',
@@ -3532,19 +3627,22 @@ function ChatErrorCallout({
 function MessageActionIconButton({
   label,
   onClick,
+  disabled = false,
   children,
 }: {
   label: string
   onClick: () => void
+  disabled?: boolean
   children: React.ReactNode
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       title={label}
       aria-label={label}
-      className="inline-flex size-6 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      className="inline-flex size-6 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
     >
       {children}
     </button>

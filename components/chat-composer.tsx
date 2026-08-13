@@ -245,7 +245,7 @@ export function ChatComposer({
       ref={containerRef}
       className="pointer-events-none absolute inset-x-0 bottom-0 px-5 xl:pr-14"
     >
-      <div className="pointer-events-auto relative mx-auto w-full max-w-3xl bg-background/95 pt-2 shadow-[0_-16px_32px_-28px_rgba(24,28,36,0.45)]">
+      <div className="pointer-events-auto relative mx-auto w-full max-w-3xl bg-background/95 pt-2 pb-1.5 shadow-[0_-16px_32px_-28px_rgba(24,28,36,0.45)]">
         {extensionUi}
         {slashCommandOptions.length > 0 && !isRunningRun && (
           <SlashCommandMenu
@@ -496,13 +496,24 @@ export function ChatComposer({
           )}
         </form>
 
-        <div className="mt-1.5 min-w-0 px-1">
+        {/* Metadata row. While a run holds the button slot, the model dropdown is
+            swapped out for Steer/Follow up — so the active model rides here
+            instead, keeping it visible exactly when it cannot be changed. */}
+        <div className="mt-1.5 flex min-w-0 items-baseline gap-3 px-1">
           <span
-            className="block truncate font-mono text-[10px] text-muted-foreground/45"
+            className="min-w-0 truncate font-mono text-[10px] text-muted-foreground/45"
             title={activeSessionCwd}
           >
             {activeSessionCwd}
           </span>
+          {isRunningRun ? (
+            <span
+              className="ml-auto shrink-0 truncate font-mono text-[10px] text-muted-foreground/60"
+              title={modelSummaryLabel(selectedModelOption, thinking)}
+            >
+              {modelSummaryLabel(selectedModelOption, thinking)}
+            </span>
+          ) : null}
         </div>
       </div>
     </div>
@@ -544,11 +555,7 @@ function ModelConfigurationMenu({
         aria-label="Configure model and reasoning"
         title="Configure model and reasoning"
       >
-        <span className="truncate">
-          {selected
-            ? `${selected.provider.name} · ${selected.model.name ?? selected.model.id} · ${reasoningLabel(thinking)}`
-            : 'No models'}
-        </span>
+        <span className="truncate">{modelSummaryLabel(selected, thinking)}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-72 max-w-[calc(100vw-2rem)]" align="start" side="top">
         <DropdownMenuGroup className="p-0.5">
@@ -635,6 +642,16 @@ function ModelConfigurationMenu({
       </DropdownMenuContent>
     </DropdownMenu>
   )
+}
+
+/** The composer's one-line model summary, shared by the dropdown trigger and
+ *  the metadata row that stands in for it while a run occupies the button slot. */
+function modelSummaryLabel(
+  selected: ComposerModelOption | undefined,
+  thinking: (typeof thinkingLevels)[number],
+) {
+  if (!selected) return 'No models'
+  return `${selected.provider.name} · ${selected.model.name ?? selected.model.id} · ${reasoningLabel(thinking)}`
 }
 
 function reasoningLabel(level: (typeof thinkingLevels)[number]) {
@@ -818,7 +835,7 @@ function EffortSlider({
           {/* Thumb box equals the track height for edge alignment; the visible
               knob is smaller and centered, leaving an even rim on all sides. */}
           <Slider.Thumb
-            className="flex items-center justify-center outline-none select-none has-focus-visible:ring-2 has-focus-visible:ring-ring/60 has-focus-visible:rounded-full [transition:inset-inline-start_200ms_ease-out] group-data-dragging/track:transition-none motion-reduce:transition-none"
+            className="flex items-center justify-center outline-none select-none [transition:inset-inline-start_200ms_ease-out] group-data-dragging/track:transition-none has-focus-visible:rounded-full has-focus-visible:ring-2 has-focus-visible:ring-ring/60 motion-reduce:transition-none"
             style={{ width: EFFORT_BOX_SIZE, height: EFFORT_BOX_SIZE }}
           >
             <span
@@ -851,7 +868,7 @@ function SlashCommandMenu({
           {options.length} available
         </span>
       </div>
-      <ul className="scrollbar-thin max-h-64 overflow-auto py-1">
+      <ul className="max-h-64 scrollbar-thin overflow-auto py-1">
         {options.map((option, index) => (
           <li key={`${option.kind}:${option.id}`}>
             <button

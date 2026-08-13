@@ -306,3 +306,45 @@ function messageUpdate(
 function toolCall(id: string, name: string, args: Record<string, unknown>) {
   return { type: 'toolCall', id, name, arguments: args }
 }
+
+test('parses the SDK auto-retry lifecycle into retry events', () => {
+  const parse = createPiRunEventParser({ runId: 'run-retry' })
+
+  assert.deepEqual(
+    parse({ type: 'agent_end', messages: [], willRetry: true }),
+    [{ type: 'retry_pending' }],
+    'agent_end announces the retry before the counters arrive',
+  )
+  assert.deepEqual(
+    parse({ type: 'agent_end', messages: [], willRetry: false }),
+    [],
+    'a terminal agent_end stays silent so the error block survives',
+  )
+
+  assert.deepEqual(
+    parse({
+      type: 'auto_retry_start',
+      attempt: 2,
+      maxAttempts: 5,
+      delayMs: 2000,
+      errorMessage: 'Connection error.',
+    }),
+    [
+      {
+        type: 'retry_scheduled',
+        attempt: 2,
+        maxAttempts: 5,
+        delayMs: 2000,
+        message: 'Connection error.',
+      },
+    ],
+  )
+
+  assert.deepEqual(parse({ type: 'auto_retry_end', success: true, attempt: 2 }), [
+    { type: 'retry_finished', success: true, attempt: 2 },
+  ])
+  assert.deepEqual(
+    parse({ type: 'auto_retry_end', success: false, attempt: 5, finalError: 'Connection error.' }),
+    [{ type: 'retry_finished', success: false, attempt: 5, finalError: 'Connection error.' }],
+  )
+})
