@@ -12,22 +12,13 @@ import {
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
+import { studioAgentsDir, studioRootDir } from '@/lib/runtime/paths'
 import type { GlobalSkill } from '@/lib/types'
 
-export function piAgentDir() {
-  return join(homedir(), '.pi', 'agent')
-}
-
-export function piSkillsDir() {
-  return join(piAgentDir(), 'skills')
-}
+export { studioRootDir }
 
 export function studioSkillsDir() {
   return join(homedir(), '.pi-studio', 'skills')
-}
-
-export function studioRootDir() {
-  return join(homedir(), '.pi-studio')
 }
 
 export function safeSkillDirName(value?: string) {
@@ -64,31 +55,6 @@ export function skillSourcePath(skill: Pick<GlobalSkill, 'name' | 'path'>) {
   return studioSkillPath(skill.name)
 }
 
-function legacyRuntimeSkillPath(skillName: string) {
-  const dirName = safeSkillDirName(skillName)
-  return dirName ? join(piSkillsDir(), dirName) : null
-}
-
-export function ensureStoredSkill(skill: Pick<GlobalSkill, 'name' | 'path'>) {
-  const source = skillSourcePath(skill)
-  if (existsSync(source)) return source
-
-  const legacy = legacyRuntimeSkillPath(skill.name)
-  if (!legacy || !existsSync(legacy)) return source
-
-  try {
-    if (lstatSync(legacy).isSymbolicLink()) return source
-  } catch {
-    return source
-  }
-
-  const target = studioSkillPath(skill.name)
-  mkdirSync(studioSkillsDir(), { recursive: true })
-  rmSync(target, { recursive: true, force: true })
-  renameSync(legacy, target)
-  return target
-}
-
 export function materializeInstalledSkill(skillName: string) {
   const dirName = safeSkillDirName(skillName)
   if (!dirName) throw new Error(`Invalid skill name: ${skillName}`)
@@ -100,7 +66,6 @@ export function materializeInstalledSkill(skillName: string) {
   const source = [
     join(studioRootDir(), '.agents', 'skills', dirName),
     join(studioRootDir(), '.pi', 'skills', dirName),
-    join(piSkillsDir(), dirName),
   ].find((candidate) => existsSync(candidate))
 
   if (!source) {
@@ -123,19 +88,23 @@ export function materializeInstalledSkill(skillName: string) {
 export function removeStoredSkill(skill: Pick<GlobalSkill, 'name' | 'path'>) {
   const dirName = safeSkillDirName(skill.name)
   if (dirName) {
-    const runtimeLink = join(piSkillsDir(), dirName)
-    try {
-      if (existsSync(runtimeLink) && lstatSync(runtimeLink).isSymbolicLink()) {
-        const linkedTo = readlinkSync(runtimeLink)
-        const resolved = resolve(dirname(runtimeLink), linkedTo)
-        if (isInside(studioSkillsDir(), resolved)) {
-          rmSync(runtimeLink, { force: true })
+    // Drop every per-agent runtime link that points at the stored skill.
+    for (const agentEntry of readdirSafe(studioAgentsDir())) {
+      const runtimeLink = join(studioAgentsDir(), agentEntry, 'skills', dirName)
+      try {
+        if (!existsSync(runtimeLink)) continue
+        if (lstatSync(runtimeLink).isSymbolicLink()) {
+          const linkedTo = readlinkSync(runtimeLink)
+          const resolved = resolve(dirname(runtimeLink), linkedTo)
+          if (isInside(studioSkillsDir(), resolved)) {
+            rmSync(runtimeLink, { force: true })
+          }
+        } else {
+          rmSync(runtimeLink, { recursive: true, force: true })
         }
-      } else if (existsSync(runtimeLink)) {
-        rmSync(runtimeLink, { recursive: true, force: true })
+      } catch {
+        // Leave unreadable runtime entries alone.
       }
-    } catch {
-      // Leave user-managed runtime entries alone.
     }
   }
 
@@ -151,7 +120,7 @@ export function removeStoredSkill(skill: Pick<GlobalSkill, 'name' | 'path'>) {
 
 export function syncPiSkillLinks(
   skills: Array<Pick<GlobalSkill, 'name' | 'path'>>,
-  targetDir = piSkillsDir(),
+  targetDir: string,
 ) {
   const storeRoot = studioSkillsDir()
   mkdirSync(targetDir, { recursive: true })
@@ -172,7 +141,7 @@ export function syncPiSkillLinks(
   for (const skill of skills) {
     const dirName = safeSkillDirName(skill.name)
     if (!dirName) continue
-    const source = ensureStoredSkill(skill)
+    const source = skillSourcePath(skill)
     if (!existsSync(source)) continue
 
     const link = join(targetDir, dirName)

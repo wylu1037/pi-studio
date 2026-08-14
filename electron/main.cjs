@@ -11,6 +11,7 @@ const {
   readFileSync,
   readdirSync,
 } = require('node:fs')
+const { homedir } = require('node:os')
 const http = require('node:http')
 
 const LOG_PRIORITY = {
@@ -35,7 +36,7 @@ app.setAppUserModelId('com.pistudio.desktop')
 function mainLogLevel() {
   try {
     const settings = JSON.parse(
-      readFileSync(join(app.getPath('userData'), 'settings.json'), 'utf8'),
+      readFileSync(join(studioDataDir(), 'settings.json'), 'utf8'),
     )
     return Object.hasOwn(LOG_PRIORITY, settings.logLevel) ? settings.logLevel : 'info'
   } catch {
@@ -57,7 +58,7 @@ function mainLog(level, ...values) {
   const line = `[pi-studio-main] ${new Date().toISOString()} ${level.toUpperCase()} ${message}\n`
   process.stderr.write(line)
   try {
-    appendFileSync(join(app.getPath('userData'), 'main.log'), line)
+    appendFileSync(join(studioDataDir(), 'main.log'), line)
   } catch {
     // The terminal output above remains available if the log file cannot be written.
   }
@@ -140,11 +141,15 @@ function waitForServer(url, timeoutMs = 30000) {
   })
 }
 
+function studioDataDir() {
+  return join(homedir(), '.pi-studio', 'data')
+}
+
 async function startProductionServer() {
   const port = await availablePort()
   const webRoot = join(process.resourcesPath, 'web')
   const serverPath = join(webRoot, 'server.js')
-  const dataDir = app.getPath('userData')
+  const dataDir = studioDataDir()
   const workspaceDir = join(dataDir, 'workspace')
   const serverLog = join(dataDir, 'server.log')
   mkdirSync(dataDir, { recursive: true })

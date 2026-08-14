@@ -1,10 +1,10 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
-  getAgentDir,
   hasTrustRequiringProjectResources,
   ProjectTrustStore,
 } from '@earendil-works/pi-coding-agent'
+import { studioRootDir } from '@/lib/runtime/paths'
 
 export type ProjectTrustDecision = 'once' | 'always' | 'deny' | 'reset'
 
@@ -44,12 +44,12 @@ export function isProjectTrusted(cwd: string) {
   const canonical = canonicalWorkspacePath(cwd)
   if (!hasTrustRequiringProjectResources(canonical)) return true
   if (trustedProjects().has(canonical)) return true
-  return new ProjectTrustStore(getAgentDir()).get(canonical) === true
+  return new ProjectTrustStore(studioRootDir()).get(canonical) === true
 }
 
 export function getProjectTrustState(cwd: string): ProjectTrustState {
   const canonical = canonicalWorkspacePath(cwd)
-  const store = new ProjectTrustStore(getAgentDir())
+  const store = new ProjectTrustStore(studioRootDir())
   const savedDecision = store.get(canonical)
   const requiresTrust = hasTrustRequiringProjectResources(canonical)
   return {
@@ -77,7 +77,7 @@ export function getProjectTrustState(cwd: string): ProjectTrustState {
 
 export function setProjectTrust(cwd: string, decision: ProjectTrustDecision) {
   const canonical = canonicalWorkspacePath(cwd)
-  const store = new ProjectTrustStore(getAgentDir())
+  const store = new ProjectTrustStore(studioRootDir())
   if (decision === 'once') {
     trustedProjects().add(canonical)
   } else if (decision === 'always') {

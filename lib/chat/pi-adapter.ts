@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { piAgentDir, syncPiSkillLinks } from '@/lib/skills/store'
+import { syncPiSkillLinks } from '@/lib/skills/store'
 import { resolvePiProviderConnection } from '@/lib/models/provider-connection'
-import { piStudioDataDir } from '@/lib/runtime/paths'
+import { agentRuntimeDir, piStudioDataDir } from '@/lib/runtime/paths'
 import type { GlobalModelProvider } from '@/lib/types'
 export type { PiUsage } from './pi-events'
 
@@ -75,7 +75,7 @@ function sortRecord(value: Record<string, string> | undefined) {
 }
 
 export function syncAgentRuntime(input: PiRunInput) {
-  const agentDir = piAgentDir()
+  const agentDir = agentRuntimeDir(input.agentId)
   mkdirSync(agentDir, { recursive: true })
   syncPiSkillLinks(input.skills, join(agentDir, 'skills'))
   syncSettingsJson(agentDir, input)

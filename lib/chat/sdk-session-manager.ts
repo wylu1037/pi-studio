@@ -2,7 +2,6 @@ import { existsSync, statSync } from 'node:fs'
 import {
   createAgentSessionFromServices,
   createAgentSessionServices,
-  getAgentDir,
   SettingsManager,
   SessionManager,
   type AgentSession,
@@ -299,7 +298,7 @@ async function createResourceSignature(
   cwd: string,
   extensionPaths: string[],
   promptPaths: string[],
-  agentDir = getAgentDir(),
+  agentDir: string,
   modelRuntimeSignature = '',
 ) {
   const files = [...promptPaths, ...extensionPaths].sort().map((path) => {

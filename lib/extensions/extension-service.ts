@@ -5,7 +5,6 @@ import {
   readFile,
   readdir,
   realpath,
-  rename,
   rm,
   stat,
   writeFile,
@@ -79,36 +78,6 @@ function pathInside(root: string, target: string) {
 
 function studioExtensionsDir() {
   return join(homedir(), '.pi-studio', 'extensions')
-}
-
-let legacyMigration: Promise<void> | undefined
-
-async function migrateLegacyManagedExtensions() {
-  const legacyRoot = join(homedir(), '.pi', 'agent', 'extensions')
-  if (!existsSync(legacyRoot)) return
-  await mkdir(studioExtensionsDir(), { recursive: true })
-  const existingNames = new Set(listStudioExtensions().map((extension) => extension.name))
-  const entries = await readdir(legacyRoot, { withFileTypes: true })
-  for (const entry of entries) {
-    if (!entry.isDirectory() || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(entry.name)) continue
-    const source = join(legacyRoot, entry.name)
-    if (!existsSync(join(source, MANAGED_MARKER))) continue
-    const target = join(studioExtensionsDir(), entry.name)
-    if (existingNames.has(entry.name) || existsSync(target)) continue
-    await rename(source, target)
-    try {
-      createStudioExtension({ name: entry.name, path: target })
-      existingNames.add(entry.name)
-    } catch (error) {
-      await rename(target, source)
-      throw error
-    }
-  }
-}
-
-function ensureLegacyMigration() {
-  legacyMigration ??= migrateLegacyManagedExtensions()
-  return legacyMigration
 }
 
 async function resolveExtensionRoot(id: string) {
@@ -202,7 +171,6 @@ export async function getExtensionSource(id: string, cwd: string) {
 }
 
 export async function listExtensionsWithRuntime(cwd: string) {
-  await ensureLegacyMigration()
   const runtime = await import('@/lib/chat/sdk-session-manager')
   const extensions = listStudioExtensions()
   const snapshots = runtime.listSdkSessionExtensionSnapshots(cwd)
@@ -359,7 +327,6 @@ export async function createLocalExtension(input: {
   template: ExtensionTemplate
   cwd?: string
 }) {
-  await ensureLegacyMigration()
   const name = input.name.trim().toLowerCase()
   if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(name)) {
     throw new Error(
