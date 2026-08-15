@@ -73,6 +73,19 @@ const codexThinkingLevels = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 const reasoningEffortLevels = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 export const COMPOSER_MAX_HEIGHT = 176
 
+/** Ordered reasoning levels offered for a selection, matching the model
+ *  dropdown: Codex-family models expose low..max; every other reasoning model
+ *  additionally leads with its current level so 'off'/'minimal' stay
+ *  selectable. Shared by the dropdown and the Shift+Tab keyboard cycle so the
+ *  two always stay in sync. */
+function reasoningLevelsFor(
+  thinking: (typeof thinkingLevels)[number],
+): readonly (typeof thinkingLevels)[number][] {
+  return codexThinkingLevels.includes(thinking as (typeof codexThinkingLevels)[number])
+    ? codexThinkingLevels
+    : [thinking, ...codexThinkingLevels]
+}
+
 // Shared by every icon button on the composer's action row so they keep one
 // footprint and only light up on hover.
 const composerIconButtonClass =
@@ -182,6 +195,7 @@ export function ChatComposer({
   const [isDraggingFiles, setIsDraggingFiles] = useState(false)
   const messageRegistration = form.register('message')
   const hasQueueableContent = message.trim().length > 0 || attachments.length > 0
+  const supportsReasoning = selectedModelOption?.model.reasoning ?? false
   const queueActionsDisabled =
     !canQueueMessage || !hasQueueableContent || queueingMessage !== null || abortingRun
 
@@ -196,6 +210,19 @@ export function ChatComposer({
   }
 
   const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Tab' && event.shiftKey) {
+      // Shift+Tab cycles the selected model's reasoning intensity through the
+      // same ordered levels the dropdown offers. Only reasoning-capable models
+      // respond; otherwise the key keeps its default focus-moving behavior.
+      if (selectedModelOption?.model.reasoning) {
+        event.preventDefault()
+        const levels = reasoningLevelsFor(thinking)
+        const currentIndex = levels.indexOf(thinking)
+        const next = levels[(currentIndex + 1) % levels.length]
+        form.setValue('thinkingLevel', next, { shouldDirty: true, shouldValidate: true })
+      }
+      return
+    }
     if (slashCommandOptions.length > 0 && !isRunningRun) {
       if (event.key === 'ArrowDown') {
         event.preventDefault()
@@ -363,6 +390,7 @@ export function ChatComposer({
           <textarea
             {...messageRegistration}
             aria-label="Message"
+            aria-keyshortcuts="Shift+Tab"
             ref={(element) => {
               messageRegistration.ref(element)
               textareaRef.current = element
@@ -498,7 +526,8 @@ export function ChatComposer({
 
         {/* Metadata row. While a run holds the button slot, the model dropdown is
             swapped out for Steer/Follow up — so the active model rides here
-            instead, keeping it visible exactly when it cannot be changed. */}
+            instead, keeping it visible exactly when it cannot be changed. The
+            right side also surfaces the Shift+Tab reasoning shortcut. */}
         <div className="mt-1.5 flex min-w-0 items-baseline gap-3 px-1">
           <span
             className="min-w-0 truncate font-mono text-[10px] text-muted-foreground/45"
@@ -506,14 +535,21 @@ export function ChatComposer({
           >
             {activeSessionCwd}
           </span>
-          {isRunningRun ? (
-            <span
-              className="ml-auto shrink-0 truncate font-mono text-[10px] text-muted-foreground/60"
-              title={modelSummaryLabel(selectedModelOption, thinking)}
-            >
-              {modelSummaryLabel(selectedModelOption, thinking)}
-            </span>
-          ) : null}
+          <span className="ml-auto flex min-w-0 shrink-0 items-baseline gap-3">
+            {supportsReasoning ? (
+              <span className="shrink-0 font-mono text-[10px] text-muted-foreground/50">
+                Shift+Tab · reasoning
+              </span>
+            ) : null}
+            {isRunningRun ? (
+              <span
+                className="min-w-0 truncate font-mono text-[10px] text-muted-foreground/60"
+                title={modelSummaryLabel(selectedModelOption, thinking)}
+              >
+                {modelSummaryLabel(selectedModelOption, thinking)}
+              </span>
+            ) : null}
+          </span>
         </div>
       </div>
     </div>
@@ -536,11 +572,7 @@ function ModelConfigurationMenu({
   const [open, setOpen] = useState(false)
   const [showModels, setShowModels] = useState(false)
   const selectedModelValue = selected ? `${selected.provider.id}::${selected.model.id}` : ''
-  const visibleThinkingLevels = codexThinkingLevels.includes(
-    thinking as (typeof codexThinkingLevels)[number],
-  )
-    ? codexThinkingLevels
-    : ([thinking, ...codexThinkingLevels] as const)
+  const visibleThinkingLevels = reasoningLevelsFor(thinking)
 
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen)
@@ -702,7 +734,7 @@ function ReasoningControl({
         aria-label="Reasoning settings"
         title={
           supportsReasoning
-            ? `Reasoning: ${reasoningLabel(thinking)}`
+            ? `Reasoning: ${reasoningLabel(thinking)} · Shift+Tab to cycle`
             : 'This model is not marked as a reasoning model'
         }
         className={composerIconButtonClass}
