@@ -360,7 +360,6 @@ export const chatRuns = sqliteTable(
     prompt: text('prompt').notNull(),
     error: text('error'),
     startedAt: text('started_at'),
-    firstAssistantAt: text('first_assistant_at'),
     completedAt: text('completed_at'),
     createdAt: text('created_at')
       .notNull()
@@ -399,22 +398,6 @@ export const scheduledTasks = sqliteTable(
   (table) => [
     index('scheduled_tasks_agent_idx').on(table.agentId),
     index('scheduled_tasks_next_run_idx').on(table.nextRunAt),
-  ],
-)
-
-export const metricSamples = sqliteTable(
-  'metric_samples',
-  {
-    id: integer('id').primaryKey({ autoIncrement: true }),
-    metricId: text('metric_id').notNull(),
-    value: real('value').notNull(),
-    capturedAt: text('captured_at')
-      .notNull()
-      .default(sql`CURRENT_TIMESTAMP`),
-  },
-  (table) => [
-    index('metric_samples_metric_time_idx').on(table.metricId, table.capturedAt),
-    index('metric_samples_time_idx').on(table.capturedAt),
   ],
 )
 

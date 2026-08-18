@@ -15,7 +15,6 @@ import {
 } from '@phosphor-icons/react'
 import { AvatarPresetPicker } from '@/components/avatar-preset-picker'
 import { ChatAvatar, userAvatarPresets } from '@/components/chat-avatar'
-import { MetricsSettings } from '@/components/metrics-settings'
 import { PageHeader, Panel } from '@/components/pi-ui'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -61,7 +60,7 @@ export function SettingsView({ storageStats }: { storageStats: StorageStats }) {
             aria-label="Settings sections"
             className="h-auto gap-0 p-0 group-data-horizontal/tabs:h-auto data-[variant=line]:gap-0"
           >
-            {['Profile', 'System', 'Metrics', 'Storage'].map((tab) => (
+            {['Profile', 'System', 'Storage'].map((tab) => (
               <TabsTrigger
                 key={tab}
                 value={tab}
@@ -97,9 +96,6 @@ export function SettingsView({ storageStats }: { storageStats: StorageStats }) {
           </TabsContent>
           <TabsContent value="System" className="max-w-4xl">
             <LoggingSettings />
-          </TabsContent>
-          <TabsContent value="Metrics" className="w-full">
-            <MetricsSettings />
           </TabsContent>
         </ScrollArea>
       </Tabs>

@@ -1,5 +1,5 @@
 import type { AgentSession } from '@earendil-works/pi-coding-agent'
-import { createRun, markRun, markRunFirstAssistant } from '@/lib/db/repository'
+import { createRun, markRun } from '@/lib/db/repository'
 import type { PiRunEvent } from './pi-events'
 
 /**
@@ -15,7 +15,7 @@ import type { PiRunEvent } from './pi-events'
  *    (a prompt plus any mid-flight steers/follow-ups) is one activity.
  *  - a single sequenced event stream (`activity_start`, forwarded SDK events,
  *    `activity_end`) with a small ring buffer for same-process reconnects.
- *  - `chatRuns` bookkeeping (queued → running → terminal) for metrics/abort.
+ *  - `chatRuns` bookkeeping (queued → running → terminal) for run history and abort.
  *
  * The controller lives in a session-scoped global registry, *independent of the
  * SDK session lifecycle*. The frontend connects to the session event stream on
@@ -77,7 +77,6 @@ export class SessionRunController {
   private startedAt: string | null = null
   /** The chatRuns row id for the current prompt activity, if any. */
   private runId: string | null = null
-  private firstAssistantSeen = false
   /**
    * A Stop requested during the prompt preflight window (activity exists but the
    * SDK isn't streaming yet, so there's no AbortController to signal). `ingest()`
@@ -200,7 +199,6 @@ export class SessionRunController {
       this.activityId = `${this.sessionId}:act:${this.counter}`
       this.activityKind = pendingKind
       this.startedAt = new Date().toISOString()
-      this.firstAssistantSeen = false
       // Not started through `prompt()`, so where the run began in the session
       // file is unknown; leave the boundary unset rather than guessing.
       this.contextMessageCountAtStart = null
@@ -229,7 +227,6 @@ export class SessionRunController {
     this.activityId = null
     this.activityKind = null
     this.startedAt = null
-    this.firstAssistantSeen = false
     this.abortRequested = false
     this.contextMessageCountAtStart = null
     this.emit({ kind: 'activity_end', activityId, status, ...(error ? { error } : {}) })
@@ -250,14 +247,6 @@ export class SessionRunController {
     if (this.abortRequested && this.isBusy()) {
       this.abortRequested = false
       void this.abortInner().catch(() => {})
-    }
-    if (
-      !this.firstAssistantSeen &&
-      this.runId &&
-      (event.type === 'assistant_message_start' || event.type === 'message_delta')
-    ) {
-      this.firstAssistantSeen = true
-      markRunFirstAssistant(this.runId)
     }
     this.emit({ kind: 'pi', event })
   }
@@ -314,7 +303,6 @@ export class SessionRunController {
     this.activityId = `${this.sessionId}:act:${this.counter}`
     this.activityKind = 'prompt'
     this.startedAt = new Date().toISOString()
-    this.firstAssistantSeen = false
     this.contextMessageCountAtStart = options?.contextMessageCountAtStart ?? null
     markRun(run.id, 'running')
     this.emit({

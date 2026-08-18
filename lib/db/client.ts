@@ -26,7 +26,7 @@ withMigrationLock(() => {
 // Reap orphaned runs on every boot. In-memory run state (the SessionRunController
 // and its SDK session) does not survive a process restart, so any run still marked
 // queued/running in the DB is a crash/restart leftover with no live owner. Mark
-// them failed once at startup so metrics and the clear-session guard stay honest.
+// them failed once at startup so run history and the clear-session guard stay honest.
 sqlite
   .prepare(
     `UPDATE chat_runs

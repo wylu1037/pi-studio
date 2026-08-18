@@ -1,6 +1,5 @@
 export { deleteApiAgentsId200Schema, deleteApiAgentsIdMutationResponseSchema, deleteApiAgentsIdPathParamsSchema } from "./deleteApiAgentsIdSchema.ts";
 export { deleteApiExtensionsId200Schema, deleteApiExtensionsId400Schema, deleteApiExtensionsIdMutationResponseSchema, deleteApiExtensionsIdPathParamsSchema, deleteApiExtensionsIdQueryParamsSchema } from "./deleteApiExtensionsIdSchema.ts";
-export { deleteApiMetricsHistory200Schema, deleteApiMetricsHistoryMutationResponseSchema } from "./deleteApiMetricsHistorySchema.ts";
 export { deleteApiModelProvidersId200Schema, deleteApiModelProvidersIdMutationResponseSchema, deleteApiModelProvidersIdPathParamsSchema } from "./deleteApiModelProvidersIdSchema.ts";
 export { deleteApiModelsId200Schema, deleteApiModelsId404Schema, deleteApiModelsIdMutationResponseSchema, deleteApiModelsIdPathParamsSchema, deleteApiModelsIdQueryParamsSchema } from "./deleteApiModelsIdSchema.ts";
 export { deleteApiPackagesId200Schema, deleteApiPackagesIdMutationResponseSchema, deleteApiPackagesIdPathParamsSchema } from "./deleteApiPackagesIdSchema.ts";
@@ -20,8 +19,6 @@ export { getApiExtensions200Schema, getApiExtensionsQueryParamsSchema, getApiExt
 export { getApiExtensionsTrust200Schema, getApiExtensionsTrust400Schema, getApiExtensionsTrustQueryParamsSchema, getApiExtensionsTrustQueryResponseSchema } from "./getApiExtensionsTrustSchema.ts";
 export { getApiExtensionsWorkspaces200Schema, getApiExtensionsWorkspacesQueryResponseSchema } from "./getApiExtensionsWorkspacesSchema.ts";
 export { getApiHealth200Schema, getApiHealthQueryResponseSchema } from "./getApiHealthSchema.ts";
-export { getApiMetricsSeries200Schema, getApiMetricsSeriesQueryParamsSchema, getApiMetricsSeriesQueryResponseSchema } from "./getApiMetricsSeriesSchema.ts";
-export { getApiMetricsSummary200Schema, getApiMetricsSummaryQueryParamsSchema, getApiMetricsSummaryQueryResponseSchema } from "./getApiMetricsSummarySchema.ts";
 export { getApiModelProvidersIdAvailableModels200Schema, getApiModelProvidersIdAvailableModels404Schema, getApiModelProvidersIdAvailableModels502Schema, getApiModelProvidersIdAvailableModelsPathParamsSchema, getApiModelProvidersIdAvailableModelsQueryResponseSchema } from "./getApiModelProvidersIdAvailableModelsSchema.ts";
 export { getApiModelProvidersProvideridModelsModelidCapabilities200Schema, getApiModelProvidersProvideridModelsModelidCapabilities404Schema, getApiModelProvidersProvideridModelsModelidCapabilitiesPathParamsSchema, getApiModelProvidersProvideridModelsModelidCapabilitiesQueryResponseSchema } from "./getApiModelProvidersProvideridModelsModelidCapabilitiesSchema.ts";
 export { getApiModelProviders200Schema, getApiModelProvidersQueryResponseSchema } from "./getApiModelProvidersSchema.ts";
@@ -39,7 +36,6 @@ export { getApiSessionsIdTree200Schema, getApiSessionsIdTreePathParamsSchema, ge
 export { getApiSessions200Schema, getApiSessionsQueryParamsSchema, getApiSessionsQueryResponseSchema } from "./getApiSessionsSchema.ts";
 export { getApiSettingsLoggingOutput200Schema, getApiSettingsLoggingOutputQueryResponseSchema } from "./getApiSettingsLoggingOutputSchema.ts";
 export { getApiSettingsLogging200Schema, getApiSettingsLoggingQueryResponseSchema } from "./getApiSettingsLoggingSchema.ts";
-export { getApiSettingsMetrics200Schema, getApiSettingsMetricsQueryResponseSchema } from "./getApiSettingsMetricsSchema.ts";
 export { getApiSkillsRegistrySearch200Schema, getApiSkillsRegistrySearch502Schema, getApiSkillsRegistrySearchQueryParamsSchema, getApiSkillsRegistrySearchQueryResponseSchema } from "./getApiSkillsRegistrySearchSchema.ts";
 export { getApiSkills200Schema, getApiSkillsQueryResponseSchema } from "./getApiSkillsSchema.ts";
 export { patchApiAgentsIdResources200Schema, patchApiAgentsIdResources404Schema, patchApiAgentsIdResourcesMutationRequestSchema, patchApiAgentsIdResourcesMutationResponseSchema, patchApiAgentsIdResourcesPathParamsSchema } from "./patchApiAgentsIdResourcesSchema.ts";
@@ -80,4 +76,3 @@ export { postApiSessions200Schema, postApiSessions404Schema, postApiSessionsMuta
 export { postApiSkills200Schema, postApiSkills400Schema, postApiSkillsMutationRequestSchema, postApiSkillsMutationResponseSchema } from "./postApiSkillsSchema.ts";
 export { putApiExtensionsIdFilesContent200Schema, putApiExtensionsIdFilesContent400Schema, putApiExtensionsIdFilesContentMutationRequestSchema, putApiExtensionsIdFilesContentMutationResponseSchema, putApiExtensionsIdFilesContentPathParamsSchema, putApiExtensionsIdFilesContentQueryParamsSchema } from "./putApiExtensionsIdFilesContentSchema.ts";
 export { putApiSettingsLogging200Schema, putApiSettingsLoggingMutationRequestSchema, putApiSettingsLoggingMutationResponseSchema } from "./putApiSettingsLoggingSchema.ts";
-export { putApiSettingsMetrics200Schema, putApiSettingsMetricsMutationRequestSchema, putApiSettingsMetricsMutationResponseSchema } from "./putApiSettingsMetricsSchema.ts";
