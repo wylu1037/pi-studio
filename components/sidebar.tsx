@@ -8,7 +8,6 @@ import {
   Bot,
   CalendarClock,
   Cpu,
-  FileKey2,
   FileText,
   History,
   MessageSquare,
@@ -41,7 +40,6 @@ const nav = [
   { href: '/skills', label: 'Skills', icon: Sparkles },
   { href: '/prompts', label: 'Prompts', icon: FileText },
   { href: '/models', label: 'Models', icon: Cpu },
-  { href: '/environment', label: 'Environment', icon: FileKey2 },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
 

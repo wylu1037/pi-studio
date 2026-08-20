@@ -86,12 +86,11 @@ Pi Studio currently does **not** import it directly. The application should pref
 
 Pi Studio currently uses Pi's standard agent directory returned by `getAgentDir()`—normally `~/.pi/agent`—for settings, models, packages, skills, prompts, and extensions.
 
-| Data                       | Default location                |
-| -------------------------- | ------------------------------- |
-| Pi Studio SQLite database  | `data/pi-studio.sqlite`         |
-| Pi chat session files      | `data/pi-sessions/*.jsonl`      |
-| Pi global agent resources  | `~/.pi/agent`                   |
-| Selected environment files | Their original filesystem paths |
+| Data                      | Default location           |
+| ------------------------- | -------------------------- |
+| Pi Studio SQLite database | `data/pi-studio.sqlite`    |
+| Pi chat session files     | `data/pi-sessions/*.jsonl` |
+| Pi global agent resources | `~/.pi/agent`              |
 
 Set `DATABASE_URL` to use a different SQLite database path. The database uses WAL mode and enables foreign-key enforcement.
 

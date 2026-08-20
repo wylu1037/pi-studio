@@ -23,7 +23,7 @@ Pi is a minimal and extensible terminal coding agent. Pi Studio adds a visual wo
 - **Persistent chat** — stream responses, stop active runs, steer an in-progress task, queue follow-ups, and resume previous sessions.
 - **Branch-aware sessions** — inspect the session tree, navigate to an earlier node, create a new branch, or fork work into a separate session.
 - **Active context** — see the selected model, token usage, enabled skills, MCP tools, and the agent workspace explorer beside the conversation.
-- **Resource control** — manage packages, extensions, skills, prompt templates, MCP servers, model providers, models, and environment files.
+- **Resource control** — manage packages, extensions, skills, prompt templates, MCP servers, model providers, and models.
 - **Local-first storage** — keep application state in SQLite and Pi sessions in JSONL files on your machine.
 
 ## Quick start
@@ -124,16 +124,15 @@ After Pi Studio is running:
 
 ## Workspace areas
 
-| Area                  | Purpose                                                                                    |
-| --------------------- | ------------------------------------------------------------------------------------------ |
-| Agents                | Create named runtime profiles and assign resources, models, and defaults.                  |
-| Chat                  | Work with an agent, inspect process details, branch sessions, and browse the workspace.    |
-| Sessions              | Search, resume, duplicate, edit, and remove conversations across agents.                   |
-| Packages & Extensions | Manage Pi resource packages and executable extensions.                                     |
-| Skills & Prompts      | Build the reusable instruction library available to agent profiles.                        |
-| MCP                   | Store MCP server commands, arguments, and environment configuration.                       |
-| Models                | Configure providers, discover models, test connections, and choose defaults.               |
-| Environment           | Edit selected `.env` files in place without moving their values into the project database. |
+| Area                  | Purpose                                                                                 |
+| --------------------- | --------------------------------------------------------------------------------------- |
+| Agents                | Create named runtime profiles and assign resources, models, and defaults.               |
+| Chat                  | Work with an agent, inspect process details, branch sessions, and browse the workspace. |
+| Sessions              | Search, resume, duplicate, edit, and remove conversations across agents.                |
+| Packages & Extensions | Manage Pi resource packages and executable extensions.                                  |
+| Skills & Prompts      | Build the reusable instruction library available to agent profiles.                     |
+| MCP                   | Store MCP server commands, arguments, and environment configuration.                    |
+| Models                | Configure providers, discover models, test connections, and choose defaults.            |
 
 ## Local data and security
 
@@ -143,7 +142,6 @@ Pi Studio is designed as a local developer tool.
 - Pi resources use the standard agent directory returned by `getAgentDir()`, normally `~/.pi/agent`.
 - Session JSONL files are stored under `data/pi-sessions`.
 - Provider credentials and MCP configuration are stored locally. Do not expose a development instance directly to the public internet.
-- Environment file contents remain in their original files; Pi Studio stores only the selected paths.
 
 The `data/` directory and local environment files are ignored by Git.
 
