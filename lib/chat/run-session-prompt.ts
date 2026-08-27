@@ -68,7 +68,6 @@ export async function startSessionPrompt(input: {
     baseUrl: config.provider?.baseUrl ?? undefined,
     model,
     thinkingLevel,
-    extensions: config.extensions.map((extension) => ({ id: extension.id, path: extension.path })),
     skills: config.skills.map((skill) => ({ name: skill.name, path: skill.path })),
     prompts: config.prompts.map((prompt) => prompt.path),
     packagePaths: config.packagePaths,
@@ -96,7 +95,6 @@ export async function startSessionPrompt(input: {
     modelId: model,
     modelRuntimeSignature,
     thinkingLevel,
-    extensionPaths: config.extensions.map((extension) => extension.path),
     promptPaths: config.prompts.map((prompt) => prompt.path),
   })
 

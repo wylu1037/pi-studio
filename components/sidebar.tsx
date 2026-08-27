@@ -12,7 +12,6 @@ import {
   History,
   MessageSquare,
   Package,
-  Puzzle,
   Settings,
   Sparkles,
 } from 'lucide-react'
@@ -36,7 +35,6 @@ const nav = [
   { href: '/sessions', label: 'Sessions', icon: History },
   { href: '/scheduled-tasks', label: 'Schedule', icon: CalendarClock },
   { href: '/packages', label: 'Packages', icon: Package },
-  { href: '/extensions', label: 'Extensions', icon: Puzzle },
   { href: '/skills', label: 'Skills', icon: Sparkles },
   { href: '/prompts', label: 'Prompts', icon: FileText },
   { href: '/models', label: 'Models', icon: Cpu },

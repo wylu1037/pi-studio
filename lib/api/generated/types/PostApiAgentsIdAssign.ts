@@ -58,10 +58,6 @@ export type PostApiAgentsIdAssign200 = {
     /**
      * @type array
     */
-    selectedExtensionIds: string[];
-    /**
-     * @type array
-    */
     selectedPackageSources: string[];
     /**
      * @type array
@@ -120,7 +116,6 @@ export type PostApiAgentsIdAssign404 = {
 };
 
 export const postApiAgentsIdAssignMutationRequestKindEnum = {
-    extension: "extension",
     package: "package",
     skill: "skill",
     prompt: "prompt",

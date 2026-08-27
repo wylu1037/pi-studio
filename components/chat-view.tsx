@@ -61,7 +61,6 @@ import { MarkdownContent } from '@/components/markdown-content'
 import { StreamingMarkdownContent } from '@/components/streaming-markdown-content'
 import { useStreamingMarkdown } from '@/components/use-streaming-markdown'
 import { WorkspaceExplorer } from '@/components/workspace-explorer'
-import { ExtensionUiHost, type ExtensionUiSnapshot } from '@/components/extension-ui-host'
 import { ChatAvatar } from '@/components/chat-avatar'
 import { ChatMessageOutline, type ChatMessageOutlineEntry } from '@/components/chat-message-outline'
 import { useProfileSettings } from '@/components/use-profile-settings'
@@ -110,7 +109,6 @@ import type {
   GlobalPromptTemplate,
   GlobalSkill,
   SessionTreeNode,
-  StudioExtension,
   TreeNodeRole,
 } from '@/lib/types'
 import type { StreamingMarkdownSnapshot } from '@/lib/markdown/streaming-markdown'
@@ -172,7 +170,6 @@ export function ChatView({
   messages,
   tree,
   providers,
-  extensions,
   skills,
   prompts,
   scheduledTaskModel,
@@ -184,7 +181,6 @@ export function ChatView({
   messages: ChatMessage[]
   tree: SessionTreeNode | null
   providers: GlobalModelProvider[]
-  extensions: StudioExtension[]
   skills: GlobalSkill[]
   prompts: GlobalPromptTemplate[]
   scheduledTaskModel?: { providerId: string; modelId: string }
@@ -233,10 +229,6 @@ export function ChatView({
   const [branchMessages, setBranchMessages] = useState<ChatMessage[] | null>(null)
   const [branchPending, setBranchPending] = useState<'navigate' | 'fork' | null>(null)
   const [branchError, setBranchError] = useState<string | null>(null)
-  const [extensionCommands, setExtensionCommands] = useState<
-    Array<{ name: string; description?: string }>
-  >([])
-  const [extensionUiSnapshot, setExtensionUiSnapshot] = useState<ExtensionUiSnapshot | null>(null)
   // Pending Stop-fallback timer (see ABORT_FALLBACK_TIMEOUT_MS). Cleared when the
   // activity settles on its own (an effect watches activityId) or on unmount.
   const abortFallbackTimerRef = useRef<number | null>(null)
@@ -313,16 +305,6 @@ export function ChatView({
         activeSession?.lastThinkingLevel ?? activeAgent?.defaultThinkingLevel ?? 'medium',
     },
   })
-  const applyExtensionEditorText = useCallback(
-    (text: string, mode: 'set' | 'append') => {
-      const current = form.getValues('message') ?? ''
-      form.setValue('message', mode === 'append' ? current + text : text, {
-        shouldDirty: true,
-      })
-      form.setFocus('message')
-    },
-    [form],
-  )
 
   const thinking = form.watch('thinkingLevel') ?? 'medium'
   const model = form.watch('modelId') ?? activeAgent?.defaultModelId ?? 'model'
@@ -333,10 +315,6 @@ export function ChatView({
     modelId: form.watch('modelId'),
     thinkingLevel: thinking,
   }
-  const extensionCommandMatch = message.trim().match(/^\/([^\s]+)(?:\s+(.*))?$/)
-  const selectedExtensionCommand = extensionCommands.find(
-    (command) => command.name === extensionCommandMatch?.[1],
-  )
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -369,7 +347,6 @@ export function ChatView({
     isClearSessionCommand ||
     isNextSessionCommand ||
     isPrevSessionCommand ||
-    selectedExtensionCommand ||
     (selectedModelOption &&
       (composerValues.message.length > 0 || attachments.length > 0) &&
       !isUploadingAttachments),
@@ -427,54 +404,6 @@ export function ChatView({
     const selected = new Set(activeAgent?.selectedPromptIds ?? [])
     return prompts.filter((prompt) => selected.has(prompt.id))
   }, [activeAgent?.selectedPromptIds, prompts])
-  const extensionNames = useMemo(() => {
-    const selected = new Set(activeAgent?.selectedExtensionIds ?? [])
-    return extensions
-      .filter((extension) => selected.has(extension.id))
-      .map((extension) => extension.name)
-  }, [activeAgent?.selectedExtensionIds, extensions])
-
-  // Extension commands are effectively static per session — they change only
-  // when an extension (re)loads, which happens on session entry and as a run
-  // brings extensions online. So we fetch once per session and once more on each
-  // run-state transition, instead of the old fixed 2.5s poll that ran forever
-  // even while the app sat idle.
-  useEffect(() => {
-    if (!activeSession) return
-    let active = true
-    const load = async () => {
-      try {
-        const response = await fetch(
-          `/api/sessions/${encodeURIComponent(activeSession.id)}/extensions`,
-          { cache: 'no-store' },
-        )
-        if (!response.ok) {
-          if (active) setExtensionCommands([])
-          return
-        }
-        const snapshot = (await response.json()) as {
-          extensions: Array<{
-            commands: Array<{ name: string; description?: string }>
-          }>
-        }
-        if (!active) return
-        const commands = snapshot.extensions.flatMap((extension) => extension.commands)
-        setExtensionCommands(
-          commands.filter(
-            (command, index) =>
-              commands.findIndex((candidate) => candidate.name === command.name) === index,
-          ),
-        )
-      } catch {
-        if (active) setExtensionCommands([])
-      }
-    }
-    void load()
-    return () => {
-      active = false
-    }
-  }, [activeSession, sdkSessionRunning])
-
   const createNewSession = async () => {
     if (!activeAgent || creatingSession || clearingSession) return
     if (activityId || sdkSessionRunning) {
@@ -546,7 +475,6 @@ export function ChatView({
       setBranchMessages(null)
       setBranchPending(null)
       setBranchError(null)
-      setExtensionCommands([])
       setVisibleMessageLimit(INITIAL_VISIBLE_MESSAGE_LIMIT)
       clearAttachments()
       const values = form.getValues()
@@ -701,22 +629,8 @@ export function ChatView({
           prompt,
         })),
     )
-    options.push(
-      ...extensionCommands
-        .filter(
-          (command) =>
-            command.name.toLowerCase().includes(slashQuery) ||
-            command.description?.toLowerCase().includes(slashQuery),
-        )
-        .map((command) => ({
-          kind: 'extension' as const,
-          id: command.name,
-          command: command.name,
-          description: command.description || 'Extension command',
-        })),
-    )
     return options.slice(0, 8)
-  }, [extensionCommands, selectedPrompts, slashQuery])
+  }, [selectedPrompts, slashQuery])
 
   useEffect(() => {
     setSlashSelection(0)
@@ -733,11 +647,6 @@ export function ChatView({
       else if (option.command === 'next-session') switchRelativeSession('next')
       else if (option.command === 'prev-session') switchRelativeSession('previous')
       else void createNewSession()
-      return
-    }
-    if (option.kind === 'extension') {
-      form.setValue('message', `/${option.command} `, { shouldDirty: true })
-      form.setFocus('message')
       return
     }
     insertPromptCommand(option.prompt)
@@ -968,12 +877,6 @@ export function ChatView({
 
   const showStreamError = Boolean(streamError) && !streamRetry && errorHoldLifted
 
-  // A new session starts with no extension-UI state; the stream re-pushes the
-  // current snapshot on connect if the broker already has one.
-  useEffect(() => {
-    setExtensionUiSnapshot(null)
-  }, [activeSession?.id])
-
   // Markdown-pipeline commands for a pi event. State transitions live in the
   // reducer (dispatched from handleFrame); this issues only the imperative
   // markdown work, addressed by the event's own message id. The server parser
@@ -1027,17 +930,11 @@ export function ChatView({
     dispatchRunStream({ type: 'frame', frame, at: Date.now() })
   }
 
-  // Single self-healing session event stream. It stays connected for the
-  // lifetime of the active session (not a single run); fatal closes, silent
-  // half-open links, heartbeat liveness, and cursor replay on reconnect are all
-  // owned by the transport. Extension-UI snapshots ride the same connection:
-  // they are self-contained (the broker always sends its full current
-  // snapshot), so we just replace the held snapshot.
+  // Single self-healing session event stream for the active session.
   const { status: eventStreamStatus, reconnect: reconnectEventStream } = useSessionEventStream(
     activeSession?.id,
     {
       onFrame: handleFrame,
-      onExtensionUi: (snapshot) => setExtensionUiSnapshot(snapshot as ExtensionUiSnapshot),
     },
   )
 
@@ -1063,43 +960,6 @@ export function ChatView({
     }
     if (values.message.trim().toLowerCase() === '/prev-session') {
       switchRelativeSession('previous')
-      return
-    }
-    const commandMatch = values.message.trim().match(/^\/([^\s]+)(?:\s+(.*))?$/)
-    const extensionCommand = extensionCommands.find((command) => command.name === commandMatch?.[1])
-    if (extensionCommand) {
-      try {
-        const response = await fetch(
-          `/api/sessions/${encodeURIComponent(activeSession.id)}/extensions/commands/${encodeURIComponent(extensionCommand.name)}`,
-          {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ args: commandMatch?.[2] ?? '' }),
-          },
-        )
-        const result = (await response.json()) as { status: string; error?: string }
-        if (!response.ok || result.status !== 'completed') {
-          throw new Error(
-            result.error ??
-              (result.status === 'session-running'
-                ? 'Wait for the active run to finish before executing this command.'
-                : 'The extension command is unavailable.'),
-          )
-        }
-        form.setValue('message', '')
-        clearAttachments()
-        showToast({
-          tone: 'success',
-          title: `/${extensionCommand.name}`,
-          message: 'Extension command completed.',
-        })
-      } catch (commandError) {
-        showToast({
-          tone: 'error',
-          title: `/${extensionCommand.name}`,
-          message: errorMessage(commandError, 'Extension command failed.'),
-        })
-      }
       return
     }
     const trimmedMessage = values.message.trim()
@@ -1775,13 +1635,6 @@ export function ChatView({
           <ChatComposer
             form={form}
             containerRef={composerContainerRef}
-            extensionUi={
-              <ExtensionUiHost
-                sessionId={activeSession.id}
-                snapshot={extensionUiSnapshot}
-                onEditorText={applyExtensionEditorText}
-              />
-            }
             message={message}
             thinking={thinking}
             selectedModelOption={selectedModelOption}
@@ -1903,23 +1756,6 @@ export function ChatView({
                         >
                           <Terminal className="size-3 shrink-0 text-accent" />
                           {prompt.name}
-                        </li>
-                      ))}
-                    </ul>
-                  </Panel>
-                  <Panel>
-                    <PanelHeader>
-                      <Label>Extensions</Label>
-                      <Tag>{extensionNames.length}</Tag>
-                    </PanelHeader>
-                    <ul className="divide-y divide-border">
-                      {extensionNames.map((name) => (
-                        <li
-                          key={name}
-                          className="flex items-center gap-2 px-3 py-2 font-mono text-[11px] text-muted-foreground"
-                        >
-                          <Wrench className="size-3 shrink-0 text-accent" />
-                          {name}
                         </li>
                       ))}
                     </ul>

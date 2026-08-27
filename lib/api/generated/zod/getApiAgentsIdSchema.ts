@@ -20,7 +20,6 @@ export const getApiAgentsId200Schema = z.object({
 "icon": z.optional(z.string()),
 "color": z.string(),
 "defaultCwd": z.optional(z.string()),
-"selectedExtensionIds": z.array(z.string()),
 "selectedPackageSources": z.array(z.string()),
 "selectedSkillIds": z.array(z.string()),
 "selectedPromptIds": z.array(z.string()),

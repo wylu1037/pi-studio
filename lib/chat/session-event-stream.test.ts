@@ -60,12 +60,10 @@ function createHarness(options: { heartbeatTimeoutMs?: number; watchdogIntervalM
   const sources: FakeEventSource[] = []
   const frames: RunStreamFrame[] = []
   const statuses: SessionEventStreamStatus[] = []
-  const extensionUi: unknown[] = []
   const stream = new SessionEventStream(
     'session-1',
     {
       onFrame: (frame) => frames.push(frame),
-      onExtensionUi: (snapshot) => extensionUi.push(snapshot),
       onStatusChange: (status) => statuses.push(status),
     },
     {
@@ -80,7 +78,7 @@ function createHarness(options: { heartbeatTimeoutMs?: number; watchdogIntervalM
       reconnectMaxDelayMs: 30_000,
     },
   )
-  return { stream, sources, frames, statuses, extensionUi }
+  return { stream, sources, frames, statuses }
 }
 
 const stateFrame: RunStreamFrame = {
@@ -233,23 +231,6 @@ test('dispose closes the source and stops every recovery path', () => {
     stream.ensureConnected()
     assert.equal(sources.length, 1)
     assert.deepEqual(statuses.at(-1), 'disposed')
-  } finally {
-    mock.timers.reset()
-  }
-})
-
-test('extension_ui snapshots are delivered and refresh liveness', () => {
-  mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] })
-  try {
-    const { stream, sources, extensionUi } = createHarness()
-    sources[0]!.open()
-    for (let index = 0; index < 6; index++) {
-      mock.timers.tick(30_000)
-      sources[0]!.emit('extension_ui', { notification: index })
-    }
-    assert.equal(sources.length, 1, 'regular snapshots count as liveness')
-    assert.equal(extensionUi.length, 6)
-    stream.dispose()
   } finally {
     mock.timers.reset()
   }

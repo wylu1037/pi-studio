@@ -118,17 +118,10 @@ export type SlashCommandOption =
       argumentHint?: string
       prompt: GlobalPromptTemplate
     }
-  | {
-      kind: 'extension'
-      id: string
-      command: string
-      description: string
-    }
 
 export function ChatComposer({
   form,
   containerRef,
-  extensionUi,
   message,
   thinking,
   selectedModelOption,
@@ -160,7 +153,6 @@ export function ChatComposer({
 }: {
   form: UseFormReturn<ComposerValues>
   containerRef: Ref<HTMLDivElement>
-  extensionUi?: ReactNode
   message: string
   thinking: (typeof thinkingLevels)[number]
   selectedModelOption?: ComposerModelOption
@@ -273,7 +265,6 @@ export function ChatComposer({
       className="pointer-events-none absolute inset-x-0 bottom-0 px-5 xl:pr-14"
     >
       <div className="pointer-events-auto relative mx-auto w-full max-w-3xl bg-background/95 pt-2 pb-1.5 shadow-[0_-16px_32px_-28px_rgba(24,28,36,0.45)]">
-        {extensionUi}
         {slashCommandOptions.length > 0 && !isRunningRun && (
           <SlashCommandMenu
             options={slashCommandOptions}
@@ -938,11 +929,6 @@ function SlashCommandMenu({
                 {option.kind === 'builtin' && (
                   <Tag tone="outline" className="ml-auto shrink-0">
                     built-in
-                  </Tag>
-                )}
-                {option.kind === 'extension' && (
-                  <Tag tone="accent" className="ml-auto shrink-0">
-                    extension
                   </Tag>
                 )}
               </span>

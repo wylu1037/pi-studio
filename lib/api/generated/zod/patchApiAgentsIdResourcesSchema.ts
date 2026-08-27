@@ -20,7 +20,6 @@ export const patchApiAgentsIdResources200Schema = z.object({
 "icon": z.optional(z.string()),
 "color": z.string(),
 "defaultCwd": z.optional(z.string()),
-"selectedExtensionIds": z.array(z.string()),
 "selectedPackageSources": z.array(z.string()),
 "selectedSkillIds": z.array(z.string()),
 "selectedPromptIds": z.array(z.string()),
@@ -46,8 +45,7 @@ export const patchApiAgentsIdResources404Schema = z.object({
  * @description OK
  */
 export const patchApiAgentsIdResourcesMutationRequestSchema = z.object({
-    "selectedExtensionIds": z.optional(z.array(z.string())),
-"selectedPackageSources": z.optional(z.array(z.string())),
+    "selectedPackageSources": z.optional(z.array(z.string())),
 "selectedSkillIds": z.optional(z.array(z.string())),
 "selectedPromptIds": z.optional(z.array(z.string())),
 "selectedProviderIds": z.optional(z.array(z.string())),

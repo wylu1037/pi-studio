@@ -51,10 +51,6 @@ export type GetApiAgents200 = {
     /**
      * @type array
     */
-    selectedExtensionIds: string[];
-    /**
-     * @type array
-    */
     selectedPackageSources: string[];
     /**
      * @type array

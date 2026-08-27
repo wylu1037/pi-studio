@@ -9,10 +9,7 @@ import { getSession } from '@/lib/db/repository'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-export async function POST(
-  request: NextRequest,
-  context: RouteContext<'/api/sessions/[id]/attachments'>,
-) {
+export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params
   const session = getSession(id)
   if (!session) {

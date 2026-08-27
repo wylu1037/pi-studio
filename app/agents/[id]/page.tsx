@@ -5,7 +5,6 @@ import {
   listProviders,
   listSessions,
   listSkills,
-  listStudioExtensions,
 } from '@/lib/db/repository'
 import { AgentDetail } from '@/components/agent-detail'
 
@@ -21,7 +20,6 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   return (
     <AgentDetail
       agent={agent}
-      extensions={listStudioExtensions()}
       packages={packages.installed}
       skills={listSkills()}
       prompts={listPrompts()}

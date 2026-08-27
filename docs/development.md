@@ -139,5 +139,3 @@ node --import tsx --test "**/*.test.ts" "**/*.test.tsx"
 ```
 
 ## Feature design documents
-
-- [Extensions 功能与技术设计](./extensions-design.md) — Extensions Manage/Develop Tabs、Pi Runtime 集成、Web UI Bridge、Reload 和安全边界。

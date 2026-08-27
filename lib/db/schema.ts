@@ -47,14 +47,6 @@ export const globalSkills = sqliteTable('global_skills', {
   ...timestamps,
 })
 
-export const studioExtensions = sqliteTable('studio_extensions', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  description: text('description').notNull().default(''),
-  path: text('path').notNull(),
-  ...timestamps,
-})
-
 export const skillTags = sqliteTable(
   'skill_tags',
   {
@@ -185,22 +177,6 @@ export const agentPackageSources = sqliteTable(
   (table) => [
     index('agent_package_sources_agent_idx').on(table.agentId),
     index('agent_package_sources_source_idx').on(table.source),
-  ],
-)
-
-export const agentExtensions = sqliteTable(
-  'agent_extensions',
-  {
-    agentId: text('agent_id')
-      .notNull()
-      .references(() => agents.id, { onDelete: 'cascade' }),
-    extensionId: text('extension_id')
-      .notNull()
-      .references(() => studioExtensions.id, { onDelete: 'cascade' }),
-  },
-  (table) => [
-    index('agent_extensions_agent_idx').on(table.agentId),
-    index('agent_extensions_extension_idx').on(table.extensionId),
   ],
 )
 
@@ -403,7 +379,6 @@ export const scheduledTasks = sqliteTable(
 
 export const agentsRelations = relations(agents, ({ many }) => ({
   tags: many(agentTags),
-  extensions: many(agentExtensions),
   skills: many(agentSkills),
   packageSources: many(agentPackageSources),
   prompts: many(agentPrompts),

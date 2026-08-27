@@ -62,7 +62,6 @@ export interface EventSourceLike {
 
 export interface SessionEventStreamHandlers {
   onFrame: (frame: RunStreamFrame) => void
-  onExtensionUi?: (snapshot: unknown) => void
   onStatusChange?: (status: SessionEventStreamStatus) => void
 }
 
@@ -214,12 +213,6 @@ export class SessionEventStream {
     }
     source.addEventListener('frame', onFrameMessage)
     source.addEventListener('state', onFrameMessage)
-    source.addEventListener('extension_ui', (event) => {
-      if (this.disposed || this.source !== source) return
-      this.touch()
-      const snapshot = parseJson(event.data)
-      if (snapshot !== undefined) this.handlers.onExtensionUi?.(snapshot)
-    })
     source.addEventListener('heartbeat', () => {
       if (this.disposed || this.source !== source) return
       this.touch()

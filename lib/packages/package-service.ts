@@ -1,50 +1,14 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { dirname, join, relative } from 'node:path'
-import {
-  type PackageSource,
-  type ResolvedPaths,
-  type ResolvedResource,
-} from '@earendil-works/pi-coding-agent'
-import type { GlobalExtension, GlobalPackage, PackageType } from '@/lib/types'
+import { dirname, join } from 'node:path'
+import { type ResolvedPaths, type ResolvedResource } from '@earendil-works/pi-coding-agent'
+import type { GlobalPackage, PackageType } from '@/lib/types'
 import { createStudioPackageManager } from './studio-package-store'
-import { setLocalExtensionEnabled, setPackageExtensionEnabled } from './extension-filters'
-import { getProjectTrustState } from '@/lib/extensions/project-trust'
-
-export { setPackageExtensionEnabled } from './extension-filters'
 
 type PackageScope = GlobalPackage['scope']
 type GalleryPackage = GlobalPackage
 
 function packageId(source: string, scope: PackageScope) {
   return `pi-package:${scope}:${Buffer.from(source).toString('base64url')}`
-}
-
-export function extensionId(resource: ResolvedResource) {
-  const scope: PackageScope = resource.metadata.scope === 'project' ? 'project' : 'global'
-  return `pi-extension:${scope}:${Buffer.from(resource.metadata.source).toString('base64url')}:${Buffer.from(resource.path).toString('base64url')}`
-}
-
-export function decodeExtensionId(id: string) {
-  const match = /^pi-extension:(global|project):([^:]+):(.+)$/.exec(id)
-  if (!match) return null
-  try {
-    return {
-      scope: match[1] as PackageScope,
-      source: Buffer.from(match[2], 'base64url').toString('utf8'),
-      path: Buffer.from(match[3], 'base64url').toString('utf8'),
-    }
-  } catch {
-    return null
-  }
-}
-
-function extensionName(path: string) {
-  const file = path.split('/').at(-1) ?? path
-  const name = file.replace(/\.(?:m?[jt]s|c[jt]s)$/, '') || file
-  if (name === 'index') {
-    return path.split('/').slice(0, -1).at(-1) ?? name
-  }
-  return name
 }
 
 export function decodePackageId(id: string) {
@@ -162,160 +126,6 @@ export async function listRuntimePackages(cwd: string, gallery: GalleryPackage[]
     installed,
     gallery: gallery.filter((pkg) => !installedSources.has(pkg.source)),
   }
-}
-
-export async function listRuntimeExtensions(cwd: string): Promise<GlobalExtension[]> {
-  const { packageManager } = createManager(cwd)
-  const resolved = await packageManager.resolve(async () => 'skip')
-  const trust = getProjectTrustState(cwd)
-  const trustedPackageManager = packageManager
-  const resolvedExtensions = resolved.extensions
-  const packages = new Map(
-    trustedPackageManager.listConfiguredPackages().map((pkg) => {
-      const scope: PackageScope = pkg.scope === 'project' ? 'project' : 'global'
-      return [
-        `${scope}:${pkg.source}`,
-        { ...pkg, scope, metadata: packageMetadata(pkg.installedPath) },
-      ]
-    }),
-  )
-  return resolvedExtensions.map((resource) => ({
-    id: extensionId(resource),
-    name: extensionName(resource.path),
-    path: resource.path,
-    relativePath: resource.metadata.baseDir
-      ? relative(resource.metadata.baseDir, resource.path).replaceAll('\\', '/')
-      : undefined,
-    source: resource.metadata.source,
-    scope: resource.metadata.scope === 'project' ? 'project' : 'global',
-    origin: resource.metadata.origin,
-    enabled: resource.enabled,
-    packageManaged: resource.metadata.origin === 'package',
-    status:
-      !trust.trusted && resource.metadata.scope === 'project'
-        ? 'trust-required'
-        : resource.enabled
-          ? 'enabled'
-          : 'disabled',
-    package:
-      resource.metadata.origin === 'package'
-        ? (() => {
-            const scope: PackageScope = resource.metadata.scope === 'project' ? 'project' : 'global'
-            const pkg = packages.get(`${scope}:${resource.metadata.source}`)
-            return {
-              source: resource.metadata.source,
-              name: pkg?.metadata.name,
-              version: pkg?.metadata.version,
-              installedPath: pkg?.installedPath,
-            }
-          })()
-        : undefined,
-    capabilities: {
-      tools: [],
-      commands: [],
-      shortcuts: [],
-      flags: [],
-      providers: [],
-      hooks: [],
-      ui: false,
-    },
-  }))
-}
-
-function packageSourceValue(entry: PackageSource) {
-  return typeof entry === 'string' ? entry : entry.source
-}
-
-function setPackageExtensionsEnabled(entries: PackageSource[], source: string, enabled: boolean) {
-  return entries.map((entry): PackageSource => {
-    if (packageSourceValue(entry) !== source) return entry
-    if (!enabled) {
-      return {
-        ...(typeof entry === 'string' ? { source: entry } : entry),
-        extensions: [],
-      }
-    }
-    if (typeof entry === 'string') return entry
-    const { extensions: _extensions, ...rest } = entry
-    return rest
-  })
-}
-
-export async function setRuntimeExtensionEnabled(input: {
-  source: string
-  scope: PackageScope
-  enabled: boolean
-  extensionId?: string
-  relativePath?: string
-  cwd: string
-}) {
-  const { settingsManager } = createManager(input.cwd)
-  const decoded = input.extensionId ? decodeExtensionId(input.extensionId) : null
-  const source = decoded?.source ?? input.source
-  const scope = decoded?.scope ?? input.scope
-  let relativePath = input.relativePath
-  if (!relativePath && decoded) {
-    const extension = (await listRuntimeExtensions(input.cwd)).find(
-      (item) => item.id === input.extensionId,
-    )
-    relativePath = extension?.relativePath
-  }
-  const update = (entries: PackageSource[]) =>
-    relativePath
-      ? setPackageExtensionEnabled(entries, source, relativePath, input.enabled)
-      : setPackageExtensionsEnabled(entries, source, input.enabled)
-
-  if (scope === 'project') {
-    settingsManager.setPackages(update(settingsManager.getGlobalSettings().packages ?? []))
-  } else {
-    settingsManager.setPackages(update(settingsManager.getGlobalSettings().packages ?? []))
-  }
-  await settingsManager.flush()
-  await refreshSessions(input.cwd)
-}
-
-export async function setRuntimeExtensionState(input: {
-  id: string
-  enabled: boolean
-  cwd: string
-}) {
-  const extension = (await listRuntimeExtensions(input.cwd)).find((item) => item.id === input.id)
-  if (!extension) throw new Error('Extension not found.')
-  if (!extension.relativePath) {
-    throw new Error('This extension cannot be toggled individually.')
-  }
-  if (!extension.packageManaged) {
-    const { settingsManager } = createManager(input.cwd)
-    if (extension.scope === 'project') {
-      settingsManager.setExtensionPaths(
-        setLocalExtensionEnabled(
-          settingsManager.getGlobalSettings().extensions ?? [],
-          extension.relativePath,
-          input.enabled,
-        ),
-      )
-    } else {
-      settingsManager.setExtensionPaths(
-        setLocalExtensionEnabled(
-          settingsManager.getGlobalSettings().extensions ?? [],
-          extension.relativePath,
-          input.enabled,
-        ),
-      )
-    }
-    await settingsManager.flush()
-    await refreshSessions(input.cwd)
-    return listRuntimeExtensions(input.cwd)
-  }
-  await setRuntimeExtensionEnabled({
-    source: extension.source,
-    scope: extension.scope,
-    enabled: input.enabled,
-    extensionId: extension.id,
-    relativePath: extension.relativePath,
-    cwd: input.cwd,
-  })
-  return listRuntimeExtensions(input.cwd)
 }
 
 async function refreshSessions(cwd: string) {

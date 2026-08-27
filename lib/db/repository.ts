@@ -11,7 +11,6 @@ import type {
   GlobalPackage,
   GlobalPromptTemplate,
   GlobalSkill,
-  StudioExtension,
   SessionTreeNode,
   ThinkingLevel,
 } from '@/lib/types'
@@ -23,7 +22,6 @@ import { db, sqlite } from './client'
 import {
   agentMcpConfigs,
   agentPackageSources,
-  agentExtensions,
   agentModelProviders,
   agentModels,
   agentPrompts,
@@ -44,7 +42,6 @@ import {
   sessionTreeNodes,
   scheduledTasks,
   skillTags,
-  studioExtensions,
 } from './schema'
 
 export type ScheduledTaskScheduleType = 'interval' | 'weekly' | 'once' | 'cron'
@@ -138,7 +135,6 @@ export function listAgents(): AgentProfile[] {
     defaultModelId: agent.defaultModelId ?? undefined,
     defaultThinkingLevel: agent.defaultThinkingLevel as AgentProfile['defaultThinkingLevel'],
     tags: tags('agent_tags', 'agent_id', agent.id),
-    selectedExtensionIds: ids('agent_extensions', 'agent_id', 'extension_id', agent.id),
     selectedPackageSources: ids('agent_package_sources', 'agent_id', 'source', agent.id),
     selectedSkillIds: ids('agent_skills', 'agent_id', 'skill_id', agent.id),
     selectedPromptIds: ids('agent_prompts', 'agent_id', 'prompt_id', agent.id),
@@ -223,7 +219,6 @@ export function updateAgentResources(
   id: string,
   input: {
     selectedSkillIds?: string[]
-    selectedExtensionIds?: string[]
     selectedPackageSources?: string[]
     selectedPromptIds?: string[]
     selectedMcpConfigIds?: string[]
@@ -247,12 +242,6 @@ export function updateAgentResources(
     db.delete(agentPackageSources).where(eq(agentPackageSources.agentId, id)).run()
     for (const source of input.selectedPackageSources) {
       db.insert(agentPackageSources).values({ agentId: id, source }).run()
-    }
-  }
-  if (input.selectedExtensionIds) {
-    db.delete(agentExtensions).where(eq(agentExtensions.agentId, id)).run()
-    for (const extensionId of input.selectedExtensionIds) {
-      db.insert(agentExtensions).values({ agentId: id, extensionId }).run()
     }
   }
   if (input.selectedPromptIds) {
@@ -317,7 +306,6 @@ export function duplicateAgent(id: string) {
   })
   if (!copy) return null
   updateAgentResources(copy.id, {
-    selectedExtensionIds: agent.selectedExtensionIds,
     selectedPackageSources: agent.selectedPackageSources,
     selectedSkillIds: agent.selectedSkillIds,
     selectedPromptIds: agent.selectedPromptIds,
@@ -346,50 +334,6 @@ export function listSkills(): GlobalSkill[] {
       updatedAt: skill.updatedAt,
       usedByAgents: count('agent_skills', 'skill_id', skill.id),
     }))
-}
-
-export function listStudioExtensions(): StudioExtension[] {
-  return db
-    .select()
-    .from(studioExtensions)
-    .all()
-    .map((extension) => {
-      const assignedAgentIds = ids('agent_extensions', 'extension_id', 'agent_id', extension.id)
-      return {
-        id: extension.id,
-        name: extension.name,
-        description: extension.description,
-        path: extension.path,
-        assignedAgentIds,
-        usedByAgents: assignedAgentIds.length,
-        createdAt: extension.createdAt,
-        updatedAt: extension.updatedAt,
-      }
-    })
-}
-
-export function getStudioExtension(id: string) {
-  return listStudioExtensions().find((extension) => extension.id === id) ?? null
-}
-
-export function createStudioExtension(input: { name: string; description?: string; path: string }) {
-  const id = `ex-${randomUUID()}`
-  const at = now()
-  db.insert(studioExtensions)
-    .values({
-      id,
-      name: input.name,
-      description: input.description ?? '',
-      path: input.path,
-      createdAt: at,
-      updatedAt: at,
-    })
-    .run()
-  return getStudioExtension(id)
-}
-
-export function deleteStudioExtension(id: string) {
-  db.delete(studioExtensions).where(eq(studioExtensions.id, id)).run()
 }
 
 export function createSkill(
@@ -1371,7 +1315,6 @@ function messageUsage(message: typeof chatMessages.$inferSelect): ChatMessage['u
 export function resolveAgentRunConfig(agentId: string, providerId?: string | null) {
   const agent = getAgent(agentId)
   if (!agent) return null
-  const selectedExtensionSet = new Set(agent.selectedExtensionIds)
   const packagePaths = installedPackagePaths(agent.selectedPackageSources, process.cwd())
   const selectedSkillSet = new Set(agent.selectedSkillIds)
   const selectedPromptSet = new Set(agent.selectedPromptIds)
@@ -1396,9 +1339,6 @@ export function resolveAgentRunConfig(agentId: string, providerId?: string | nul
     null
   return {
     agent,
-    extensions: listStudioExtensions().filter((extension) =>
-      selectedExtensionSet.has(extension.id),
-    ),
     packagePaths,
     skills: listSkills().filter((skill) => selectedSkillSet.has(skill.id)),
     prompts: listPrompts().filter((prompt) => selectedPromptSet.has(prompt.id)),

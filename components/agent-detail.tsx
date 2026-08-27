@@ -16,7 +16,6 @@ import {
   History,
   Coins,
   Package,
-  Puzzle,
   ChevronUp,
   Folder,
   MessageSquare,
@@ -33,7 +32,6 @@ import type {
   GlobalPackage,
   GlobalPromptTemplate,
   GlobalSkill,
-  StudioExtension,
 } from '@/lib/types'
 import { deleteApiAgentsId } from '@/lib/api/generated/clients/deleteApiAgentsId'
 import { patchApiAgentsId } from '@/lib/api/generated/clients/patchApiAgentsId'
@@ -77,7 +75,6 @@ import { cn } from '@/lib/utils'
 
 const TABS = [
   'Overview',
-  'Extensions',
   'Packages',
   'Skills',
   'Prompts',
@@ -129,7 +126,6 @@ function mergeTags(current: string[], value: string) {
 
 export function AgentDetail({
   agent,
-  extensions,
   packages,
   skills,
   prompts,
@@ -137,7 +133,6 @@ export function AgentDetail({
   sessions,
 }: {
   agent: AgentProfile
-  extensions: StudioExtension[]
   packages: GlobalPackage[]
   skills: GlobalSkill[]
   prompts: GlobalPromptTemplate[]
@@ -218,21 +213,6 @@ export function AgentDetail({
         <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto p-6">
           <TabsContent value="Overview">
             <OverviewTab agent={agent} providers={providers} />
-          </TabsContent>
-          <TabsContent value="Extensions">
-            <ResourcePicker
-              title="Extensions"
-              agentId={agent.id}
-              kind="extension"
-              items={extensions.map((extension) => ({
-                id: extension.id,
-                name: extension.name,
-                description: extension.description || 'Pi Studio extension library source.',
-                tags: [],
-                meta: 'library',
-              }))}
-              selectedIds={agent.selectedExtensionIds}
-            />
           </TabsContent>
           <TabsContent value="Packages">
             <ResourcePicker
@@ -318,7 +298,6 @@ function OverviewTab({
   providers: GlobalModelProvider[]
 }) {
   const stats = [
-    { icon: Puzzle, value: agent.selectedExtensionIds.length, label: 'Extensions' },
     { icon: Package, value: agent.selectedPackageSources.length, label: 'Packages' },
     { icon: Sparkles, value: agent.selectedSkillIds.length, label: 'Skills' },
     { icon: FileText, value: agent.selectedPromptIds.length, label: 'Prompts' },
@@ -390,7 +369,7 @@ function ResourcePicker({
 }: {
   title: string
   agentId: string
-  kind: 'extension' | 'package' | 'skill' | 'prompt'
+  kind: 'package' | 'skill' | 'prompt'
   items: PickerItem[]
   selectedIds: string[]
 }) {
@@ -437,7 +416,6 @@ function ResourcePicker({
       i.tags.some((t) => t.includes(query.toLowerCase())),
   )
   const ResourceIcon = {
-    extension: Puzzle,
     package: Package,
     skill: Sparkles,
     prompt: FileText,

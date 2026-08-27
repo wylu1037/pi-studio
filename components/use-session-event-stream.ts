@@ -9,7 +9,6 @@ import {
 
 export interface SessionEventStreamCallbacks {
   onFrame: (frame: RunStreamFrame) => void
-  onExtensionUi?: (snapshot: unknown) => void
 }
 
 /**
@@ -33,7 +32,6 @@ export function useSessionEventStream(
     }
     const stream = new SessionEventStream(sessionId, {
       onFrame: (frame) => callbacksRef.current.onFrame(frame),
-      onExtensionUi: (snapshot) => callbacksRef.current.onExtensionUi?.(snapshot),
       onStatusChange: setStatus,
     })
     streamRef.current = stream
