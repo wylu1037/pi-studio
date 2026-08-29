@@ -101,8 +101,6 @@ export function createInitialRunStreamState(sourceCount: number): RunStreamState
   }
 }
 
-export const initialRunStreamState = createInitialRunStreamState(0)
-
 export type RunStreamAction =
   | { type: 'frame'; frame: RunStreamFrame; at: number }
   | { type: 'prompt_submitted'; message: ChatMessage; sourceCount: number; at: number }
@@ -504,7 +502,7 @@ export const selectIsRunningRun = (state: RunStreamState) =>
 export const selectCanQueueMessage = (state: RunStreamState) =>
   selectIsRunningRun(state) && state.queueReady && !state.aborting
 
-export const selectRunProducedAssistantText = (state: RunStreamState) =>
+const selectRunProducedAssistantText = (state: RunStreamState) =>
   state.messages.some((message) => message.type === 'assistant' && message.content)
 
 export const selectHasPersistedRun = (state: RunStreamState, sourceMessages: ChatMessage[]) =>

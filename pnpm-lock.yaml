@@ -26,9 +26,6 @@ importers:
       '@hookform/resolvers':
         specifier: ^5.5.7
         version: 5.5.7(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.83.0(react@19.2.8))(zod@4.4.3)
-      '@monaco-editor/react':
-        specifier: ^4.7.0
-        version: 4.7.0(monaco-editor@0.56.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@phosphor-icons/react':
         specifier: ^2.1.10
         version: 2.1.10(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -71,9 +68,6 @@ importers:
       mermaid:
         specifier: ^11.16.0
         version: 11.16.0
-      monaco-editor:
-        specifier: ^0.56.0
-        version: 0.56.0
       motion:
         specifier: ^12.42.2
         version: 12.42.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -104,9 +98,6 @@ importers:
       tw-animate-css:
         specifier: ^1.4.0
         version: 1.4.0
-      typebox:
-        specifier: ^1.3.8
-        version: 1.3.8
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -114,9 +105,6 @@ importers:
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.8.0(jiti@2.7.0)(supports-color@7.2.0))
-      '@kubb/plugin-axios':
-        specifier: 5.0.0-beta.99
-        version: 5.0.0-beta.99(axios@1.18.1(debug@4.4.3(supports-color@7.2.0))(supports-color@7.2.0))(kubb@3.2.2(@kubb/fabric-core@0.14.0)(@kubb/react-fabric@0.14.0)(supports-color@7.2.0)(typescript@5.7.3))
       '@kubb/plugin-client':
         specifier: 4.39.2
         version: 4.39.2(@kubb/fabric-core@0.14.0)(@kubb/react-fabric@0.14.0)(axios@1.18.1(debug@4.4.3(supports-color@7.2.0))(supports-color@7.2.0))
@@ -138,9 +126,6 @@ importers:
       '@types/better-sqlite3':
         specifier: ^7.6.13
         version: 7.6.13
-      '@types/katex':
-        specifier: ^0.16.8
-        version: 0.16.8
       '@types/node':
         specifier: ^22
         version: 22.20.1
@@ -1417,10 +1402,6 @@ packages:
     resolution: {integrity: sha512-Pe/GXOIVGUYMWL1rLJApv63aH7xeSnlweAD1mSytzuSZ7yYfspNb7XP6ruzKTTGnIWO6Hrcy+gomnuFoHHZlgg==}
     engines: {node: '>=20'}
 
-  '@kubb/ast@5.0.0-beta.97':
-    resolution: {integrity: sha512-WrQ09UWEXvDdS5Z6U0FfPGSawBJ1VuNU7Je6pakuKmBRV7g25DZHgH6m6JXXuiaqD8QRBcqF2P3ZvwJ4q1boMA==}
-    engines: {node: '>=22'}
-
   '@kubb/cli@4.39.2':
     resolution: {integrity: sha512-8nRG9AgCNuDqg3hGo3b3Lc1WcEsCbCSz8Lv3QF4D8+N0An4FEK48OJsWURctlfud8I8UugNG5/3Okf9Hs3w1rQ==}
     engines: {node: '>=20'}
@@ -1432,10 +1413,6 @@ packages:
     peerDependencies:
       '@kubb/fabric-core': 0.14.0
       '@kubb/react-fabric': 0.14.0
-
-  '@kubb/core@5.0.0-beta.97':
-    resolution: {integrity: sha512-TXyA/95QN8Xt5e1gzyYTDc2xah+phUiB0n1fA5zntav6HgOx1buE8Xx5QISa6u+XbN+hPTTgdzcXMaAVzhu5dQ==}
-    engines: {node: '>=22'}
 
   '@kubb/fabric-core@0.14.0':
     resolution: {integrity: sha512-j4bG8RlOIkKLENHsTuD1oKuyjzAgBBOprXsBkpQ2l2XVzc84hQzMShP6CE6D4VSM+5jF2g3FhCz7YjAc6DQnqg==}
@@ -1454,20 +1431,6 @@ packages:
     engines: {node: '>=20'}
     peerDependencies:
       '@kubb/fabric-core': 0.14.0
-
-  '@kubb/parser-ts@5.0.0-beta.97':
-    resolution: {integrity: sha512-eyuDL9JkvNaW9za8MJ6Wpe6Nl3X0F2x2cLsfilF5Ey2+Bl+/YrEsJAehNHqWcbStTUUPlfvTKWXh1y9BOvP8Yg==}
-    engines: {node: '>=22'}
-
-  '@kubb/plugin-axios@5.0.0-beta.99':
-    resolution: {integrity: sha512-8vN/HUh4erJzdlkhf3EpN8UTXX/I6gu88Rw/M9LCYfDl6OYTJBcLDYxpYeLkhvBZwM2JEL8hVvE/Gr+gXosh3A==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      axios: ^1.7.2
-      kubb: 5.0.0-beta.97
-    peerDependenciesMeta:
-      axios:
-        optional: true
 
   '@kubb/plugin-client@4.39.2':
     resolution: {integrity: sha512-kxoYGzDO5xlCHm2u9BRsE1twhf9y8XDKmU+TlFYi96UlJmgwdkUmTPJ6yZ0OHMNZJX7ZuyCm1nIdJE+yP+zlBw==}
@@ -1500,21 +1463,9 @@ packages:
     peerDependencies:
       '@kubb/react-fabric': 0.14.0
 
-  '@kubb/plugin-ts@5.0.0-beta.99':
-    resolution: {integrity: sha512-l6jlt+wj0YGWgTkjKdoalIfSqCPmhWHDM3JwpV01BRGZrvBedsN1Oo11aLjORjgbKSR9u+8Bt/N8/AeVZeRuSA==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      kubb: 5.0.0-beta.97
-
   '@kubb/plugin-zod@4.39.2':
     resolution: {integrity: sha512-mGx1opM//FO7DlMHSMKnFcnVCbWreNB7bS2DE79C0DVm4hJ6VEEttYLb7iwKaj6AWOKoIFjFeeZFcvXcBrUE6g==}
     engines: {node: '>=20'}
-
-  '@kubb/plugin-zod@5.0.0-beta.99':
-    resolution: {integrity: sha512-mfWsmq+3gct8dSbkw3F/ilXz2NvNY8xWG3QS8CoSUy7TZu0qM+BfuZm4Kbam/CKXgV4KwjQk9r+8zWi3a2fsVA==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      kubb: 5.0.0-beta.97
 
   '@kubb/react-fabric@0.14.0':
     resolution: {integrity: sha512-rYBSpjG/1jrv/H5zMLK+JciuaFRXFue99nZkjNaWWGN5YAK/OwpButeJtMMCluE0EnhOxXqD3gfjyAUxO765XA==}
@@ -1616,16 +1567,6 @@ packages:
     peerDependenciesMeta:
       '@cfworker/json-schema':
         optional: true
-
-  '@monaco-editor/loader@1.7.0':
-    resolution: {integrity: sha512-gIwR1HrJrrx+vfyOhYmCZ0/JcWqG5kbfG7+d3f/C1LXk2EvzAbHSg3MQ5lO2sMlo9izoAZ04shohfKLVT6crVA==}
-
-  '@monaco-editor/react@4.7.0':
-    resolution: {integrity: sha512-cyzXQCtO47ydzxpQtCGSQGOC8Gk3ZUeBXFAxD+CWXYFo5OqZyZUonFl0DwUlTyAfRHntBfw2p3w4s9R6oe1eCA==}
-    peerDependencies:
-      monaco-editor: '>= 0.25.0 < 1'
-      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
-      react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
   '@next/env@16.2.12':
     resolution: {integrity: sha512-d0Z5Bc13Fa4nR8pFAKx2jay2yhJM16vlfHbTzYnUQAxlNb6B6lmn4hjt69lYNt4kRtyYP6gEM49lPRHNbIyneg==}
@@ -2144,9 +2085,6 @@ packages:
 
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
-
-  '@types/katex@0.16.8':
-    resolution: {integrity: sha512-trgaNyfU+Xh2Tc+ABIb44a5AYUpicB3uwirOioeOkNPPbmgRNtcWyDeeFRzjPZENO9Vq8gvVqfhaaXWLlevVwg==}
 
   '@types/keyv@3.1.4':
     resolution: {integrity: sha512-BQ5aZNSCpj7D6K2ksrRCTmKRLEpnPvWDiLPfoGyhZ++8YtiK9d/3DBKPJgry359X/P1PfruyYwvnvwFjuEiEIg==}
@@ -2938,9 +2876,6 @@ packages:
 
   dompurify@3.4.11:
     resolution: {integrity: sha512-zhlUV12GsaRzMsf9q5M254YhA4+VuF0fG+QFqu6aYpoGlKtz+w8//jBcGVYBgQkR5GHjUomejY84AV+/uPbWdw==}
-
-  dompurify@3.4.8:
-    resolution: {integrity: sha512-yb1cEmaOum7wFvOCSQxyfgVlv5D47Rc30iZWoMpbDIWTnJ6grDDQyu2KFJzB2k7u0pMuJcQ1zphH//fFnw2tjQ==}
 
   dotenv-expand@11.0.7:
     resolution: {integrity: sha512-zIHwmZPRshsCdpMDyVsqGmgyP0yT8GAgXUnkdAoJisxvf33k7yO6OuoKmcTGuXPWSsm8Oh88nZicRLA9Y0rUeA==}
@@ -4058,11 +3993,6 @@ packages:
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
 
-  marked@14.0.0:
-    resolution: {integrity: sha512-uIj4+faQ+MgHgwUW1l2PsPglZLOLOT1uErt06dAPtx2kjteLAkbsd/0FiYg/MGS+i7ZKLb7w2WClxHkzOOuryQ==}
-    engines: {node: '>= 18'}
-    hasBin: true
-
   marked@16.4.2:
     resolution: {integrity: sha512-TI3V8YYWvkVf3KJe1dRkpnjs68JUPyEa5vjKrp1XEEJUAOaQc+Qj+L1qWbPd0SJuAdQkFU0h73sXXqwDYxsiDA==}
     engines: {node: '>= 20'}
@@ -4196,9 +4126,6 @@ packages:
   mkdirp@0.5.6:
     resolution: {integrity: sha512-FP+p8RB8OWpF3YZBCrP5gtADmtXApB5AMLn+vdyA+PyxCjrCs00mjyUozssO33cwDeT3wNGdLxJ5M//YqtHAJw==}
     hasBin: true
-
-  monaco-editor@0.56.0:
-    resolution: {integrity: sha512-sXboRm3BeBeLm938eaiyLMe0OxzfXIlZvbv4ir/jVgQy1zDhWjgmny0WoN45fuDKhCCQsYMbBJrv/A6jd8aCUg==}
 
   motion-dom@12.42.2:
     resolution: {integrity: sha512-5gIMWLp/PycBtJRJWRgjxke5n8dlvkSn2DrYW+tr3XcqAZY1xZh6BJyooJXCM8wdfM7wfMjkBJNLge1CKPUIRA==}
@@ -4994,9 +4921,6 @@ packages:
     resolution: {integrity: sha512-jH9EhtKIjuXZ2cWxmXS8ZP80XyC3iasQxMDV8jzhNJpfDb7VbQLVW4Wvsxz9QZvzV+G4YoSfBUVKDOyxLzi/sg==}
     engines: {node: '>= 6'}
 
-  state-local@1.0.7:
-    resolution: {integrity: sha512-HTEHMNieakEnoe33shBYcZ7NX83ACUjCu8c40iOGEZsngj9zRnkqS9j1pqQPXwobB0ZcVTk27REb7COQ0UR59w==}
-
   statuses@2.0.2:
     resolution: {integrity: sha512-DvEy55V3DB7uknRo+4iOGT5fP1slR8wQohVdknigZPMpMstaKJQWhwiYBACJE3Ul2pTnATihhBYnRhZQHGBiRw==}
     engines: {node: '>= 0.8'}
@@ -5186,9 +5110,6 @@ packages:
   typebox@1.3.7:
     resolution: {integrity: sha512-meKuifc33Pccx0O6PdIzYMq3Og8zvP4TIi/a+Bw3AEMZMxOD0+RHGQvpglEe6Zdy3wZ8nqn/j95h8LUZLk/6Hg==}
 
-  typebox@1.3.8:
-    resolution: {integrity: sha512-xYaJgF0KMvBViKWRaKTAtfR6sDt/yH6xAjGAHXYJxKxUF4pVyPXZZhIlwOg6cDIE81N7L0pyIHs136RHBm6rLQ==}
-
   typescript-eslint@8.65.0:
     resolution: {integrity: sha512-/ggrHAwyjENDusvyxbuqxAC2dTnZg/Z8F+fgQtYIz+L6n/9HfSlEZcFGV/NsMNa6CkGk0xUjUAFwC0vHOflvIA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
@@ -5203,11 +5124,6 @@ packages:
 
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
-    engines: {node: '>=14.17'}
-    hasBin: true
-
-  typescript@6.0.3:
-    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
     engines: {node: '>=14.17'}
     hasBin: true
 
@@ -6624,8 +6540,6 @@ snapshots:
 
   '@kubb/ast@4.39.2': {}
 
-  '@kubb/ast@5.0.0-beta.97': {}
-
   '@kubb/cli@4.39.2(@kubb/fabric-core@0.14.0)(@kubb/react-fabric@0.14.0)(typescript@5.7.3)':
     dependencies:
       '@clack/prompts': 1.7.0
@@ -6649,10 +6563,6 @@ snapshots:
       remeda: 2.39.0
       semver: 7.8.5
       tinyexec: 1.2.4
-
-  '@kubb/core@5.0.0-beta.97':
-    dependencies:
-      '@kubb/ast': 5.0.0-beta.97
 
   '@kubb/fabric-core@0.14.0':
     dependencies:
@@ -6689,19 +6599,6 @@ snapshots:
     transitivePeerDependencies:
       - '@kubb/react-fabric'
       - encoding
-
-  '@kubb/parser-ts@5.0.0-beta.97':
-    dependencies:
-      '@kubb/core': 5.0.0-beta.97
-      typescript: 6.0.3
-
-  '@kubb/plugin-axios@5.0.0-beta.99(axios@1.18.1(debug@4.4.3(supports-color@7.2.0))(supports-color@7.2.0))(kubb@3.2.2(@kubb/fabric-core@0.14.0)(@kubb/react-fabric@0.14.0)(supports-color@7.2.0)(typescript@5.7.3))':
-    dependencies:
-      '@kubb/plugin-ts': 5.0.0-beta.99(kubb@3.2.2(@kubb/fabric-core@0.14.0)(@kubb/react-fabric@0.14.0)(supports-color@7.2.0)(typescript@5.7.3))
-      '@kubb/plugin-zod': 5.0.0-beta.99(kubb@3.2.2(@kubb/fabric-core@0.14.0)(@kubb/react-fabric@0.14.0)(supports-color@7.2.0)(typescript@5.7.3))
-      kubb: 3.2.2(@kubb/fabric-core@0.14.0)(@kubb/react-fabric@0.14.0)(supports-color@7.2.0)(typescript@5.7.3)
-    optionalDependencies:
-      axios: 1.18.1(debug@4.4.3(supports-color@7.2.0))(supports-color@7.2.0)
 
   '@kubb/plugin-client@4.39.2(@kubb/fabric-core@0.14.0)(@kubb/react-fabric@0.14.0)(axios@1.18.1(debug@4.4.3(supports-color@7.2.0))(supports-color@7.2.0))':
     dependencies:
@@ -6759,12 +6656,6 @@ snapshots:
     transitivePeerDependencies:
       - encoding
 
-  '@kubb/plugin-ts@5.0.0-beta.99(kubb@3.2.2(@kubb/fabric-core@0.14.0)(@kubb/react-fabric@0.14.0)(supports-color@7.2.0)(typescript@5.7.3))':
-    dependencies:
-      '@kubb/parser-ts': 5.0.0-beta.97
-      kubb: 3.2.2(@kubb/fabric-core@0.14.0)(@kubb/react-fabric@0.14.0)(supports-color@7.2.0)(typescript@5.7.3)
-      typescript: 6.0.3
-
   '@kubb/plugin-zod@4.39.2(@kubb/fabric-core@0.14.0)':
     dependencies:
       '@kubb/core': 4.39.2(@kubb/fabric-core@0.14.0)(@kubb/react-fabric@0.14.0)
@@ -6778,10 +6669,6 @@ snapshots:
       - bufferutil
       - encoding
       - utf-8-validate
-
-  '@kubb/plugin-zod@5.0.0-beta.99(kubb@3.2.2(@kubb/fabric-core@0.14.0)(@kubb/react-fabric@0.14.0)(supports-color@7.2.0)(typescript@5.7.3))':
-    dependencies:
-      kubb: 3.2.2(@kubb/fabric-core@0.14.0)(@kubb/react-fabric@0.14.0)(supports-color@7.2.0)(typescript@5.7.3)
 
   '@kubb/react-fabric@0.14.0':
     dependencies:
@@ -6909,17 +6796,6 @@ snapshots:
       zod-to-json-schema: 3.25.2(zod@4.4.3)
     transitivePeerDependencies:
       - supports-color
-
-  '@monaco-editor/loader@1.7.0':
-    dependencies:
-      state-local: 1.0.7
-
-  '@monaco-editor/react@4.7.0(monaco-editor@0.56.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
-    dependencies:
-      '@monaco-editor/loader': 1.7.0
-      monaco-editor: 0.56.0
-      react: 19.2.8
-      react-dom: 19.2.8(react@19.2.8)
 
   '@next/env@16.2.12': {}
 
@@ -7450,8 +7326,6 @@ snapshots:
   '@types/http-cache-semantics@4.2.0': {}
 
   '@types/json-schema@7.0.15': {}
-
-  '@types/katex@0.16.8': {}
 
   '@types/keyv@3.1.4':
     dependencies:
@@ -8283,10 +8157,6 @@ snapshots:
       - supports-color
 
   dompurify@3.4.11:
-    optionalDependencies:
-      '@types/trusted-types': 2.0.7
-
-  dompurify@3.4.8:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
@@ -9447,8 +9317,6 @@ snapshots:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  marked@14.0.0: {}
-
   marked@16.4.2: {}
 
   marked@18.0.5: {}
@@ -9588,11 +9456,6 @@ snapshots:
   mkdirp@0.5.6:
     dependencies:
       minimist: 1.2.8
-
-  monaco-editor@0.56.0:
-    dependencies:
-      dompurify: 3.4.8
-      marked: 14.0.0
 
   motion-dom@12.42.2:
     dependencies:
@@ -10429,8 +10292,6 @@ snapshots:
 
   stat-mode@1.0.0: {}
 
-  state-local@1.0.7: {}
-
   statuses@2.0.2: {}
 
   stdin-discarder@0.2.2: {}
@@ -10621,8 +10482,6 @@ snapshots:
 
   typebox@1.3.7: {}
 
-  typebox@1.3.8: {}
-
   typescript-eslint@8.65.0(eslint@10.8.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.7.3):
     dependencies:
       '@typescript-eslint/eslint-plugin': 8.65.0(@typescript-eslint/parser@8.65.0(eslint@10.8.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.7.3))(eslint@10.8.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.7.3)
@@ -10637,8 +10496,6 @@ snapshots:
   typescript@5.7.3: {}
 
   typescript@5.9.3: {}
-
-  typescript@6.0.3: {}
 
   undici-types@6.21.0: {}
 

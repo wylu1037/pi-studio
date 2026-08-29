@@ -21,20 +21,20 @@ export function studioSkillsDir() {
   return join(homedir(), '.pi-studio', 'skills')
 }
 
-export function safeSkillDirName(value?: string) {
+function safeSkillDirName(value?: string) {
   if (!value) return null
   const name = basename(value.trim())
   return /^[\w.-]+$/.test(name) ? name : null
 }
 
-export function isInside(parent: string, child: string) {
+function isInside(parent: string, child: string) {
   const parentPath = resolve(parent)
   const childPath = resolve(child)
   const relative = childPath.slice(parentPath.length)
   return relative === '' || relative.startsWith(sep)
 }
 
-export function studioSkillPath(skillName: string) {
+function studioSkillPath(skillName: string) {
   const dirName = safeSkillDirName(skillName)
   if (!dirName) throw new Error(`Invalid skill name: ${skillName}`)
   return join(studioSkillsDir(), dirName)

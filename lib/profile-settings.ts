@@ -17,11 +17,11 @@ export type ChatAvatarPresetId = UserAvatarPresetId | AgentAvatarPresetId
 export const DEFAULT_USER_AVATAR: UserAvatarPresetId = 'notion-smile'
 export const DEFAULT_AGENT_AVATAR: AgentAvatarPresetId = 'pi'
 
-export function isUserAvatarPreset(value: unknown): value is UserAvatarPresetId {
+function isUserAvatarPreset(value: unknown): value is UserAvatarPresetId {
   return userAvatarPresetIds.includes(value as UserAvatarPresetId)
 }
 
-export function isAgentAvatarPreset(value: unknown): value is AgentAvatarPresetId {
+function isAgentAvatarPreset(value: unknown): value is AgentAvatarPresetId {
   return agentAvatarPresetIds.includes(value as AgentAvatarPresetId)
 }
 

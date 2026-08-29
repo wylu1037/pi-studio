@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { and, asc, desc, eq, inArray, isNotNull, lte, notInArray } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNotNull, lte, notInArray } from 'drizzle-orm'
 import type {
   AgentProfile,
   AgentSessionSummary,
@@ -33,7 +33,6 @@ import {
   globalPrompts,
   globalSkills,
   mcpConfigs,
-  mcpTags,
   modelProviders,
   models,
   packages,
@@ -336,18 +335,6 @@ export function listSkills(): GlobalSkill[] {
     }))
 }
 
-export function createSkill(
-  input: Omit<GlobalSkill, 'id' | 'usedByAgents' | 'installedAt' | 'updatedAt'>,
-) {
-  const id = `sk-${randomUUID()}`
-  const at = now()
-  db.insert(globalSkills)
-    .values({ ...input, id, installedAt: at, createdAt: at, updatedAt: at })
-    .run()
-  for (const tag of input.tags) db.insert(skillTags).values({ skillId: id, tag }).run()
-  return listSkills().find((skill) => skill.id === id) ?? null
-}
-
 export function upsertSkill(
   input: Partial<GlobalSkill> & {
     id?: string
@@ -500,37 +487,6 @@ export function listMcpConfigs(): GlobalMcpConfig[] {
       createdAt: mcp.createdAt,
       updatedAt: mcp.updatedAt,
     }))
-}
-
-export function upsertMcp(
-  input: Partial<GlobalMcpConfig> & { id?: string; name: string; command: string },
-) {
-  const id = input.id ?? `mcp-${randomUUID()}`
-  const at = now()
-  const values = {
-    name: input.name,
-    description: input.description,
-    command: input.command,
-    argsJson: JSON.stringify(input.args ?? []),
-    envJson: JSON.stringify(input.env ?? {}),
-    enabledGlobally: input.enabledGlobally ?? false,
-    updatedAt: at,
-  }
-  const existing = db.select().from(mcpConfigs).where(eq(mcpConfigs.id, id)).get()
-  if (existing) {
-    db.update(mcpConfigs).set(values).where(eq(mcpConfigs.id, id)).run()
-    db.delete(mcpTags).where(eq(mcpTags.mcpConfigId, id)).run()
-  } else {
-    db.insert(mcpConfigs)
-      .values({ ...values, id, createdAt: at })
-      .run()
-  }
-  for (const tag of input.tags ?? []) db.insert(mcpTags).values({ mcpConfigId: id, tag }).run()
-  return listMcpConfigs().find((mcp) => mcp.id === id) ?? null
-}
-
-export function deleteMcp(id: string) {
-  db.delete(mcpConfigs).where(eq(mcpConfigs.id, id)).run()
 }
 
 export function listProviders(): GlobalModelProvider[] {
@@ -774,10 +730,6 @@ export function listPackages() {
     installed: mapped.filter((pkg) => !rows.find((row) => row.id === pkg.id)?.isGallery),
     gallery: mapped.filter((pkg) => rows.find((row) => row.id === pkg.id)?.isGallery),
   }
-}
-
-export function listPackageGallery() {
-  return listPackages().gallery
 }
 
 export function getPackageCatalogItem(id: string) {
@@ -1188,19 +1140,6 @@ export function getRun(id: string) {
   return db.select().from(chatRuns).where(eq(chatRuns.id, id)).get() ?? null
 }
 
-export function getActiveRunForSession(sessionId: string) {
-  return (
-    db
-      .select()
-      .from(chatRuns)
-      .where(
-        and(eq(chatRuns.sessionId, sessionId), inArray(chatRuns.status, ['queued', 'running'])),
-      )
-      .orderBy(desc(chatRuns.createdAt))
-      .get() ?? null
-  )
-}
-
 export function markRun(
   id: string,
   status: 'running' | 'completed' | 'failed' | 'aborted',
@@ -1346,11 +1285,6 @@ export function resolveAgentRunConfig(agentId: string, providerId?: string | nul
     providers: agentProviders,
     provider: selectedProvider,
   }
-}
-
-export function deleteManySessions(sessionIds: string[]) {
-  if (sessionIds.length === 0) return
-  db.delete(sessions).where(inArray(sessions.id, sessionIds)).run()
 }
 
 export function deleteSession(id: string) {

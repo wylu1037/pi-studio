@@ -2,9 +2,9 @@ import { realpathSync, statSync } from 'node:fs'
 import { extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-export const audioExtensions = ['.mp3'] as const
-export const imageExtensions = ['.avif', '.gif', '.jpeg', '.jpg', '.png', '.webp'] as const
-export const mediaExtensions = [...audioExtensions, ...imageExtensions] as const
+const audioExtensions = ['.mp3'] as const
+const imageExtensions = ['.avif', '.gif', '.jpeg', '.jpg', '.png', '.webp'] as const
+const mediaExtensions = [...audioExtensions, ...imageExtensions] as const
 
 export function resolveSessionMediaPath(
   cwd: string,

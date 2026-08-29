@@ -87,7 +87,7 @@ export function ensureTaskScheduler() {
   void tickScheduledTasks()
 }
 
-export async function tickScheduledTasks() {
+async function tickScheduledTasks() {
   if (globalThis.__piStudioTaskSchedulerTick) return globalThis.__piStudioTaskSchedulerTick
   const tick = (async () => {
     const capacity = MAX_CONCURRENT_SCHEDULED_TASKS - scheduledTaskRuns().size

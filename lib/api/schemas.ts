@@ -6,7 +6,7 @@ export const ErrorSchema = z.object({
   error: z.string(),
 })
 
-export const ThinkingLevelSchema = z.enum([
+const ThinkingLevelSchema = z.enum([
   'off',
   'minimal',
   'low',
@@ -130,7 +130,7 @@ export const PromptInputSchema = z.object({
   tags: z.array(z.string()).default([]),
 })
 
-export const ModelSchema = z.object({
+const ModelSchema = z.object({
   id: z.string(),
   name: z.string().optional(),
   reasoning: z.boolean().optional(),
@@ -198,7 +198,7 @@ export const ModelCapabilitiesSchema = z.object({
   maxTokens: z.number().optional(),
 })
 
-export const PackageSchema = z.object({
+const PackageSchema = z.object({
   id: z.string(),
   name: z.string(),
   source: z.string(),
@@ -470,22 +470,6 @@ export const StartRunSchema = z.object({
    * session was rebuilt after the client staged the branch.
    */
   branchParentEntryId: z.string().nullable().optional(),
-})
-
-export const RunSchema = z.object({
-  id: z.string(),
-  sessionId: z.string(),
-  agentId: z.string(),
-  status: z.string(),
-  providerId: z.string().nullable(),
-  modelId: z.string().nullable(),
-  thinkingLevel: z.string(),
-  cwd: z.string(),
-  prompt: z.string(),
-  error: z.string().nullable(),
-  startedAt: z.string().nullable(),
-  completedAt: z.string().nullable(),
-  createdAt: z.string(),
 })
 
 export const StartRunResultSchema = z.object({

@@ -158,7 +158,7 @@ export function parsePiPackageCatalog(
   }
 }
 
-export async function listPiDevPackageCatalog(
+async function listPiDevPackageCatalog(
   query: PiPackageCatalogQuery = {},
 ): Promise<PiPackageCatalog> {
   const url = new URL(PI_PACKAGES_URL)

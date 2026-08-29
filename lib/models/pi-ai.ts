@@ -15,8 +15,6 @@ import {
 import type { GlobalModel, GlobalModelProvider } from '@/lib/types'
 import { normalizePiBaseUrl, resolvePiProviderConnection } from './provider-connection'
 
-export { normalizePiBaseUrl, resolvePiProviderConnection } from './provider-connection'
-
 function hasProviderHeader(headers: ProviderHeaders | undefined, name: string) {
   const expected = name.toLowerCase()
   return Object.keys(headers ?? {}).some((key) => key.toLowerCase() === expected)
@@ -71,7 +69,7 @@ export function registerPiStudioApiProviders() {
   registerApiProvider(studioAnthropicProvider, 'pi-studio-anthropic-compat')
 }
 
-export function toPiModel(
+function toPiModel(
   provider: Pick<GlobalModelProvider, 'id' | 'baseUrl' | 'api' | 'headers'>,
   model: GlobalModel,
 ): Model<Api> {

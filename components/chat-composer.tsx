@@ -6,7 +6,6 @@ import {
   useState,
   type DragEvent,
   type KeyboardEvent,
-  type ReactNode,
   type Ref,
 } from 'react'
 import type { UseFormReturn } from 'react-hook-form'
@@ -71,7 +70,7 @@ import { cn } from '@/lib/utils'
 export const thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 const codexThinkingLevels = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 const reasoningEffortLevels = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
-export const COMPOSER_MAX_HEIGHT = 176
+const COMPOSER_MAX_HEIGHT = 176
 
 /** Ordered reasoning levels offered for a selection, matching the model
  *  dropdown: Codex-family models expose low..max; every other reasoning model

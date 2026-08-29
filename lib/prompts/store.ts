@@ -7,12 +7,12 @@ export function studioPromptsDir() {
   return join(homedir(), '.pi-studio', 'prompts')
 }
 
-export function safePromptName(value: string) {
+function safePromptName(value: string) {
   const name = basename(value.trim()).replace(/\.md$/i, '')
   return /^[a-zA-Z0-9][\w.-]*$/.test(name) ? name : null
 }
 
-export function studioPromptPath(name: string) {
+function studioPromptPath(name: string) {
   const safeName = safePromptName(name)
   if (!safeName)
     throw new Error('Prompt name may only contain letters, numbers, dots, dashes, and underscores.')
@@ -25,7 +25,7 @@ function insideStudioPrompts(path: string) {
   return candidate === root || candidate.startsWith(`${root}${sep}`)
 }
 
-export function serializePromptTemplate(prompt: {
+function serializePromptTemplate(prompt: {
   description?: string
   argumentHint?: string
   content: string

@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { PATCH, POST, PUT } from '../../app/api/[[...route]]/route'
+import { PATCH, POST } from '../../app/api/[[...route]]/route'
 import {
   appendMessage,
   createAgent,

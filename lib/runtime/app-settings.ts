@@ -11,14 +11,14 @@ export type AppSettings = {
   logLevel: LogLevel
 }
 
-export const DEFAULT_SETTINGS: AppSettings = {
+const DEFAULT_SETTINGS: AppSettings = {
   schemaVersion: 1,
   logLevel: 'info',
 }
 
 let cachedSettings: AppSettings | null = null
 
-export function appSettingsPath() {
+function appSettingsPath() {
   return join(piStudioDataDir(), 'settings.json')
 }
 

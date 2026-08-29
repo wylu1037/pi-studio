@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { DefaultPackageManager, SettingsManager } from '@earendil-works/pi-coding-agent'
 
-export function studioPackagesDir() {
+function studioPackagesDir() {
   return join(homedir(), '.pi-studio', 'packages')
 }
 

@@ -199,60 +199,6 @@ export function TextInput({
   )
 }
 
-/* Terminal-style install command box */
-export function CommandBox({ command, className }: { command: string; className?: string }) {
-  return (
-    <div
-      className={cn(
-        'flex items-center justify-between gap-2 border border-border bg-panel px-3 py-2',
-        className,
-      )}
-    >
-      <code className="truncate font-mono text-xs text-muted-foreground">
-        <span className="text-muted-foreground/60">$ </span>
-        {command}
-      </code>
-      <button
-        type="button"
-        className="shrink-0 border border-border-strong px-2 py-0.5 font-mono text-[10px] tracking-wider text-muted-foreground uppercase hover:bg-muted hover:text-foreground"
-      >
-        [ Copy ]
-      </button>
-    </div>
-  )
-}
-
-/* Toggle switch */
-export function Toggle({
-  checked,
-  onChange,
-  disabled,
-}: {
-  checked: boolean
-  onChange?: (v: boolean) => void
-  disabled?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onChange?.(!checked)}
-      disabled={disabled}
-      className={cn(
-        'relative h-4.5 w-8 shrink-0 border transition-colors disabled:cursor-not-allowed disabled:opacity-40',
-        checked ? 'border-accent bg-accent/80' : 'border-border-strong bg-muted',
-      )}
-    >
-      <motion.span
-        className="absolute top-0.5 left-0.5 size-3 bg-card"
-        animate={{ x: checked ? 14 : 0 }}
-        transition={{ type: 'spring', stiffness: 520, damping: 34, mass: 0.5 }}
-      />
-    </button>
-  )
-}
-
 export function PageHeader({
   title,
   subtitle,

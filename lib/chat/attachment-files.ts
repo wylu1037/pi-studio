@@ -9,9 +9,7 @@ import {
 } from './attachments'
 
 export type { AttachmentUpload } from './attachments'
-
-export const ATTACHMENT_DIRECTORY = '.pi-studio/attachments'
-export { MAX_ATTACHMENT_COUNT, MAX_ATTACHMENT_FILE_SIZE, MAX_ATTACHMENT_TOTAL_SIZE }
+export { MAX_ATTACHMENT_COUNT } from './attachments'
 
 export type AttachmentFile = {
   name: string

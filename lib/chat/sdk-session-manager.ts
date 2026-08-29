@@ -225,7 +225,7 @@ async function createResourceSignature(
   })
 }
 
-export function getSdkSession(studioSessionId: string) {
+function getSdkSession(studioSessionId: string) {
   const session = sessions().get(studioSessionId)
   return session?.isAlive() ? session : null
 }
@@ -261,10 +261,6 @@ export async function abortSdkSession(studioSessionId: string) {
   const session = getSdkSession(studioSessionId)
   if (!session) return false
   return session.runController.abort()
-}
-
-export function disposeAllSdkSessions() {
-  for (const session of [...sessions().values()]) session.destroy()
 }
 
 export async function reloadSdkSessions(input: {
